@@ -12,6 +12,7 @@ namespace ShopTogether {
   static StoreClient CurrentCustomer(){var p=PlayerStore.Instance;return p!=null&&p.currentClientInstance!=null?p.currentClientInstance.GetClientBlueprint():null;}
   static NegotiationTabletFrame TradeFrame(){return ModReflect.Get<NegotiationTabletFrame>(NegociationUIManager.Instance,"frame");}
   static bool BudgetVisible(int amount){var f=TradeFrame();if(f==null||f.footer==null)return false;string value=TabletUI.Credits(amount);foreach(var t in f.footer.GetComponentsInChildren<TMPro.TextMeshProUGUI>(true))if(t.text!=null&&t.text.Contains(value))return true;return false;}
+  static bool TradeRowVisible(string name){var f=TradeFrame();if(f==null||f.content==null)return false;foreach(var t in f.content.GetComponentsInChildren<TMPro.TextMeshProUGUI>(true))if(t.text!=null&&t.text.Contains(name))return true;return false;}
   static void SendCount(string name,StoreClientCounter c){int count=PlayerStore.Instance.storeClientManager.clientStack.Count;Signal(name+"="+count+"|"+Convert.ToBase64String(Encoding.UTF8.GetBytes(c.GetTooltip())));}
   static IEnumerator CheckCount(string name,StoreClientCounter c){
    string data=null;var wait=Wait(()=>(data=ReceivePrefix(name+"="))!=null,"host "+name+" received",90);while(wait.MoveNext())yield return wait.Current;
@@ -54,6 +55,7 @@ namespace ShopTogether {
    NativeClick(0,()=>BargainUIManager.Instance.OfferMarkup(5));val=null;wait=Wait(()=>(val=ReceivePrefix("BUDGET_DOWN="))!=null,"host decreased budget",90);while(wait.MoveNext())yield return wait.Current;int down=int.Parse(val);
    wait=Wait(()=>CurrentCustomer()!=null&&CurrentCustomer().GetBudget()==down&&BudgetVisible(down),"guest tablet updates to decreased budget",90);while(wait.MoveNext())yield return wait.Current;Signal("BUDGET_DOWN_OK");
    string encoded=null;wait=Wait(()=>Find(root,"CUSTOMER_EXPENSIVE")!=null&&(encoded=ReceivePrefix("WARNING="))!=null,"expensive sale and host warning ready",90);while(wait.MoveNext())yield return wait.Current;string expected=Encoding.UTF8.GetString(Convert.FromBase64String(encoded));ui.OpenUI();yield return null;
+   wait=Wait(()=>TradeRowVisible("CUSTOMER_EXPENSIVE"),"guest trade screen renders the actual counter item",30);while(wait.MoveNext())yield return wait.Current;
    Require(!ui.IsClientHaveEnoughToBuy(),"guest identifies sale above customer budget");NativeClick(0,()=>ui.OnSellAllClick());yield return new WaitForSecondsRealtime(2);var frame=TradeFrame();
    Require(frame!=null&&frame.confirmRoot.activeSelf&&frame.confirmText.text==expected,"guest sees the same over-budget warning as host");NativeClick(0,()=>ui.OnConfirmPanelNo());Require(!frame.confirmRoot.activeSelf,"guest can cancel its own warning");Signal("WARNING_CANCEL");
    wait=Wait(()=>Received("WARNING_AGAIN"),"host confirms cancellation preserved sale",90);while(wait.MoveNext())yield return wait.Current;NativeClick(0,()=>ui.OnSellAllClick());

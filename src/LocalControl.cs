@@ -19,6 +19,14 @@ namespace ShopTogether {
         internal static bool UserAction {get{return depth>0&&Focused;}}
         internal static bool Replica {get{return ReplicaSession.ClientStore&&ReplicaSession.SceneReady&&!WorldReplica.Applying;}}
         internal static bool AllowWorldWrite(){if(!Replica)return true;BlockedWrites++;return false;}
+        /// <summary>
+        /// Friend: the game also builds throw-away items purely for display (choice icons, previews, shop listings).
+        /// Those are not part of the shared shop, so they may be created, moved between and destroyed in containers
+        /// that are not part of it either. Anything the host tracks stays read-only here.
+        /// </summary>
+        internal static bool LocalOnly(GameInventory inventory,GameItem item){var s=Connection.Current;if(s==null||!ReplicaSession.ClientStore)return false;var w=s.World;return (inventory==null||w.Address(inventory)==null)&&(item==null||w.Id(item)<=0);}
+        // Choice icons belong only to this player's temporary response windows, never to a synced inventory.
+        internal static bool LocalChoice(GameInventory inventory,GameItem item){var e=EmporiumEntry.Instance;return e!=null&&inventory!=null&&(inventory==e.responseInventory||inventory==e.responseInventoryClosable)&&LocalOnly(inventory,item);}
     }
     [HarmonyPatch]
     internal static class InputScope {
@@ -61,6 +69,7 @@ namespace ShopTogether {
         [HarmonyPriority(Priority.Last)] static bool Prefix(object __instance,GameItem __0,MethodBase __originalMethod,ref bool __result){
             if(WorldReplica.Sandbox>0){if(__0!=null&&__0==WorldReplica.SandboxItem&&WorldReplica.SandboxMovePermit){WorldReplica.SandboxMovePermit=false;return true;}__result=false;return false;}
             if(PanelRelay.IsCratePreview(__instance as GameInventory,__0)&&(__originalMethod.Name=="Expel"||PanelRelay.BuildingCratePreview))return true;
+            if(LocalControl.LocalOnly(__instance as GameInventory,__0))return true;
             if(LocalControl.AllowWorldWrite())return true;__result=false;return false;
         }
     }
@@ -77,9 +86,9 @@ namespace ShopTogether {
         static bool Prefix(){return !(ReplicaSession.ClientStore&&WorldReplica.Applying&&SaveManager.IsDecoding);}
     }
     [HarmonyPatch(typeof(GameItem),"Create")]
-    internal static class ReplicaSpawnBarrier {static bool Prefix(ref GameItem __result){if(WorldReplica.Sandbox==0&&LocalControl.AllowWorldWrite())return true;__result=null;return false;}}
+    internal static class ReplicaSpawnBarrier {static bool Prefix(ref GameItem __result){if(WorldReplica.Sandbox==0)return true;__result=null;return false;}}   // a new item is outside the shared shop until the host places it
     [HarmonyPatch(typeof(GameItemElement),"Destroy")]
-    internal static class ReplicaDestroyBarrier {static bool Prefix(GameItemElement __instance){return WorldReplica.Sandbox==0&&(PanelRelay.IsCratePreview(__instance.parentInventory,__instance)||LocalControl.AllowWorldWrite());}}
+    internal static class ReplicaDestroyBarrier {static bool Prefix(GameItemElement __instance){return WorldReplica.Sandbox==0&&(PanelRelay.IsCratePreview(__instance.parentInventory,__instance)||LocalControl.LocalOnly(__instance.parentInventory,__instance)||LocalControl.AllowWorldWrite());}}
     [HarmonyPatch]
     internal static class ReplicaItemDataBarrier {
         static readonly HashSet<string> data=new HashSet<string>{"set_state","set_modifiedState","set_shape","set_modifiedShape","set_unitCount","set_uniqueId","set_unitBaseValue","set_unitValue","set_lateUnitValue","set_backupUnitValue","set_name","set_shortDescription","set_flavorText"};

@@ -71,13 +71,16 @@ namespace ShopTogether {
                 AccessTools.Method(typeof(AudioManager), "Play2"),
                 AccessTools.Method(typeof(AudioManager), "Play3"),
                 AccessTools.Method(typeof(NegociationUIManager), "OpenConfirmPanel"),
+                AccessTools.Method(typeof(WildNetworkUI), "Open"),
+                AccessTools.Method(typeof(AppraisalItemsWindow), "Open", new[] { typeof(bool) }),
+                AccessTools.Method(typeof(DialogSettingUIManager), "OpenUI"),
             };
         }
 
         // Host: a friend's action tried to open a panel. Keep it off the host's screen and tell the friend.
         // Methods past the reading panels: 36/37 only keep the friend's action off the host's screen,
         // 38-42 (notices and sounds) reach the friend and still play on the host.
-        const int Scratcher = 32, Confirm = 34, Crate = 35, HideResponse = 36, CloseConfirm = 37, NoticeFirst = 38, NoticeLast = 42, BudgetConfirm = 43;
+        const int Scratcher = 32, Confirm = 34, Crate = 35, HideResponse = 36, CloseConfirm = 37, NoticeFirst = 38, NoticeLast = 42, BudgetConfirm = 43, Wild = 44;
         internal static bool BuildingCratePreview;
         internal static bool IsCratePreview(GameInventory inventory, GameItem item) {
             var s = Connection.Current; var e = EmporiumEntry.Instance;
@@ -128,6 +131,8 @@ namespace ShopTogether {
                     inventory = SourceItem != null ? SourceItem.parentInventory : null, activation = SourceIsActivation };
             }
             var items = new List<int>(); var texts = new List<string>(); var numbers = new List<int>();
+            // Wild's network: opening it counts as browsing on the host; the window itself opens for the friend.
+            if (index == Wild && PlayerStore.Instance != null) PlayerStore.Instance.daySinceLastBrowseUpgrade = 0;
             if (index == BudgetConfirm) {
                 int budget, total;
                 if (!CounterTrades.BeginConfirmation(Owner, NegociationUIManager.Instance, out budget, out total)) return false;
@@ -137,6 +142,7 @@ namespace ShopTogether {
             for (int i = 0; i < args.Length; i++) {
                 var a = args[i]; var type = i < parameters.Length ? parameters[i].ParameterType : null;
                 if (type != null && typeof(Delegate).IsAssignableFrom(type)) continue;
+                if (type == typeof(bool)) continue;
                 if (type == typeof(GameItem)) { var item = a as GameItem; int id = item != null ? s.World.Id(item) : 0; if (item != null && id <= 0) return notice; items.Add(id); continue; }
                 if (type == typeof(string)) { var text = a as string ?? ""; texts.Add(text.Length > 4000 ? text.Substring(0, 4000) : text); continue; }
                 if (type == typeof(int)) { numbers.Add(a is int ? (int)a : 0); continue; }
@@ -202,6 +208,9 @@ namespace ShopTogether {
                 case 40: if (AudioManager.Instance != null) AudioManager.Instance.Play(Text(c, 0)); break;
                 case 41: if (AudioManager.Instance != null) AudioManager.Instance.Play2(Text(c, 0)); break;
                 case 42: if (AudioManager.Instance != null) AudioManager.Instance.Play3(Text(c, 0)); break;
+                case 44: WildNetworkUI.Open(); break;
+                case 45: AppraisalItemsWindow.Open(); break;
+                case 46: if (DialogSettingUIManager.Instance != null) DialogSettingUIManager.Instance.OpenUI(); break;
                 case 43: {
                     var ui = NegociationUIManager.Instance; if (ui == null) break;
                     ui.OpenConfirmPanel(); var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");

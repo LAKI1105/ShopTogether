@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.15";
+        internal const string BuildVersion="1.3.19";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -61,7 +61,6 @@ namespace ShopTogether {
             internal static bool Replaceable(byte type){return type==39||type==34||type==40;}
             internal void Send(byte type,byte[] bytes){if(Replaceable(type)&&outgoing.Count>=32)return;if(outgoing.Count>=8192||queuedBytes+bytes.Length+5>256L*1024*1024)throw new Exception("~SMC134~");queuedBytes+=bytes.Length+5;byte[] packet=new byte[bytes.Length+5];int n=bytes.Length+1;packet[0]=(byte)(n>>24);packet[1]=(byte)(n>>16);packet[2]=(byte)(n>>8);packet[3]=(byte)n;packet[4]=type;Buffer.BlockCopy(bytes,0,packet,5,bytes.Length);outgoing.Enqueue(packet);}
             internal long queuedBytes;internal int partialSize;
-            // Poll the channel even when this queue is empty: Steam may still hold part of the last packet.
             internal void Write(){for(int i=0;i<64&&channel.Ready&&!channel.Writing&&outgoing.Count>0;i++){var packet=outgoing.Dequeue();queuedBytes-=packet.Length;channel.Send(packet);}}
             public void Dispose(){if(channel!=null)channel.Dispose();else if(socket!=null)socket.Close();outgoing.Clear();queuedBytes=0;input.Clear();}
         }
@@ -131,7 +130,7 @@ namespace ShopTogether {
             try{BeginJoin(new[]{endpoint});}catch(Exception e){Stop();status=e.Message;ShowStatus();}}
         void Update(){
             if(!IsClient&&MainMenuUIController.Instance!=null&&EmporiumEntry.Instance==null){ReplicaSession.ClientStore=false;ReplicaSession.SceneReady=false;}
-            if(MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null&&!launcherShown){launcherShown=true;DrawLauncher();}
+            if(MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null&&(!launcherShown||launcherState!=LauncherState())){launcherShown=true;DrawLauncher();}
             SteamInvite.Hook();
             // Joined from the Steam friends list (or "Invite to Game"): connect through Steam once at the main menu.
             if(SteamInvite.Pending!=null&&!IsHost&&!IsClient&&MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null){string connect=SteamInvite.Pending;SteamInvite.Pending=null;ulong hostId;
@@ -159,7 +158,8 @@ namespace ShopTogether {
                         if(awaitingFull&&!next.full){}
                         else{
                             // An update that cannot be applied asks the host for the whole shop again instead of ending the session.
-                            try{World.Apply(next);awaitingFull=false;if(next.full)applyFailures=0;if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
+                            try{World.Apply(next);awaitingFull=false;if(next.full)applyFailures=0;
+                                if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
                             catch(Exception failure){if(++applyFailures>=5)throw;Debug.LogWarning("[ShopTogether] update not applied, asking the host for the whole shop: "+failure.Message);awaitingFull=true;server.Send(24,new byte[0]);}
                         }}
                     if(Ready&&Time.realtimeSinceStartup>=nextRenew){nextRenew=Time.realtimeSinceStartup+5;Send(new Request{kind=RequestKind.Renew});}
@@ -223,7 +223,7 @@ namespace ShopTogether {
                 if(type==16){if(Encoding.UTF8.GetString(data)!=WireVersion){if(host){peer.Send(17,new byte[0]);peer.closing=true;return;}throw new Exception("~SMC064~");}peer.matched=true;if(host)peer.Send(16,Encoding.UTF8.GetBytes(WireVersion));else peer.Send(1,Encoding.UTF8.GetBytes(secret));return;}
                 if(host&&type==1){string given=Encoding.UTF8.GetString(data);var steamPeer=peer.channel as SteamRelay.SteamChannel;
                     // Steam friends who joined from the friends list: no password, but only accounts on the host's own friends list.
-                    bool friendJoin=given==SteamInvite.FriendToken&&steamPeer!=null&&SteamInvite.Invited.Contains(steamPeer.Remote)&&SteamInvite.IsFriend(steamPeer.Remote);
+                    bool friendJoin=given==SteamInvite.FriendToken&&steamPeer!=null&&SteamInvite.IsFriend(steamPeer.Remote);
                     if(given!=secret&&!friendJoin){peer.Send(15,new byte[0]);peer.closing=true;return;}if(friendJoin)Debug.Log("[ShopTogether] Steam friend joined from the friends list");peer.authenticated=true;peer.Send(2,BitConverter.GetBytes(peer.id));Debug.Log("[ShopTogether] authenticated data client build="+BuildVersion);return;}
                 if(!host&&type==15)throw new Exception(secret==SteamInvite.FriendToken?"~SMC086~":"~SMC088~");
                 if(!host&&type==2){peer.authenticated=true;joinCandidates.Clear();PlayerId=BitConverter.ToInt32(data,0);peer.Send(30,Encode(new ModList{mods=ModParity.Local(),entries=ModRequirements.Local(),name=MyName}));return;}
@@ -278,24 +278,35 @@ namespace ShopTogether {
             if(request.kind==RequestKind.Claim){long token;bool ok=Leases.Claim(owner,request.items,now,out token);reply(new LeaseReply{sequence=request.sequence,items=request.items,owner=owner,token=token,granted=ok,reason=ok?null:"~SMC096~"});return;}
             bool success=false;try{success=NativeActions.Execute(this,owner,request);if(success)World.Committed(request);}finally{if(!success)reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC167~"});nextSync=0;}
         }
-        void DrawLauncher(){CustomUIManager.Window(LauncherId,Loc.Text("~SMC057~"),CustomUIManager.LAYER_MENU).SetSize(300,150).SetPosition(new Vector2(-620,-320)).AddButton(Loc.Text("~SMC060~"),ShowChoice).Show();}
+        // The main-menu box always shows where things stand and leads back to the room: a room that is open stays
+        // reachable from here (and from the button at the top right in the shop) instead of being created again.
+        string launcherState="";
+        string LauncherState(){return (IsHost?"H":IsClient?(Ready?"C":"c"):"-")+"|"+ConnectedNames;}
+        void DrawLauncher(){
+            launcherState=LauncherState();
+            var w=CustomUIManager.Window(LauncherId,Loc.Text("~SMC057~"),CustomUIManager.LAYER_MENU).SetSize(340,IsHost||IsClient?240:150).SetPosition(new Vector2(-600,-300));
+            if(IsHost){w.AddLabel(Loc.Text("~SMC237~"+(ConnectedNames.Length>0?"~SMC006~"+ConnectedNames:"~SMC012~"))).AddButton(Loc.Text("~SMC089~"),ShowHostReady).AddButton(Loc.Text("~SMC183~"),()=>{Stop();DrawLauncher();});}
+            else if(IsClient){w.AddLabel(Loc.Text(Ready?"~SMC239~":"~SMC240~")).AddButton(Loc.Text("~SMC238~"),ShowStatus).AddButton(Loc.Text("~SMC181~"),()=>{Stop();DrawLauncher();});}
+            else w.AddButton(Loc.Text("~SMC060~"),ShowChoice);
+            w.Show();
+        }
         // The name shown next to this player's mouse pointer on everyone's screen (Steam name by default).
         static string playerName="";
         internal static string MyName{get{if(playerName.Length==0){try{if(SteamRelay.Available)playerName=PlayerNames.Clean(Steamworks.SteamFriends.GetPersonaName());}catch{}if(playerName.Length==0)playerName="~SMC101~";}return playerName;}}
-        void ShowChoice(){CustomUIManager.Window(WindowId,Loc.Text("~SMC057~"),CustomUIManager.LAYER_MENU).SetSize(460,460).Center().AddLabel(Loc.Text("~SMC066~")).AddInput(Loc.Text("~SMC058~"),MyName,v=>playerName=PlayerNames.Clean(v),null,v=>playerName=PlayerNames.Clean(v)).AddButton(Loc.Text("~SMC023~"),QuickHost).AddButton(Loc.Text("~SMC107~"),LanHost).AddButton(Loc.Text("~SMC175~"),ShowJoin).AddButton(Loc.Text("~SMC062~"),ShowHost).AddCloseButton(null,null).Show();}
+        void ShowChoice(){if(IsHost){ShowHostReady();return;}if(IsClient){ShowStatus();return;}CustomUIManager.Window(WindowId,Loc.Text("~SMC057~"),CustomUIManager.LAYER_MENU).SetSize(460,460).Center().AddLabel(Loc.Text("~SMC066~")).AddInput(Loc.Text("~SMC058~"),MyName,v=>playerName=PlayerNames.Clean(v),null,v=>playerName=PlayerNames.Clean(v)).AddButton(Loc.Text("~SMC023~"),QuickHost).AddButton(Loc.Text("~SMC107~"),LanHost).AddButton(Loc.Text("~SMC175~"),ShowJoin).AddButton(Loc.Text("~SMC062~"),ShowHost).AddCloseButton(null,null).Show();}
         void ShowHost(){if(secret.Length<8)secret=Password();CustomUIManager.Window(WindowId,Loc.Text("~SMC105~"),CustomUIManager.LAYER_MENU).SetSize(480,380).Center().AddLabel(Loc.Text("~SMC087~")).AddInput(Loc.Text("~SMC121~"),secret,v=>secret=v,null,v=>secret=v).AddLabel(Loc.Text("~SMC190~")).AddInput(Loc.Text("~SMC129~"),portText,v=>portText=v,null,v=>portText=v).AddLabel(Loc.Text("~SMC141~")).AddLabel(Loc.Text(status)).AddButton(Loc.Text("~SMC105~"),Host).AddButton(Loc.Text("~SMC103~"),ShowChoice).Show();}
         void ShowJoin(){CustomUIManager.Window(WindowId,Loc.Text("~SMC039~"),CustomUIManager.LAYER_MENU).SetSize(680,340).Center().AddLabel(Loc.Text("~SMC151~")).AddInput(Loc.Text("~SMC135~"),inviteText,v=>inviteText=v,null,v=>inviteText=v).AddLabel(Loc.Text(status)).AddButton(Loc.Text("~SMC038~"),JoinInvite).AddButton(Loc.Text("~SMC033~"),ShowManualJoin).AddButton(Loc.Text("~SMC103~"),ShowChoice).Show();}
         void ShowManualJoin(){CustomUIManager.Window(WindowId,Loc.Text("~SMC032~"),CustomUIManager.LAYER_MENU).SetSize(650,560).Center().AddLabel(Loc.Text("~SMC036~")).AddInput(Loc.Text("~SMC035~"),address,v=>address=v,null,v=>address=v).AddLabel(Loc.Text("~SMC129~")).AddInput(Loc.Text("~SMC129~"),portText,v=>portText=v,null,v=>portText=v).AddLabel(Loc.Text("~SMC037~")).AddInput(Loc.Text("~SMC037~"),hostKey??"",v=>hostKey=v,null,v=>hostKey=v).AddLabel(Loc.Text("~SMC087~")).AddInput(Loc.Text("~SMC121~"),secret,v=>secret=v,null,v=>secret=v).AddLabel(Loc.Text(status)).AddButton(Loc.Text("~SMC040~"),Join).AddButton(Loc.Text("~SMC103~"),ShowJoin).Show();}
         void ShowHostReady(){
             hostReadyVisible=true;var window=CustomUIManager.Window(WindowId,Loc.Text("~SMC059~"),MainMenuUIController.Instance!=null?CustomUIManager.LAYER_MENU:CustomUIManager.LAYER_OVERLAY).SetSize(720,660).Center();bool steam=!lanOnly&&SteamRelay.Available&&SteamRelay.LocalId!=0;
             if(steam){window.AddLabel(Loc.Text("~SMC045~")).AddButton(Loc.Text("~SMC162~"),()=>GUIUtility.systemCopyBuffer=externalInvite.Length>0?externalInvite:localInvite);
-                window.AddLabel(Loc.Text(SteamInvite.Invited.Count==0?"~SMC188~":"~SMC027~"+SteamInvite.InvitedNames())).AddButton(Loc.Text("~SMC178~"),ShowInvites);}
+                window.AddLabel(Loc.Text("~SMC188~"));}
             window.AddLabel(Loc.Text("~SMC120~"+LocalAddress()+":"+portText));if(!steam)window.AddLabel(Loc.Text(mappingStatus==null?"~SMC049~":mappingStatus.Message));if(hostNotice.Length>0)window.AddLabel(Loc.Text(hostNotice));window.AddLabel(Loc.Text("~SMC065~"+MyName+(ConnectedNames.Length>0?"~SMC006~"+ConnectedNames:"~SMC012~")));
             if(steam){}else if(externalInvite.Length>0)window.AddLabel(Loc.Text("~SMC044~"+publicEndpoint)).AddButton(Loc.Text("~SMC160~"),()=>GUIUtility.systemCopyBuffer=externalInvite);
             else if(!lanOnly)window.AddButton(Loc.Text("~SMC070~"),()=>{if(publicAddress==null)publicAddress=new PublicAddress();});
             if(!steam)window.AddButton(Loc.Text("~SMC161~"),()=>GUIUtility.systemCopyBuffer=localInvite);window.AddLabel(Loc.Text("~SMC136~")).AddLabel(Loc.Text("~SMC113~"));
             if(MainMenuUIController.Instance!=null)window.AddButton(Loc.Text("~SMC106~"),()=>{hostReadyVisible=false;CustomUIManager.Instance.CloseWindow(WindowId);MainMenuUIController.Instance.OnNewGameClick();}).AddButton(Loc.Text("~SMC185~"),()=>{hostReadyVisible=false;CustomUIManager.Instance.CloseWindow(WindowId);MainMenuUIController.Instance.OnLoadGameClick();});
-            window.AddButton(Loc.Text("~SMC184~"),()=>{hostReadyVisible=false;CustomUIManager.Instance.CloseWindow(WindowId);}).AddButton(Loc.Text("~SMC183~"),()=>{Stop();ShowChoice();}).Show();
+            window.AddButton(Loc.Text("~SMC184~"),()=>{hostReadyVisible=false;CustomUIManager.Instance.CloseWindow(WindowId);}).AddButton(Loc.Text("~SMC183~"),()=>{Stop();CustomUIManager.Instance.CloseWindow(WindowId);if(MainMenuUIController.Instance!=null)DrawLauncher();}).Show();
         }
         // Same steps as the game's own pause menu "Main Menu" button, without its save/analytics. A friend's copy of the
         // shop is never saved: the save barriers stay active until the menu scene is up.
@@ -330,22 +341,20 @@ namespace ShopTogether {
             w.AddLabel(Loc.Text("~SMC043~"));
             w.AddButton(Loc.Text("~SMC182~"),()=>{modReport=null;CustomUIManager.Instance.CloseWindow(WindowId);}).Show();
         }
-        // Host picks which Steam friends may join without the connection code. Steam itself delivers the notice
-        // (right-click the friend in Steam, "Invite to Game"); mods are not allowed to send Steam invitations.
-        void ShowInvites(){
-            var w=CustomUIManager.Window(WindowId,Loc.Text("~SMC177~"),MainMenuUIController.Instance!=null?CustomUIManager.LAYER_MENU:CustomUIManager.LAYER_OVERLAY).SetSize(640,760).Center();
-            w.AddLabel(Loc.Text("~SMC108~"));
-            var friends=SteamInvite.OnlineFriends();if(friends.Count==0)w.AddLabel(Loc.Text("~SMC053~"));
-            foreach(var f in friends){ulong id=f.Id;bool on=SteamInvite.Invited.Contains(id);string label=(on?"~SMC028~":"~SMC179~")+f.Name+(f.InGame?"~SMC001~":"");
-                w.AddButton(Loc.Text(label),()=>{if(!SteamInvite.Invited.Remove(id)&&SteamInvite.Invited.Count<32)SteamInvite.Invited.Add(id);PlayerNames.Changed=true;ShowInvites();});}
-            w.AddButton(Loc.Text("~SMC103~"),ShowHostReady).Show();
+        void ShowStatus(){
+            if(modReport!=null&&CustomUIManager.Instance!=null){ShowModReport();return;}if(CustomUIManager.Instance==null)return;
+            var w=CustomUIManager.Window(WindowId,Loc.Text("~SMC057~"),MainMenuUIController.Instance!=null?CustomUIManager.LAYER_MENU:CustomUIManager.LAYER_OVERLAY).SetSize(500,IsClient?280:220).Center();
+            if(IsClient)w.AddLabel(Loc.Text(Ready?"~SMC239~":"~SMC240~"));
+            if(status.Length>0&&!(IsClient&&Ready))w.AddLabel(Loc.Text(status));
+            // Leaving is a deliberate click in this window, never a single misclick on the corner button.
+            if(IsClient)w.AddButton(Loc.Text("~SMC181~"),()=>{CustomUIManager.Instance.CloseWindow(WindowId);bool inShop=MainMenuUIController.Instance==null;Stop();if(inShop)ReturnToMenu();else DrawLauncher();});
+            w.AddButton(Loc.Text("~SMC182~"),()=>CustomUIManager.Instance.CloseWindow(WindowId)).Show();
         }
-        void ShowStatus(){if(modReport!=null&&CustomUIManager.Instance!=null){ShowModReport();return;}if(CustomUIManager.Instance!=null)CustomUIManager.Window(WindowId,Loc.Text("~SMC057~"),MainMenuUIController.Instance!=null?CustomUIManager.LAYER_MENU:CustomUIManager.LAYER_OVERLAY).SetSize(500,220).Center().AddLabel(Loc.Text(status)).AddButton(Loc.Text("~SMC182~"),()=>CustomUIManager.Instance.CloseWindow(WindowId)).Show();}
         float nextNames;
         void BroadcastNames(){
             if(!PlayerNames.Changed&&Time.realtimeSinceStartup<nextNames)return;PlayerNames.Changed=false;nextNames=Time.realtimeSinceStartup+5;
             var ids=new List<int>{0};var names=new List<string>{MyName};var doing=new List<int>{Activity.Current()};foreach(var p in peers)if(p.authenticated&&p.modsOk){ids.Add(p.id);names.Add(p.name);doing.Add(p.activity);}
-            var list=new NameList{ids=ids.ToArray(),names=names.ToArray(),group=PresenceGroup,activities=doing.ToArray()};PlayerNames.FromHost(list);Activity.FromHost(list);SteamInvite.Presence(true,SteamInvite.Invited.Count>0,PresenceGroup,ids.Count,MyName);byte[] bytes=Encode(list);
+            var list=new NameList{ids=ids.ToArray(),names=names.ToArray(),group=PresenceGroup,activities=doing.ToArray()};PlayerNames.FromHost(list);Activity.FromHost(list);SteamInvite.Presence(true,!lanOnly&&peers.Count<MaxFriends,PresenceGroup,ids.Count,MyName);byte[] bytes=Encode(list);
             foreach(var p in peers.ToArray())if(p.authenticated&&p.modsOk){try{p.Send(40,bytes);}catch{Leases.Disconnect(p.id);p.Dispose();peers.Remove(p);}}
         }
         // Players of one shop show up together in Steam friends lists.
@@ -355,7 +364,7 @@ namespace ShopTogether {
         internal void SendCursor(byte[] data){if(IsClient&&server!=null&&server.authenticated&&Ready)server.Send(38,data);}
         internal void BroadcastCursors(byte[] data){foreach(var p in peers.ToArray())if(p.authenticated&&p.modsOk&&p.sceneReady){try{p.Send(39,data);}catch{Leases.Disconnect(p.id);p.Dispose();peers.Remove(p);}}}
         internal bool ShowCursors{get{return Ready&&(IsHost||IsClient)&&EmporiumEntry.Instance!=null;}}
-        void OnGUI(){Cursors.Draw(this);if(ShowCursors)Activity.Draw(IsHost?0:PlayerId);if(IsHost&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC089~")))ShowHostReady();if(IsClient&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC181~"))){Stop();ReturnToMenu();}
+        void OnGUI(){Cursors.Draw(this);if(ShowCursors)Activity.Draw(IsHost?0:PlayerId);if(IsHost&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC089~")))ShowHostReady();if(IsClient&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC238~")))ShowStatus();
             if(IsClient&&Ready&&HostPhase.Away){GUI.Box(new Rect(Screen.width/2-220,Screen.height/2-40,440,80),Loc.Text(""));GUI.Label(new Rect(Screen.width/2-200,Screen.height/2-25,400,50),Loc.Text(HostPhase.Text));}
         }
     }

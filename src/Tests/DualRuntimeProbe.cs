@@ -175,6 +175,7 @@ namespace ShopTogether {
             var wait=Wait(()=>MainMenuUIController.Instance!=null,"host main menu",90);while(wait.MoveNext())yield return wait.Current;
             Require(!Screen.fullScreen,"host runs in windowed mode");
             if(Argument("--smc-suite")==null)Connection.ProbeBackpressure();
+            if(Argument("--smc-suite")=="ui1319"){var menu=MainMenu1319Host(root);while(menu.MoveNext())yield return menu.Current;}
             if(Argument("--smc-suite")==null){var routerCheck=RouterCheck();while(routerCheck.MoveNext())yield return routerCheck.Current;}
             if(Argument("--smc-suite")==null){var tlsCheck=TlsCheck();while(tlsCheck.MoveNext())yield return tlsCheck.Current;}
             NewGameData.Instance.skipIntro=true;NewGameData.Instance.disableTutorialHint=true;MainMenuUIController.Instance.StartNewGameClick();
@@ -185,7 +186,7 @@ namespace ShopTogether {
             {Invite invite;string inviteError;Require(InviteCode.TryDecode(code,out invite,out inviteError),"invite decodes");
              if(SteamRelay.Available&&SteamRelay.LocalId!=0){Require(invite.SteamId==SteamRelay.LocalId,"invite carries this host's Steam account for friends outside the network");ulong parsed;Require(SteamInvite.TryParse("+shoptogether "+SteamRelay.LocalId,out parsed)&&parsed==SteamRelay.LocalId&&!SteamInvite.TryParse("+connect 1.2.3.4:7777",out parsed)&&!SteamInvite.TryParse("+shoptogether 1",out parsed),"Steam friends-list join string: only a person's Steam account is accepted");bool self=false;try{SteamRelay.Connect(SteamRelay.LocalId);}catch(InvalidOperationException){self=true;}Require(self,"Steam refuses joining your own account");}
              else Debug.Log("[SMC NOTE] Steam not running in this test; Steam relay checks skipped");}
-            if(SteamRelay.Available&&SteamRelay.LocalId!=0){yield return new WaitForSecondsRealtime(1);Require(!SteamInvite.Advertising,"room is not open to Steam friends until the host invites someone");SteamInvite.Invited.Add(76561197960287930UL);PlayerNames.Changed=true;wait=Wait(()=>SteamInvite.Advertising,"inviting a friend makes the room joinable from Steam",10);while(wait.MoveNext())yield return wait.Current;SteamInvite.Invited.Clear();PlayerNames.Changed=true;}
+            if(SteamRelay.Available&&SteamRelay.LocalId!=0){PlayerNames.Changed=true;wait=Wait(()=>SteamInvite.Advertising,"a Steam room is joinable by Steam friends without a separate invite step",10);while(wait.MoveNext())yield return wait.Current;}
             Debug.Log("[SMC-INTERNAL-INVITE] "+code);Debug.Log("[SMC CONTROL] "+((IPEndPoint)control.Client.LocalEndPoint).Port);
             wait=Wait(()=>Received("JOINED"),"real client authenticated and applied host state",100);while(wait.MoveNext())yield return wait.Current;
             string limit=Argument("--smc-throttle");if(!string.IsNullOrEmpty(limit)){int kbps;if(!int.TryParse(limit,out kbps)||kbps<1)throw new InvalidOperationException("Invalid test rate");root.ProbeLimitUpload(kbps*125);Debug.Log("[SMC PASS] direct host upload is limited to "+kbps+" kbit/s for the outing test");}

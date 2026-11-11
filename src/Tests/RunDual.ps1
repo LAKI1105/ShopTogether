@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled')]
+    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
     [string]$GamePath=$env:PROBABLY_STOLEN_PATH
 )
@@ -9,7 +9,7 @@ if(-not $GamePath){$GamePath='D:\SteamLibrary\steamapps\common\Probably Stolen'}
 $game=[IO.Path]::GetFullPath($GamePath)
 $workshop=Join-Path (Split-Path (Split-Path $game -Parent) -Parent) 'workshop\content\4348910\3837477869'
 if(Get-Process 'Probably Stolen' -ErrorAction SilentlyContinue){throw 'Close the game before running the isolated test.'}
-if($Suite -contains 'all'){$Suite=@('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled')}
+if($Suite -contains 'all'){$Suite=@('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319')}
 $workshopDll=Join-Path $workshop 'ShopTogether.dll'
 $workshopHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $workshopDll).Hash
 $scratchRoot=[IO.Path]::GetFullPath((Join-Path (Split-Path $project -Parent) 'work'))
@@ -27,7 +27,8 @@ function Read-TestLog([string]$path){
 function Start-TestGame([string]$role,[string]$part,[string[]]$extra){
     $log=Join-Path $scratch ("smc-$role.log")
     $arguments=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$log+'"'),'--smc-role',$role)+$(if($part -ne 'core'){@('--smc-suite',$part)}else{@()})+$extra
-    return Start-Process -FilePath (Join-Path $isolated 'Probably Stolen.exe') -WorkingDirectory $isolated -Environment @{SteamAppId='4348910';SteamGameId='4348910';SHOPTOGETHER_PROBE_FOLDER=$probeFolder} -ArgumentList $arguments -WindowStyle Hidden -PassThru
+    # The child starts with the private desktop explicitly assigned; there is no visible-desktop fallback.
+    return $privateDesktop.Start((Join-Path $isolated 'Probably Stolen.exe'),($arguments -join ' '),$isolated)
 }
 function Stop-TestProcesses($processes){
     foreach($process in $processes){
@@ -37,10 +38,15 @@ function Stop-TestProcesses($processes){
     }
 }
 $started=@()
+$privateDesktop=$null
 try{
     & (Join-Path $PSScriptRoot 'PrepareIsolatedGame.ps1') -GamePath $game -Target $isolated
     & (Join-Path $project 'Build.ps1') -Probe -OutputPath (Join-Path $probeFolder 'ShopTogether.dll') -GamePath $game
     Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $probeFolder
+    Add-Type -Path (Join-Path $PSScriptRoot 'PrivateDesktop.cs')
+    $privateDesktop=[ShopTogetherTestDesktop]::new()
+    $env:SteamAppId='4348910';$env:SteamGameId='4348910';$env:SHOPTOGETHER_PROBE_FOLDER=$probeFolder
+    Write-Output 'PRIVATE_DESKTOP_READY'
     foreach($part in $Suite){
         $started=@();$hostText='';$clientText=''
         foreach($role in @('host','client')){$log=Join-Path $scratch ("smc-$role.log");if(Test-Path -LiteralPath $log){Remove-Item -LiteralPath $log -Force}}
@@ -70,6 +76,7 @@ try{
     throw
 }finally{
     Stop-TestProcesses $started
+    if($null -ne $privateDesktop){$privateDesktop.Dispose()}
     $resolved=[IO.Path]::GetFullPath($scratch)
     if(-not $resolved.StartsWith($scratchRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Refusing cleanup outside the test workspace'}
     if(Test-Path -LiteralPath $resolved){Remove-Item -LiteralPath $resolved -Recurse -Force}
