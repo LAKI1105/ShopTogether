@@ -1,0 +1,16 @@
+bin/
+obj/
+gen/
+out/
+out-probe/
+work/
+*.dll
+*.exe
+*.pdb
+*.log
+*.zip
+*.png
+*.jpg
+*.jpeg
+.vs/
+Localize.ps1
