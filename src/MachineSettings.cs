@@ -141,16 +141,24 @@ namespace ShopTogether {
             return null;
         }
 
-        static void Prefix(MachineryButton __instance, ref Press __state) {
+        static bool Prefix(MachineryButton __instance, ref Press __state) {
             __state = null;
             var session = Connection.Current;
             bool user = LocalControl.Focused;
             if (user) { LocalControl.depth++; MachineSettings.Input++; }
-            if (session == null || !ReplicaSession.IsReplica || WorldReplica.Applying) { __state = new Press { user = user }; return; }
+            if (session == null || !ReplicaSession.IsReplica || WorldReplica.Applying) { __state = new Press { user = user }; return true; }
             var item = Owner(__instance, session);
             int index = item != null ? Buttons(item.contentWindow).IndexOf(__instance) : -1;
+            // Starting fermentation mutates several tags before it reaches any blocked inventory write.
+            // Execute the whole action on the host, rather than briefly running the recipe on the guest.
+            if (item != null && index >= 0 && item.IsTag("WINE_CONTAINER_TAG")) {
+                __state = new Press { user = user };
+                if (user) RemoteActions.Forward(RemoteActions.Adapter("PressButton", 3), null, new object[] { item, index, __instance.text ?? "" });
+                return false;
+            }
             __state = new Press { user = user, item = index >= 0 ? item : null, index = index, label = __instance.text ?? "", blocked = LocalControl.BlockedWrites, sent = Connection.Outgoing };
             if (__state.item != null) MachineSettings.Hold++;
+            return true;
         }
 
         static Exception Finalizer(Exception __exception, Press __state) {

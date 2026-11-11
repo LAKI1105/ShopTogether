@@ -95,6 +95,7 @@ namespace ShopTogether {
             Add(M(() => typeof(MachineFeedDispenser).GetMethod("EmptyStorage", BF)));
             Add(M(() => typeof(HopperHelper).GetMethod("RunAndRecord", BF)));
             Add(M(() => typeof(ScratcherHelper).GetMethod("MarkSymbolScratched", BF)));
+            AddAdapter(M(() => typeof(ScratchInteraction).GetMethod("Start", BF)));
             Add(M(() => typeof(StorageExpansionHelper).GetMethod("SetTabName", BF)));
             Add(M(() => typeof(VendingMachineHelper).GetMethod("TransferCashToPlayer", BF)));
             Add(M(() => typeof(VendingMachineHelper).GetMethod("UnlockVendingMachine", BF)));
@@ -161,6 +162,8 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(ShopActions).GetMethod("SetAppraisalAllowed", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("ApplyPerk", BF)));
             AddAdapter(M(() => typeof(OutingSupplies).GetMethod("UseBandage", BF)));
+            AddAdapter(M(() => typeof(PanelRelay).GetMethod("ConfirmPanel", BF)));
+            AddAdapter(M(() => typeof(PanelRelay).GetMethod("CancelPanel", BF)));
             // The shop phone: one phone, calls run on the host.
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("Pick", BF)));
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("HangUp", BF)));
@@ -221,8 +224,8 @@ namespace ShopTogether {
 
         /// <summary>Validates and executes a friend's action. Returns a reason when refused.</summary>
         internal static string Execute(Connection session, int owner, RemoteCall call) {
-            CurrentOwner = owner; PendingNote = null;
-            try { return Run(session, owner, call); } finally { CurrentOwner = -1; }
+            CurrentOwner = owner; PendingNote = null; PanelRelay.Owner = owner;
+            try { return Run(session, owner, call); } finally { CurrentOwner = -1; PanelRelay.Owner = 0; PanelRelay.SourceItem = null; PanelRelay.SourceIsActivation = false; }
         }
         static string Run(Connection session, int owner, RemoteCall call) {
             Build();
@@ -279,11 +282,38 @@ namespace ShopTogether {
                 var at = session.World.Address(((GameItem)target).parentInventory); if(at != null && !OutingKits.MayUse(owner,at.root)) return "~SMC217~";
                 if (id == 0 || !session.Leases.Available(owner, id, now)) return "~SMC096~";
             }
+            if (e.Method.DeclaringType == typeof(ScratcherHelper) && e.Method.Name == "MarkSymbolScratched") {
+                var ticket = args[0] as GameItem; int slot = (int)args[1];
+                if (ticket == null || !ticket.IsTag("SCRATCHER_TAG") || !GeneralHelper.IsItemOwned(ticket) || slot < 1 || slot > 3 || ticket.GetTagReadonly("SCRATCHER_STATE" + slot).GetInt() == 1) return "~SMC171~";
+            }
+            foreach (var arg in args) if (arg is GameItem) { PanelRelay.SourceItem = (GameItem)arg; break; }
             try { e.Method.Invoke(target, args); }
             catch (TargetInvocationException error) { Debug.LogWarning("[ShopTogether] remote " + e.Key + " failed on host: " + error.InnerException); return "~SMC085~"; }
             Forwarded++;
             return null;
         }
+    }
+
+    // The host owns the ticket's value and the shop's started-ticket counter. The guest only draws the scratch mask.
+    internal static class ScratchInteraction {
+        static readonly Dictionary<int,float> requested = new Dictionary<int,float>();
+        internal static void Reset() { requested.Clear(); }
+        internal static void Start(GameItem item) {
+            if (item == null || item.parentInventory == null || !item.IsTag("SCRATCHER_TAG") || !item.IsTag("SCRATCHER_NEW_TAG") || !GeneralHelper.IsItemOwned(item)) return;
+            item.DisableTag("SCRATCHER_NEW_TAG"); item.unitValue = 0L; item.RemoveGameItemType("LOTTERY"); LotteryHelper.OnScratcherStarted();
+        }
+        internal static void Request() {
+            var s = Connection.Current; var ui = ScratcherUIManager.Instance; var item = ui != null ? ui.currentActiveScratcherItem : null;
+            if (s == null || !s.IsClient || !s.Ready || item == null || !item.IsTag("SCRATCHER_NEW_TAG") || !LocalControl.UserAction) return;
+            int id = s.World.Id(item); if (id <= 0) return; float next;
+            if (requested.TryGetValue(id, out next) && Time.realtimeSinceStartup < next) return;
+            requested[id] = Time.realtimeSinceStartup + .5f;
+            RemoteActions.Forward(RemoteActions.Adapter("Start", 1), null, new object[] { item });
+        }
+    }
+    [HarmonyPatch(typeof(ScratchInput), "OnAnyScratch")]
+    internal static class ClientScratchStarted {
+        static bool Prefix() { if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true; ScratchInteraction.Request(); return false; }
     }
 
     /// <summary>Intercepts the forwarded functions on a friend's machine.</summary>

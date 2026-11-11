@@ -29,6 +29,15 @@ namespace ShopTogether {
         }
         bool StaleParents(){foreach(var p in Items){var item=p.Value;if(item==null||item.parentInventory==null||!addresses.ContainsKey(item.parentInventory))return true;}return false;}
         internal static bool Applying;
+        /// <summary>
+        /// Friend: placing or removing an item runs the game's container callbacks (feed dispensers blend what is
+        /// put in, traps and cages react, machines spawn or tag things). The host already ran them and sent their
+        /// results, so while one of the host's moves is applied here only that move itself may change the world:
+        /// anything the callbacks try to move, spawn, destroy or tag is skipped. Display updates still run.
+        /// </summary>
+        internal static int Sandbox; internal static GameItem SandboxItem; internal static bool SandboxMovePermit;
+        static bool Placed(GameItem item,Func<bool> move){var was=SandboxItem;bool permit=SandboxMovePermit;Sandbox++;SandboxItem=item;SandboxMovePermit=true;try{return move();}finally{Sandbox--;SandboxItem=was;SandboxMovePermit=permit;}}
+        static void Remove(GameItem item){if(item==null)return;var inv=item.parentInventory;if(inv!=null)Placed(item,()=>inv.Expel(item));item.Destroy();}
         internal void Reset(){structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
         internal int Id(GameItem item){int id;return item!=null&&itemIds.TryGetValue(item,out id)?id:0;}
         internal void Prime(WorldDelta seed){
@@ -161,8 +170,8 @@ namespace ShopTogether {
                 Presentation.ApplyCustomer(delta.presentation);var incoming=new HashSet<int>();foreach(var r in delta.items){if(r.id<=0||r.node==null||!incoming.Add(r.id)||r.parent==null)throw new InvalidOperationException("~SMC100~");}
                 if(!replicaMode){if(!delta.full)throw new InvalidOperationException("~SMC118~");itemIds.Clear();BindInitial(delta);replicaMode=true;}
                 Index();
-                if(delta.full){foreach(var p in new List<KeyValuePair<int,GameItem>>(Items))if(!incoming.Contains(p.Key))p.Value.Destroy();Index();}
-                else if(delta.removed!=null)foreach(int id in delta.removed){GameItem item;if(Items.TryGetValue(id,out item)){item.Destroy();Items.Remove(id);Versions.Remove(id);}}
+                if(delta.full){foreach(var p in new List<KeyValuePair<int,GameItem>>(Items))if(!incoming.Contains(p.Key))Remove(p.Value);Index();}
+                else if(delta.removed!=null)foreach(int id in delta.removed){GameItem item;if(Items.TryGetValue(id,out item)){Remove(item);Items.Remove(id);Versions.Remove(id);}}
                 foreach(var r in delta.items){GameItem item;if(!Items.TryGetValue(r.id,out item)){
                         r.node.childItems=new List<long>();r.node.childItemInventoryNode=new List<int>();
                         item=SaveManager.DecodeNodes(new List<SaveItemNode>{r.node});if(item==null)throw new InvalidOperationException("~SMC119~"+r.node.identifier);Items[r.id]=item;itemIds[item]=r.id;
@@ -177,7 +186,7 @@ namespace ShopTogether {
                 var visited=new HashSet<GraphNodeStorage>();foreach(var root in Roots())Walk(root.Value,root.Key,0,new int[]{0},visited);
                 foreach(var r in delta.items){GameItem item=Items[r.id];Walk(item,r.parent.root,r.id,new int[]{0},visited);}
                 if(delta.grids!=null)foreach(var g in delta.grids){GameInventory inv;if(g.width<1||g.height<1||g.width>512||g.height>512)throw new InvalidOperationException("~SMC112~");if(Inventories.TryGetValue(g.address.Key,out inv)){var grid=inv as GameGridInventory;if(grid!=null&&(grid.inventoryShape.width!=g.width||grid.inventoryShape.height!=g.height))grid.SetShape(g.width,g.height);}}
-                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv))throw new InvalidOperationException("~SMC069~");if(item.parentInventory!=inv){if(item.parentInventory!=null)item.parentInventory.Expel(item);if(!inv.UncheckedAccept(item))throw new InvalidOperationException("~SMC142~");}item.Validate();}
+                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv))throw new InvalidOperationException("~SMC069~");if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item)))throw new InvalidOperationException("~SMC142~");}item.Validate();}
                 // Tags the game reads (custom names, conditions...) live in each item's derived state, which the game
                 // recomputes from its own and its children's state. Recompute it for every applied item and its containers.
                 var derived=new HashSet<GameItem>();foreach(var r in delta.items){GameItem item;if(!Items.TryGetValue(r.id,out item))continue;int limit=64;while(item!=null&&limit-->0&&derived.Add(item)){var inv=item.parentInventory;item=inv==null?null:inv.GetParentItem() as GameItem;}}

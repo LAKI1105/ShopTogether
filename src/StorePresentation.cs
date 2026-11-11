@@ -14,6 +14,7 @@ namespace ShopTogether {
         public bool hasDialog;
         public ChoiceView[] choices;
         public int negotiatedItem;
+        public int clientsLeft;
     }
     // Only resolved customer values and text cross the wire. No delegates or dialogue actions are serialized.
     internal sealed class StorePresentation {
@@ -21,20 +22,23 @@ namespace ShopTogether {
         StoreClientInstance lastCustomer;Dialogue lastDialog;string lastLine;long customerSerial,dialogSerial;
         long appliedCustomer=-1,appliedDialog=-1;
         string appliedSprite;
-        static List<FieldInfo> Fields(){var result=new List<FieldInfo>();foreach(var field in typeof(StoreClient).GetFields(BindingFlags.Public|BindingFlags.Instance)){var t=field.FieldType;if(t.IsPrimitive||t.IsEnum||t==typeof(string)||t==typeof(List<string>)||t==typeof(double?))result.Add(field);}return result;}
+        static List<FieldInfo> Fields(){var result=new List<FieldInfo>();foreach(var field in typeof(StoreClient).GetFields(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance)){if(field.Name.StartsWith("<",StringComparison.Ordinal))continue;var t=field.FieldType;if(t.IsPrimitive||t.IsEnum||t==typeof(string)||t==typeof(List<string>)||t==typeof(double?))result.Add(field);}return result;}
         internal static GameInventory CustomerInventory(){var customer=PlayerStore.Instance.currentClientInstance;return customer==null?null:ModReflect.Get<GameGridInventory>(customer,"gridInv");}
         internal StoreView Capture(WorldReplica world){
             var instance=PlayerStore.Instance.currentClientInstance;if(instance!=lastCustomer){lastCustomer=instance;customerSerial++;}
             var ui=DialogUIManager.Instance;var dialog=ui==null?null:ui.currentDialog;
-            var result=new StoreView{customer=instance==null?0:customerSerial,hasDialog=dialog!=null,negotiatedItem=world.Id(PlayerStore.Instance.currentNegociatedItem)};
+            var manager=PlayerStore.Instance.storeClientManager;
+            var result=new StoreView{customer=instance==null?0:customerSerial,hasDialog=dialog!=null,negotiatedItem=world.Id(PlayerStore.Instance.currentNegociatedItem),clientsLeft=manager!=null&&manager.clientStack!=null?manager.clientStack.Count:0};
             if(instance!=null){var blueprint=instance.GetClientBlueprint();result.customerFields=new Dictionary<string,string>();foreach(var field in fields)result.customerFields[field.Name]=JsonConvert.SerializeObject(ModReflect.Get(blueprint,field.Name));result.sprite=blueprint.spriteName;}
             if(dialog!=null){result.title=dialog.title;result.text=dialog.plainText;var choices=new List<ChoiceView>();if(dialog.choices!=null)for(int i=0;i<dialog.choices.Count;i++){var line=dialog.choices[i].Item2;choices.Add(new ChoiceView{title=line.title,text=line.plainText,enabled=dialog.IsChoiceEnabledAt(i)});}result.choices=choices.ToArray();}
             string lineSignature=JsonConvert.SerializeObject(new object[]{result.title,result.text,result.choices});if(dialog!=lastDialog||lineSignature!=lastLine){lastDialog=dialog;lastLine=lineSignature;dialogSerial++;}result.dialog=dialogSerial;return result;
         }
         internal bool CurrentDialogue(long revision){return revision==dialogSerial&&DialogUIManager.Instance!=null&&DialogUIManager.Instance.currentDialog==lastDialog;}
         internal long DialogRevision {get{return appliedDialog;}}
+        /// <summary>Friend: customers still waiting today (the queue itself only exists on the host).</summary>
+        internal static int ClientsLeft;
         internal void ApplyCustomer(StoreView view){
-            if(view==null)return;
+            if(view==null)return;ClientsLeft=Math.Max(0,Math.Min(1000,view.clientsLeft));
             bool changed=view.customer!=appliedCustomer;
             if(changed){
                 var old=CustomerInventory();if(old!=null)foreach(var item in GraphUtils.FindChildrenType<GameItem>(old,null,null))item.Destroy();
@@ -65,5 +69,27 @@ namespace ShopTogether {
     internal static class ReplicaCustomerSimulation {
         static IEnumerable<MethodBase> TargetMethods(){yield return AccessTools.Method(typeof(StoreClientMono),"OnArrived");yield return AccessTools.Method(typeof(StoreClientMono),"OnLeft");yield return AccessTools.Method(typeof(StoreClientMono),"PlayIdleForCurrentClient");}
         static bool Prefix(){return !ReplicaSession.ClientStore;}
+    }
+    /// <summary>Friend: the counter of customers left reads the host's queue size.</summary>
+    [HarmonyPatch(typeof(StoreClientCounter),"Update")]
+    internal static class ReplicaClientCounter {
+        static bool Prefix(StoreClientCounter __instance){
+            if(!ReplicaSession.ClientStore||PlayerStore.Instance==null)return true;
+            var tmp=__instance.clientCounterTMP;if(tmp==null)return false;
+            var state=PlayerStore.Instance.storeState;
+            if(state==PlayerStore.StoreState.OPEN)tmp.text=StorePresentation.ClientsLeft.ToString();
+            else if(state==PlayerStore.StoreState.CLOSED||state==PlayerStore.StoreState.MORNING)tmp.text="";
+            return false;
+        }
+    }
+    [HarmonyPatch(typeof(StoreClientCounter),"GetTooltip")]
+    internal static class ReplicaClientCounterTooltip {
+        // The tooltip only counts the queue: show the host's count by lending it a list of that length.
+        static void Prefix(out object[] __state){
+            __state=null;var manager=PlayerStore.Instance!=null?PlayerStore.Instance.storeClientManager:null;
+            if(!ReplicaSession.ClientStore||manager==null)return;
+            __state=new object[]{manager.clientStack};manager.clientStack=new List<StoreClient>(new StoreClient[StorePresentation.ClientsLeft]);
+        }
+        static void Finalizer(object[] __state){var manager=PlayerStore.Instance!=null?PlayerStore.Instance.storeClientManager:null;if(__state!=null&&manager!=null)manager.clientStack=(List<StoreClient>)__state[0];}
     }
 }

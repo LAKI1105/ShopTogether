@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.10";
+        internal const string BuildVersion="1.3.14";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -134,7 +134,7 @@ namespace ShopTogether {
             if(publicAddress!=null&&publicAddress.IsCompleted){string ip=publicAddress.Value;publicAddress.Dispose();publicAddress=null;IPAddress parsed;if(IsHost&&IPAddress.TryParse(ip,out parsed)&&InviteCode.IsPublic(parsed)){if(routerMapping!=null){routerMapping.Dispose();routerMapping=null;}RefreshInvites(IPAddress.Parse(LocalAddress()),new IPEndPoint(parsed,int.Parse(portText)));mappingStatus=new MappingStatus{Message="~SMC071~"};}else status="~SMC144~";if(hostReadyVisible)ShowHostReady();}
             if(IsHost&&routerMapping!=null&&mappingStatus!=routerMapping.Current){mappingStatus=routerMapping.Current;RefreshInvites(mappingStatus.Local??IPAddress.Parse(LocalAddress()),mappingStatus.External);if(hostReadyVisible)ShowHostReady();}
             try{
-                if(IsHost||IsClient){SteamRelay.Poll();OutingSupplies.Tick();NativeActions.Sweep();PanelRelay.Tick(this);}
+                if(IsHost||IsClient){SteamRelay.Poll();OutingSupplies.Tick();NativeActions.Sweep();PanelRelay.Tick(this);MachineDisplay.Tick(this);}
                 if(IsHost){
                     SteamRelay.SteamChannel arrival;while((arrival=SteamRelay.NextArrival())!=null){if(peers.Count>=MaxFriends){arrival.Dispose();continue;}peers.Add(new Peer{channel=arrival,id=++nextPlayer,deadline=Time.realtimeSinceStartup+20});Debug.Log("[ShopTogether] friend connecting through Steam");}
                     if(listener.Poll(0,SelectMode.SelectRead)){var incoming=listener.Accept();if(peers.Count>=MaxFriends||!admissions.Admit(((IPEndPoint)incoming.RemoteEndPoint).Address.ToString(),Time.realtimeSinceStartup))incoming.Close();else{var peer=new Peer{socket=incoming,id=++nextPlayer,deadline=Time.realtimeSinceStartup+15};peers.Add(peer);peer.channel=new SecureChannel(incoming,identity.Certificate,null);}}

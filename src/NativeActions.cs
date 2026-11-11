@@ -62,6 +62,7 @@ namespace ShopTogether {
                 if(request.kind==RequestKind.ItemAction){
                     if(request.items.Length<1||request.items.Length>2)return false;
                     GameItem item=session.World.Items[request.items[0]];
+                    PanelRelay.SourceItem=item;PanelRelay.SourceIsActivation=(ItemOperation)request.operation==ItemOperation.Activate;
                     if(!session.Leases.Owns(owner,session.World.Id(item),request.lease,now))return false;
                     switch((ItemOperation)request.operation){
                         case ItemOperation.Activate:if(!item.MayActivateSlotItem()||!item.CanActivateSlotItem())return false;item.ActivateSlotItem();return true;
@@ -86,7 +87,7 @@ namespace ShopTogether {
                     }
                 }
                 return false;
-            } finally {Executing=false;PanelRelay.Owner=0;}
+            } finally {Executing=false;PanelRelay.Owner=0;PanelRelay.SourceItem=null;PanelRelay.SourceIsActivation=false;}
         }
         static bool Reject(string reason){
 #if LAN_PROBE
@@ -148,11 +149,11 @@ namespace ShopTogether {
     internal static class CloseLocalContainer {static void Postfix(PixelWindow __instance){NativeActions.Unhold(__instance);}}
     [HarmonyPatch(typeof(SlotMarker),"TryAcceptOnce")]
     internal static class ClientPlace {
-        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,int __0,ref int __result){if(!NativeActions.Active)return true;var s=NativeActions.Session;if(s.IsHost)return s.Leases.Available(0,s.World.Id(__instance.item),Time.realtimeSinceStartup);if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__0);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
+        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,int __0,ref int __result){if(PanelRelay.BuildingCratePreview&&PanelRelay.IsCratePreview(__instance.inventory,__instance.item))return true;if(!NativeActions.Active)return true;var s=NativeActions.Session;if(s.IsHost)return s.Leases.Available(0,s.World.Id(__instance.item),Time.realtimeSinceStartup);if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__0);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
     }
     [HarmonyPatch(typeof(SlotMarker),"AcceptUnchecked")]
     internal static class ClientPlaceUnchecked {
-        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,ref int __result){if(!NativeActions.Active)return true;var s=NativeActions.Session;if(s.IsHost)return s.Leases.Available(0,s.World.Id(__instance.item),Time.realtimeSinceStartup);if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__instance.numTransfer);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
+        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,ref int __result){if(PanelRelay.BuildingCratePreview&&PanelRelay.IsCratePreview(__instance.inventory,__instance.item))return true;if(!NativeActions.Active)return true;var s=NativeActions.Session;if(s.IsHost)return s.Leases.Available(0,s.World.Id(__instance.item),Time.realtimeSinceStartup);if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__instance.numTransfer);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
     }
     [HarmonyPatch]
     internal static class ClientItemAction {

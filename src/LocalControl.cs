@@ -25,6 +25,8 @@ namespace ShopTogether {
         static IEnumerable<MethodBase> TargetMethods(){
             foreach(var method in typeof(InputActionHandler).GetMethods(BindingFlags.Public|BindingFlags.Instance|BindingFlags.DeclaredOnly))if(method.Name=="UpdatePress"||method.Name=="UpdateRelease"||method.Name=="UpdateMouseMove"||method.Name=="UpdateMouseScroll"||method.Name=="UpdateUpdate")yield return method;
             yield return AccessTools.Method(typeof(UnityEngine.UI.Button),"Press");
+            // Scratching is processed during the UI component's Update while the mouse is held.
+            yield return AccessTools.Method(typeof(ScratchInput),"Update");
             // Shop furniture clicked with the mouse (bell, shotgun, vending machines…) is a player action too.
             foreach(var name in new[]{"HandleClick","OnPointerUp","OnDoubleClick"}){var m=AccessTools.Method(typeof(Interactable),name);if(m!=null)yield return m;}
         }
@@ -33,6 +35,7 @@ namespace ShopTogether {
         static bool IsClick(string name){return name=="UpdatePress"||name=="UpdateRelease"||name=="Press"||name=="HandleClick"||name=="OnPointerUp"||name=="OnDoubleClick";}
         [HarmonyPriority(Priority.First)] static bool Prefix(MethodBase __originalMethod,ref int __state){
             if(ReplicaSession.ClientStore&&!LocalControl.Focused&&__originalMethod.Name!="UpdateUpdate")return false;
+            if(__originalMethod.DeclaringType==typeof(ScratchInput)&&!UnityEngine.Input.GetMouseButton(0))return true;
             __state=0;if(LocalControl.Focused){LocalControl.depth++;__state=1;if(IsClick(__originalMethod.Name)){MachineSettings.Input++;__state=2;}}return true;
         }
         static Exception Finalizer(Exception __exception,int __state){if(__state>0)LocalControl.depth--;if(__state==2&&MachineSettings.Input>0)MachineSettings.Input--;return __exception;}
@@ -55,12 +58,28 @@ namespace ShopTogether {
             yield return AccessTools.Method(typeof(GameSlotInventory),"UncheckedAccept");yield return AccessTools.Method(typeof(GameSlotInventory),"Expel");
             yield return AccessTools.Method(typeof(GameCharacterRaidInventory),"UncheckedAccept");yield return AccessTools.Method(typeof(GameCharacterRaidInventory),"Expel");
         }
-        [HarmonyPriority(Priority.Last)] static bool Prefix(ref bool __result){if(LocalControl.AllowWorldWrite())return true;__result=false;return false;}
+        [HarmonyPriority(Priority.Last)] static bool Prefix(object __instance,GameItem __0,MethodBase __originalMethod,ref bool __result){
+            if(WorldReplica.Sandbox>0){if(__0!=null&&__0==WorldReplica.SandboxItem&&WorldReplica.SandboxMovePermit){WorldReplica.SandboxMovePermit=false;return true;}__result=false;return false;}
+            if(PanelRelay.IsCratePreview(__instance as GameInventory,__0)&&(__originalMethod.Name=="Expel"||PanelRelay.BuildingCratePreview))return true;
+            if(LocalControl.AllowWorldWrite())return true;__result=false;return false;
+        }
+    }
+    // The feed dispenser schedules its blend for a later frame, after the apply sandbox has ended.
+    // Only the host may schedule that game-logic work; its result is replicated back to guests.
+    [HarmonyPatch(typeof(MachineFeedDispenser), "OnItemInserted")]
+    internal static class ReplicaFeedBlendBarrier {
+        static bool Prefix(){return !ReplicaSession.ClientStore||WorldReplica.Sandbox==0;}
+    }
+    // Decoding calls the lottery factory before restoring the host's saved tags. Do not draw a
+    // new number or alter the guest's lottery history while reconstructing that host item.
+    [HarmonyPatch(typeof(LotteryHelper), "InitLotteryTicket")]
+    internal static class ReplicaLotteryFactoryBarrier {
+        static bool Prefix(){return !(ReplicaSession.ClientStore&&WorldReplica.Applying&&SaveManager.IsDecoding);}
     }
     [HarmonyPatch(typeof(GameItem),"Create")]
-    internal static class ReplicaSpawnBarrier {static bool Prefix(ref GameItem __result){if(LocalControl.AllowWorldWrite())return true;__result=null;return false;}}
+    internal static class ReplicaSpawnBarrier {static bool Prefix(ref GameItem __result){if(WorldReplica.Sandbox==0&&LocalControl.AllowWorldWrite())return true;__result=null;return false;}}
     [HarmonyPatch(typeof(GameItemElement),"Destroy")]
-    internal static class ReplicaDestroyBarrier {static bool Prefix(){return LocalControl.AllowWorldWrite();}}
+    internal static class ReplicaDestroyBarrier {static bool Prefix(GameItemElement __instance){return WorldReplica.Sandbox==0&&(PanelRelay.IsCratePreview(__instance.parentInventory,__instance)||LocalControl.AllowWorldWrite());}}
     [HarmonyPatch]
     internal static class ReplicaItemDataBarrier {
         static readonly HashSet<string> data=new HashSet<string>{"set_state","set_modifiedState","set_shape","set_modifiedShape","set_unitCount","set_uniqueId","set_unitBaseValue","set_unitValue","set_lateUnitValue","set_backupUnitValue","set_name","set_shortDescription","set_flavorText"};

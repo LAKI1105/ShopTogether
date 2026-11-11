@@ -37,6 +37,7 @@ namespace ShopTogether {
   static IEnumerator GroupCheck(Connection root){
    int count=int.Parse(Argument("--smc-group")),index=int.Parse(Argument("--smc-index"));bool host=index==0;
    var wait=Wait(()=>MainMenuUIController.Instance!=null,"group main menu",120);while(wait.MoveNext())yield return wait.Current;
+   Require(!Screen.fullScreen,"group player runs in windowed mode");
    AccessTools.Field(typeof(Connection),"playerName").SetValue(null,"SMC Player "+index);
    if(host){NewGameData.Instance.saveSlot=-777;NewGameData.Instance.saveFile=Argument("--smc-save");NewGameData.Instance.isLoadFromMainMenu=true;NewGameData.Instance.skipIntro=true;NewGameData.Instance.disableTutorialHint=true;MainMenuUIController.Instance.StartNewGameClick();
     wait=Wait(()=>EmporiumEntry.Instance!=null&&ItemMouseDragHandler.current!=null&&StoreStation.Instance!=null,"day70 store loaded",150);while(wait.MoveNext())yield return wait.Current;

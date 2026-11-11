@@ -9,6 +9,7 @@ namespace ShopTogether {
     internal static class AutoPlaceRequest {
         static MethodBase TargetMethod(){return AccessTools.Method(typeof(GraphUtils),"TryAcceptAll",new[]{typeof(GraphNodeStorage),typeof(GameItem),typeof(int)});}
         [HarmonyPriority(Priority.First)] static bool Prefix(GraphNodeStorage __0,GameItem __1,int __2,ref int __result){
+            if(PanelRelay.BuildingCratePreview&&PanelRelay.IsCratePreview(__0 as GameInventory,__1))return true;
             if(!NativeActions.Active)return true;var session=NativeActions.Session;int id=session.World.Id(__1);
             if(session.IsHost)return session.Leases.Available(0,id,Time.realtimeSinceStartup);
             __result=0;if(!LocalControl.UserAction||id<=0)return false;

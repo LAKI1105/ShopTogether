@@ -1,6 +1,6 @@
-param([ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels')][string]$Suite='all',[string]$GamePath=$env:PROBABLY_STOLEN_PATH)
+param([ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery')][string]$Suite='all',[string]$GamePath=$env:PROBABLY_STOLEN_PATH)
 $ErrorActionPreference='Stop'
-if($Suite -eq 'all'){ foreach($part in @('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels')){ & $PSCommandPath -Suite $part -GamePath $GamePath }; return }
+if($Suite -eq 'all'){ foreach($part in @('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels','clock','customers','replica','overnight','lottery')){ & $PSCommandPath -Suite $part -GamePath $GamePath }; return }
 $project=Split-Path $PSScriptRoot -Parent
 if(-not $GamePath){$GamePath='D:\SteamLibrary\steamapps\common\Probably Stolen'}
 $game=[IO.Path]::GetFullPath($GamePath)
@@ -20,6 +20,12 @@ catch { $resolved=[IO.Path]::GetFullPath($scratch); if($resolved.StartsWith($scr
 function Read-TestLog([string]$path){
     if(-not(Test-Path -LiteralPath $path)){return ''}
     $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete));$reader=[IO.StreamReader]::new($stream);try{return $reader.ReadToEnd()}finally{$reader.Dispose();$stream.Dispose()}
+}
+function Restore-TestFile([string]$path,[byte[]]$bytes){
+    for($attempt=0;$attempt -lt 20;$attempt++){
+        try{[IO.File]::WriteAllBytes($path,$bytes);return}
+        catch [IO.IOException]{if($attempt -eq 19){throw};Start-Sleep -Milliseconds 250}
+    }
 }
 function Start-TestGame([string]$role,[string[]]$extra){
     $log=Join-Path $scratch ("smc-$role.log");if(Test-Path -LiteralPath $log){Remove-Item -LiteralPath $log -Force}
@@ -47,7 +53,7 @@ try{
 }finally{
     foreach($role in @('host','client')){Write-Output "Native ${role}:";$text=Read-TestLog (Join-Path $scratch "smc-$role.log");$text -split '\r?\n'|Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER)|Init failed: 多人|Trust check failed:'};$text -split '\r?\n'|Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4|ForEach-Object ToString}
     foreach($testProcess in $started){$children=Get-CimInstance Win32_Process|Where-Object {$_.ParentProcessId -eq $testProcess.Id}|Select-Object -ExpandProperty ProcessId;if(-not $testProcess.HasExited){Stop-Process -Id $testProcess.Id -ErrorAction SilentlyContinue; [void]$testProcess.WaitForExit(10000)};foreach($child in $children){Stop-Process -Id $child -ErrorAction SilentlyContinue}}
-    [IO.File]::WriteAllBytes($workshopDll,$originalDll)
-    [IO.File]::WriteAllBytes($workshopManifest,$originalManifest)
+    Restore-TestFile $workshopDll $originalDll
+    Restore-TestFile $workshopManifest $originalManifest
     $resolved=[IO.Path]::GetFullPath($scratch); if($resolved.StartsWith($scratchRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){Remove-Item -LiteralPath $resolved -Recurse -Force}
 }
