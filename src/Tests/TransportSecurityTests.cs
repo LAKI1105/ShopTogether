@@ -20,6 +20,15 @@ class SecurityProbe {
         b.Failed=true;Require(b.Receive(buffer)==0,"Steam relay: a failed Steam session ends the connection");
         bool refused=false;try{a.Close();a.Send(new byte[1]);}catch(InvalidOperationException){refused=true;}Require(refused,"Steam relay: nothing is sent after closing");
         var c=new MessageStream((data,length)=>true);for(int i=0;i<300&&!c.Failed;i++)c.Arrive(new byte[256*1024]);Require(c.Failed,"Steam relay: unread data is bounded");
+        // Over the internet Steam refuses data while its send buffer is full: wait and continue, in order.
+        MessageStream d=null,e=null;bool open=false;double clock=0;
+        d=new MessageStream((data,length)=>{if(!open)return false;var copy=new byte[length];Buffer.BlockCopy(data,0,copy,0,length);e.Arrive(copy);return true;});d.Now=()=>clock;
+        e=new MessageStream((data,length)=>true);
+        d.Send(packet);d.Send(new byte[]{5});Require(d.Pending&&!d.Failed,"Steam relay: a full send buffer is waited out, not treated as a lost link");
+        clock=30;d.Flush();Require(!d.Failed,"Steam relay: a slow link is not dropped early");
+        open=true;d.Flush();got.Clear();while((n=e.Receive(buffer))>0)for(int i=0;i<n;i++)got.Add(buffer[i]);
+        Require(!d.Pending&&got.Count==packet.Length+1&&got[packet.Length]==5&&got[1234]==packet[1234],"Steam relay: held data is delivered in order once Steam accepts it");
+        var f=new MessageStream((data,length)=>false);double t=0;f.Now=()=>t;f.Send(new byte[10]);t=89.9;f.Flush();Require(!f.Failed,"Steam relay: refusing for less than 90 seconds does not disconnect");t=90;f.Flush();Require(f.Failed,"Steam relay: 90 seconds without accepting data ends the link");
     }
     static void Pair(RoomIdentity identity,bool wrong) {
         using(var listener=new Socket(AddressFamily.InterNetwork,SocketType.Stream,ProtocolType.Tcp))

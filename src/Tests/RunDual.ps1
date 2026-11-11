@@ -1,59 +1,78 @@
-param([ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery')][string]$Suite='all',[string]$GamePath=$env:PROBABLY_STOLEN_PATH)
+param(
+    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled')]
+    [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
+    [string]$GamePath=$env:PROBABLY_STOLEN_PATH
+)
 $ErrorActionPreference='Stop'
-if($Suite -eq 'all'){ foreach($part in @('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels','clock','customers','replica','overnight','lottery')){ & $PSCommandPath -Suite $part -GamePath $GamePath }; return }
 $project=Split-Path $PSScriptRoot -Parent
 if(-not $GamePath){$GamePath='D:\SteamLibrary\steamapps\common\Probably Stolen'}
 $game=[IO.Path]::GetFullPath($GamePath)
 $workshop=Join-Path (Split-Path (Split-Path $game -Parent) -Parent) 'workshop\content\4348910\3837477869'
 if(Get-Process 'Probably Stolen' -ErrorAction SilentlyContinue){throw 'Close the game before running the isolated test.'}
-if(Test-Path -LiteralPath (Join-Path $game 'Mods\ShopTogether\manifest.xml')){throw 'A local ShopTogether copy would override Workshop. Move it outside Mods before testing.'}
+if($Suite -contains 'all'){$Suite=@('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled')}
 $workshopDll=Join-Path $workshop 'ShopTogether.dll'
-$workshopManifest=Join-Path $workshop 'manifest.xml'
-$originalDll=[IO.File]::ReadAllBytes($workshopDll)
-$originalManifest=[IO.File]::ReadAllBytes($workshopManifest)
+$workshopHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $workshopDll).Hash
 $scratchRoot=[IO.Path]::GetFullPath((Join-Path (Split-Path $project -Parent) 'work'))
 $scratch=Join-Path $scratchRoot ('runtime-'+[Guid]::NewGuid().ToString('N'))
+$isolated=Join-Path $scratch 'Game'
+$probeFolder=Join-Path $isolated 'ProbeWorkshop'
 New-Item -ItemType Directory -Path $scratch -Force | Out-Null
-$probeDll=Join-Path $scratch 'ShopTogether.dll'
-try { & (Join-Path $project 'Build.ps1') -Probe -OutputPath $probeDll -GamePath $game }
-catch { $resolved=[IO.Path]::GetFullPath($scratch); if($resolved.StartsWith($scratchRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){Remove-Item -LiteralPath $resolved -Recurse -Force}; throw }
+
 function Read-TestLog([string]$path){
     if(-not(Test-Path -LiteralPath $path)){return ''}
-    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete));$reader=[IO.StreamReader]::new($stream);try{return $reader.ReadToEnd()}finally{$reader.Dispose();$stream.Dispose()}
+    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    $reader=[IO.StreamReader]::new($stream)
+    try{return $reader.ReadToEnd()}finally{$reader.Dispose();$stream.Dispose()}
 }
-function Restore-TestFile([string]$path,[byte[]]$bytes){
-    for($attempt=0;$attempt -lt 20;$attempt++){
-        try{[IO.File]::WriteAllBytes($path,$bytes);return}
-        catch [IO.IOException]{if($attempt -eq 19){throw};Start-Sleep -Milliseconds 250}
+function Start-TestGame([string]$role,[string]$part,[string[]]$extra){
+    $log=Join-Path $scratch ("smc-$role.log")
+    $arguments=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$log+'"'),'--smc-role',$role)+$(if($part -ne 'core'){@('--smc-suite',$part)}else{@()})+$extra
+    return Start-Process -FilePath (Join-Path $isolated 'Probably Stolen.exe') -WorkingDirectory $isolated -Environment @{SteamAppId='4348910';SteamGameId='4348910';SHOPTOGETHER_PROBE_FOLDER=$probeFolder} -ArgumentList $arguments -WindowStyle Hidden -PassThru
+}
+function Stop-TestProcesses($processes){
+    foreach($process in $processes){
+        $children=@(Get-CimInstance Win32_Process | Where-Object {$_.ParentProcessId -eq $process.Id} | Select-Object -ExpandProperty ProcessId)
+        if(-not $process.HasExited){Stop-Process -Id $process.Id -ErrorAction SilentlyContinue;[void]$process.WaitForExit(10000)}
+        foreach($child in $children){Stop-Process -Id $child -ErrorAction SilentlyContinue}
     }
 }
-function Start-TestGame([string]$role,[string[]]$extra){
-    $log=Join-Path $scratch ("smc-$role.log");if(Test-Path -LiteralPath $log){Remove-Item -LiteralPath $log -Force}
-    $arguments=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$log+'"'),'--smc-role',$role)+$(if($Suite -ne 'core'){@('--smc-suite',$Suite)}else{@()})+$extra
-    return Start-Process -FilePath (Join-Path $game 'Probably Stolen.exe') -WorkingDirectory $game -Environment @{SteamAppId='4348910';SteamGameId='4348910'} -ArgumentList $arguments -WindowStyle Hidden -PassThru
-}
-$started=@();$hostText='';$clientText=''
+$started=@()
 try{
-[IO.File]::WriteAllBytes($workshopDll,[IO.File]::ReadAllBytes($probeDll))
-[IO.File]::WriteAllBytes($workshopManifest,[IO.File]::ReadAllBytes((Join-Path $project 'manifest.xml')))
-    $hostProcess=Start-TestGame 'host' @();$started+=,$hostProcess
-    $deadline=[DateTime]::UtcNow.AddSeconds(120)
-    do{Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');if($hostText -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Host bootstrap failed'}}while($hostText -notmatch '\[SMC CONTROL\] (\d+)' -and -not $hostProcess.HasExited -and [DateTime]::UtcNow -lt $deadline)
-    $controlMatch=[regex]::Match($hostText,'\[SMC CONTROL\] (\d+)');$inviteMatch=[regex]::Match($hostText,'\[SMC-INTERNAL-INVITE\] (SMC1-[A-Za-z0-9_-]+)')
-    if(-not $controlMatch.Success -or -not $inviteMatch.Success){throw 'Host did not produce a test invitation'}
-    $clientProcess=Start-TestGame 'client' @('--smc-control',$controlMatch.Groups[1].Value,'--smc-invite',$inviteMatch.Groups[1].Value);$started+=,$clientProcess
-    $deadline=[DateTime]::UtcNow.AddSeconds(600)
-    do{
-        Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');$clientText=Read-TestLog (Join-Path $scratch 'smc-client.log')
-        if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Dual runtime assertion failed'}
-        if($hostText -match '\[SMC COMPLETE\]' -and $clientText -match '\[SMC COMPLETE\]'){break}
-    }while([DateTime]::UtcNow -lt $deadline -and -not($hostProcess.HasExited -and $clientProcess.HasExited))
-    if($hostText -notmatch '\[SMC COMPLETE\]' -or $clientText -notmatch '\[SMC COMPLETE\]'){throw 'Dual runtime timed out'}
-    foreach($testProcess in $started){[void]$testProcess.WaitForExit(10000)}
+    & (Join-Path $PSScriptRoot 'PrepareIsolatedGame.ps1') -GamePath $game -Target $isolated
+    & (Join-Path $project 'Build.ps1') -Probe -OutputPath (Join-Path $probeFolder 'ShopTogether.dll') -GamePath $game
+    Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $probeFolder
+    foreach($part in $Suite){
+        $started=@();$hostText='';$clientText=''
+        foreach($role in @('host','client')){$log=Join-Path $scratch ("smc-$role.log");if(Test-Path -LiteralPath $log){Remove-Item -LiteralPath $log -Force}}
+        try{
+            $hostExtra=if($part -eq 'throttled'){@('--smc-throttle',"$UploadKbps")}else{@()}
+            $hostProcess=Start-TestGame 'host' $part $hostExtra;$started+=,$hostProcess
+            $deadline=[DateTime]::UtcNow.AddSeconds(150)
+            do{Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');if($hostText -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Host bootstrap failed'}}while($hostText -notmatch '\[SMC CONTROL\] (\d+)' -and -not $hostProcess.HasExited -and [DateTime]::UtcNow -lt $deadline)
+            $control=[regex]::Match($hostText,'\[SMC CONTROL\] (\d+)');$invite=[regex]::Match($hostText,'\[SMC-INTERNAL-INVITE\] (SMC1-[A-Za-z0-9_-]+)')
+            if(-not $control.Success -or -not $invite.Success){throw 'Host did not produce a test invitation'}
+            $clientProcess=Start-TestGame 'client' $part @('--smc-control',$control.Groups[1].Value,'--smc-invite',$invite.Groups[1].Value);$started+=,$clientProcess
+            $deadline=[DateTime]::UtcNow.AddSeconds(600)
+            do{
+                Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');$clientText=Read-TestLog (Join-Path $scratch 'smc-client.log')
+                if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Dual runtime assertion failed'}
+                if($hostText -match '\[SMC COMPLETE\]' -and $clientText -match '\[SMC COMPLETE\]'){break}
+            }while([DateTime]::UtcNow -lt $deadline -and -not($hostProcess.HasExited -and $clientProcess.HasExited))
+            if($hostText -notmatch '\[SMC COMPLETE\]' -or $clientText -notmatch '\[SMC COMPLETE\]'){throw 'Dual runtime timed out'}
+            foreach($process in $started){[void]$process.WaitForExit(10000)}
+        }finally{
+            foreach($role in @('host','client')){Write-Output "Native ${part} ${role}:";$text=Read-TestLog (Join-Path $scratch "smc-$role.log");$text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER)|Init failed: 多人|Trust check failed:|\[ModLoader\].*shop_together'};$text -split '\r?\n' | Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4 | ForEach-Object ToString}
+            Stop-TestProcesses $started;$started=@()
+        }
+    }
+}catch{
+    Write-Output ('ISOLATED_TEST_ERROR: '+$_.Exception.Message)
+    throw
 }finally{
-    foreach($role in @('host','client')){Write-Output "Native ${role}:";$text=Read-TestLog (Join-Path $scratch "smc-$role.log");$text -split '\r?\n'|Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER)|Init failed: 多人|Trust check failed:'};$text -split '\r?\n'|Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4|ForEach-Object ToString}
-    foreach($testProcess in $started){$children=Get-CimInstance Win32_Process|Where-Object {$_.ParentProcessId -eq $testProcess.Id}|Select-Object -ExpandProperty ProcessId;if(-not $testProcess.HasExited){Stop-Process -Id $testProcess.Id -ErrorAction SilentlyContinue; [void]$testProcess.WaitForExit(10000)};foreach($child in $children){Stop-Process -Id $child -ErrorAction SilentlyContinue}}
-    Restore-TestFile $workshopDll $originalDll
-    Restore-TestFile $workshopManifest $originalManifest
-    $resolved=[IO.Path]::GetFullPath($scratch); if($resolved.StartsWith($scratchRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){Remove-Item -LiteralPath $resolved -Recurse -Force}
+    Stop-TestProcesses $started
+    $resolved=[IO.Path]::GetFullPath($scratch)
+    if(-not $resolved.StartsWith($scratchRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Refusing cleanup outside the test workspace'}
+    if(Test-Path -LiteralPath $resolved){Remove-Item -LiteralPath $resolved -Recurse -Force}
+    if((Get-FileHash -Algorithm SHA256 -LiteralPath $workshopDll).Hash -ne $workshopHash){throw 'The subscribed Workshop DLL changed during the isolated test'}
+    'WORKSHOP_DLL_UNCHANGED_BY_TEST'
 }

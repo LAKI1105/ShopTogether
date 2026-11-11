@@ -104,11 +104,12 @@ namespace ShopTogether {
             internal SteamChannel(ulong remote) { Remote = remote; stream = new MessageStream((data, length) => SendRaw(remote, data, length)); }
             internal bool Failed { get { return stream.Failed; } set { stream.Failed = value; } }
             public bool Ready { get { return !stream.Closed; } }
-            public bool Writing { get { return false; } }
+            public bool Writing { get { stream.Flush(); if (stream.Failed) throw new InvalidOperationException("~SMC152~"); return stream.Pending; } }
             internal void Arrive(byte[] data) { lastArrival = UnityEngine.Time.realtimeSinceStartup; stream.Arrive(data); }
             public int Receive(byte[] destination) {
                 int n = stream.Receive(destination);
-                if (n < 0 && UnityEngine.Time.realtimeSinceStartup - lastArrival > Silence) return 0;   // Steam gives no close signal: silence means gone
+                // A full Steam send buffer is retried for 90 seconds; incoming silence must not cut that wait short.
+                if (n < 0 && !stream.Pending && UnityEngine.Time.realtimeSinceStartup - lastArrival > Silence) return 0;
                 return n;
             }
             public void Send(byte[] packet) { stream.Send(packet); }

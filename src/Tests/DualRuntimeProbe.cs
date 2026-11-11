@@ -18,6 +18,49 @@ namespace ShopTogether {
         internal void ProbeJoin(string code){inviteText=code;JoinInvite();CustomUIManager.Instance.CloseWindow(WindowId);}
         internal string ProbeMapping {get{return mappingStatus==null?"pending":mappingStatus.Message;}}
         internal bool ProbePending(int id){return requested.Contains(id);}
+        sealed class ProbeRateChannel : IChannel {
+            readonly IChannel inner; readonly int rate; byte[] pending; int offset; double credit,last;
+            internal long SentBytes; internal readonly double Started;
+            internal ProbeRateChannel(IChannel channel,int bytesPerSecond){inner=channel;rate=bytesPerSecond;last=Started=Time.realtimeSinceStartup;}
+            public bool Ready {get{return inner.Ready;}}
+            public bool Writing {get{
+                if(inner.Writing)return true;
+                if(pending==null)return false;
+                double now=Time.realtimeSinceStartup;credit=Math.Min(rate*.05,credit+Math.Max(0,now-last)*rate);last=now;
+                int length=Math.Min((int)credit,Math.Min(8192,pending.Length-offset));
+                if(length>0){var chunk=new byte[length];Buffer.BlockCopy(pending,offset,chunk,0,length);inner.Send(chunk);offset+=length;credit-=length;SentBytes+=length;if(offset==pending.Length){pending=null;offset=0;}}
+                return pending!=null||inner.Writing;
+            }}
+            public void Send(byte[] packet){if(pending!=null)throw new InvalidOperationException("Throttle already has a packet");pending=packet;}
+            public int Receive(byte[] destination){return inner.Receive(destination);}
+            public void Dispose(){inner.Dispose();}
+        }
+        ProbeRateChannel probeRate;
+        internal void ProbeLimitUpload(int bytesPerSecond){var peer=peers.Find(p=>p.authenticated&&p.modsOk);if(peer==null||!(peer.channel is SecureChannel))throw new InvalidOperationException("Expected an authenticated direct test connection");probeRate=new ProbeRateChannel(peer.channel,bytesPerSecond);peer.channel=probeRate;}
+        internal long ProbeRateBytes {get{return probeRate==null?0:probeRate.SentBytes;}}
+        internal double ProbeRateElapsed {get{return probeRate==null?0:Time.realtimeSinceStartup-probeRate.Started;}}
+        internal bool ProbeAwaitingFull {get{return awaitingFull;}}
+        internal int ProbeApplyFailures {get{return applyFailures;}}
+        sealed class ProbeBackpressureChannel : IChannel {
+            internal bool Accept; internal readonly List<byte> Received=new List<byte>(); readonly MessageStream stream;
+            internal ProbeBackpressureChannel(){stream=new MessageStream((data,length)=>{if(!Accept)return false;for(int i=0;i<length;i++)Received.Add(data[i]);return true;});}
+            internal bool Pending {get{return stream.Pending;}}
+            public bool Ready {get{return true;}}
+            public bool Writing {get{stream.Flush();return stream.Pending;}}
+            public void Send(byte[] packet){stream.Send(packet);}
+            public int Receive(byte[] destination){return -1;}
+            public void Dispose(){stream.Close();}
+        }
+        internal static void ProbeBackpressure(){
+            var channel=new ProbeBackpressureChannel();var peer=new Peer{channel=channel};peer.Send(20,new byte[]{7});peer.Write();
+            if(peer.outgoing.Count!=0||!channel.Pending)throw new InvalidOperationException("Steam backpressure fixture was not retained");
+            channel.Accept=true;peer.Write();if(channel.Pending||channel.Received.Count!=6||channel.Received[5]!=7)throw new InvalidOperationException("Steam pending packet was not retried with an empty peer queue");peer.Dispose();
+            channel=new ProbeBackpressureChannel{Accept=true};peer=new Peer{channel=channel};for(int i=0;i<100;i++)peer.Send(20,new byte[]{(byte)i});peer.Write();
+            if(peer.outgoing.Count!=36||channel.Received.Count!=64*6)throw new InvalidOperationException("Peer write pacing is not limited to 64 packets");peer.Dispose();
+            channel=new ProbeBackpressureChannel();peer=new Peer{channel=channel};for(int i=0;i<32;i++)peer.Send(20,new byte[0]);peer.Send(39,new byte[0]);peer.Send(34,new byte[0]);peer.Send(40,new byte[0]);
+            if(peer.outgoing.Count!=32)throw new InvalidOperationException("Replaceable packets accumulated during congestion");peer.queuedBytes=256L*1024*1024-4;bool blocked=false;try{peer.Send(20,new byte[0]);}catch(Exception){blocked=true;}
+            if(!blocked)throw new InvalidOperationException("Peer byte limit omitted framing");peer.Dispose();Debug.Log("[SMC PASS] Steam backpressure drains even after the peer queue empties; pacing and bounds hold");
+        }
     }
     internal static partial class RuntimeProbe {
         static UdpClient control;static IPEndPoint other;
@@ -131,6 +174,7 @@ namespace ShopTogether {
         static IEnumerator HostCheck(Connection root){
             var wait=Wait(()=>MainMenuUIController.Instance!=null,"host main menu",90);while(wait.MoveNext())yield return wait.Current;
             Require(!Screen.fullScreen,"host runs in windowed mode");
+            if(Argument("--smc-suite")==null)Connection.ProbeBackpressure();
             if(Argument("--smc-suite")==null){var routerCheck=RouterCheck();while(routerCheck.MoveNext())yield return routerCheck.Current;}
             if(Argument("--smc-suite")==null){var tlsCheck=TlsCheck();while(tlsCheck.MoveNext())yield return tlsCheck.Current;}
             NewGameData.Instance.skipIntro=true;NewGameData.Instance.disableTutorialHint=true;MainMenuUIController.Instance.StartNewGameClick();
@@ -144,6 +188,7 @@ namespace ShopTogether {
             if(SteamRelay.Available&&SteamRelay.LocalId!=0){yield return new WaitForSecondsRealtime(1);Require(!SteamInvite.Advertising,"room is not open to Steam friends until the host invites someone");SteamInvite.Invited.Add(76561197960287930UL);PlayerNames.Changed=true;wait=Wait(()=>SteamInvite.Advertising,"inviting a friend makes the room joinable from Steam",10);while(wait.MoveNext())yield return wait.Current;SteamInvite.Invited.Clear();PlayerNames.Changed=true;}
             Debug.Log("[SMC-INTERNAL-INVITE] "+code);Debug.Log("[SMC CONTROL] "+((IPEndPoint)control.Client.LocalEndPoint).Port);
             wait=Wait(()=>Received("JOINED"),"real client authenticated and applied host state",100);while(wait.MoveNext())yield return wait.Current;
+            string limit=Argument("--smc-throttle");if(!string.IsNullOrEmpty(limit)){int kbps;if(!int.TryParse(limit,out kbps)||kbps<1)throw new InvalidOperationException("Invalid test rate");root.ProbeLimitUpload(kbps*125);Debug.Log("[SMC PASS] direct host upload is limited to "+kbps+" kbit/s for the outing test");}
             if(Argument("--smc-suite")!=null){var suite=RunExtended(root,true);while(suite.MoveNext())yield return suite.Current;Signal("COMPLETE");Debug.Log("[SMC COMPLETE] host extended "+Argument("--smc-suite"));yield break;}ShowStorage();pointer=Point(a);yield return null;yield return null;Context(a);Require(MenuOpen,"host native context menu open");Signal("OPEN_MENU");
             wait=Wait(()=>Received("CLIENT_MENU"),"client native context menu open",30);while(wait.MoveNext())yield return wait.Current;Require(MenuOpen,"host menu stays open while client opens another");Signal("CLOSE_MENU");ItemContextHandler.current.UpdateReset();
             wait=Wait(()=>Received("MENU_CLOSED"),"client closed its menu");while(wait.MoveNext())yield return wait.Current;
@@ -168,8 +213,10 @@ namespace ShopTogether {
         static IEnumerator ClientCheck(Connection root){
             var wait=Wait(()=>MainMenuUIController.Instance!=null,"client main menu",90);while(wait.MoveNext())yield return wait.Current;InstallInput();
             Require(!Screen.fullScreen,"client runs in windowed mode");
+            if(Argument("--smc-suite")=="recovery")InstallRecoveryProbe(1);
             control=new UdpClient(new IPEndPoint(IPAddress.Loopback,0));other=new IPEndPoint(IPAddress.Loopback,int.Parse(Argument("--smc-control")));root.ProbeJoin(Argument("--smc-invite"));
             wait=Wait(()=>root.Ready,"client loaded host snapshot through pinned TLS",90);while(wait.MoveNext())yield return wait.Current;
+            if(Argument("--smc-suite")=="recovery")Require(recoveryInjected==1&&root.ProbeApplyFailures==0,"initial failed snapshot recovered before the client became ready");
             var a=Find(root,"SMC_HOST_ITEM");var b=Find(root,"SMC_CLIENT_ITEM");Require(a!=null&&b!=null,"client has the host test items");int ticks=0;Action<GameItem,GameInventory,SlotMarker> randomCallback=(x,y,z)=>{ticks++;x.unitValue=UnityEngine.Random.Range(1,100);};a.onOneSecondItemFunc=randomCallback;ShowStorage();Signal("JOINED");if(Argument("--smc-suite")!=null){var suite=RunExtended(root,false);while(suite.MoveNext())yield return suite.Current;wait=Wait(()=>Received("COMPLETE"),"extended host acknowledgement");while(wait.MoveNext())yield return wait.Current;Debug.Log("[SMC COMPLETE] client extended "+Argument("--smc-suite"));yield break;}
             wait=Wait(()=>Received("OPEN_MENU"),"host menu barrier");while(wait.MoveNext())yield return wait.Current;pointer=Point(b);yield return null;yield return null;Context(b);Require(MenuOpen,"client native context menu open");Signal("CLIENT_MENU");
             wait=Wait(()=>Received("CLOSE_MENU"),"both native menus remained independent");while(wait.MoveNext())yield return wait.Current;ItemContextHandler.current.UpdateReset();Signal("MENU_CLOSED");

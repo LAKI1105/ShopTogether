@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.14";
+        internal const string BuildVersion="1.3.15";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -46,6 +46,7 @@ namespace ShopTogether {
         string address="",portText="7777",hostKey="",secret="",status="",publicEndpoint="";
         ModReport modReport;string hostNotice="";readonly LargeTransfer.Assembler incoming=new LargeTransfer.Assembler();
         bool launcherShown,hostReadyVisible,startingClient,needsFull,lanOnly,statusOnMenu,returningToMenu;
+        bool awaitingFull;int applyFailures;
         int nextPlayer,generation;long sequence,remoteSequence;float nextSync,nextRenew,nextDigest,nextPhase,nextPhaseCheck;string lastPhase;
         internal readonly DriftCheck Drift=new DriftCheck();
         readonly Queue<WorldDelta> pendingWorld=new Queue<WorldDelta>();
@@ -55,9 +56,14 @@ namespace ShopTogether {
             internal long lastSequence,lastRemote;internal float deadline,partialSince,closeAt;
             internal readonly Queue<byte[]> outgoing=new Queue<byte[]>();internal readonly List<byte> input=new List<byte>();
             internal readonly byte[] buffer=new byte[32768];internal readonly ProtocolGuard guard=new ProtocolGuard();
-            internal void Send(byte type,byte[] bytes){if(outgoing.Count>=512)throw new Exception("~SMC134~");byte[] packet=new byte[bytes.Length+5];int n=bytes.Length+1;packet[0]=(byte)(n>>24);packet[1]=(byte)(n>>16);packet[2]=(byte)(n>>8);packet[3]=(byte)n;packet[4]=type;Buffer.BlockCopy(bytes,0,packet,5,bytes.Length);outgoing.Enqueue(packet);}
-            internal void Write(){if(!channel.Ready||channel.Writing||outgoing.Count==0)return;channel.Send(outgoing.Dequeue());}
-            public void Dispose(){if(channel!=null)channel.Dispose();else if(socket!=null)socket.Close();outgoing.Clear();input.Clear();}
+            // Cursors, phase and the player list are resent regularly; when the link is behind they are skipped
+            // instead of piling up. Everything else waits its turn; only a link that stays this far behind is dropped.
+            internal static bool Replaceable(byte type){return type==39||type==34||type==40;}
+            internal void Send(byte type,byte[] bytes){if(Replaceable(type)&&outgoing.Count>=32)return;if(outgoing.Count>=8192||queuedBytes+bytes.Length+5>256L*1024*1024)throw new Exception("~SMC134~");queuedBytes+=bytes.Length+5;byte[] packet=new byte[bytes.Length+5];int n=bytes.Length+1;packet[0]=(byte)(n>>24);packet[1]=(byte)(n>>16);packet[2]=(byte)(n>>8);packet[3]=(byte)n;packet[4]=type;Buffer.BlockCopy(bytes,0,packet,5,bytes.Length);outgoing.Enqueue(packet);}
+            internal long queuedBytes;internal int partialSize;
+            // Poll the channel even when this queue is empty: Steam may still hold part of the last packet.
+            internal void Write(){for(int i=0;i<64&&channel.Ready&&!channel.Writing&&outgoing.Count>0;i++){var packet=outgoing.Dequeue();queuedBytes-=packet.Length;channel.Send(packet);}}
+            public void Dispose(){if(channel!=null)channel.Dispose();else if(socket!=null)socket.Close();outgoing.Clear();queuedBytes=0;input.Clear();}
         }
         void Start(){Application.runInBackground=true;Current=this;Leases=new LeaseBook(World.Related);
 #if LAN_PROBE
@@ -75,7 +81,7 @@ namespace ShopTogether {
             if(identity!=null){identity.Dispose();identity=null;}
             IsHost=false;IsClient=false;Ready=false;startingClient=false;pendingWorld.Clear();incoming.Reset();generation++;
             LocalLeases.Clear();requested.Clear();waiting.Clear();deferredRelease.Clear();NativeActions.holders.Clear();
-            World.Reset();HostPhase.Reset();Cursors.Reset();ReplicaVisuals.Reset();PlayerNames.Reset();nextNames=0;remoteSequence=0;nextPhase=0;nextPhaseCheck=0;lastPhase=null;sequence=0;nextPlayer=0;nextSync=0;nextRenew=0;needsFull=false;
+            World.Reset();HostPhase.Reset();awaitingFull=false;applyFailures=0;Cursors.Reset();ReplicaVisuals.Reset();PlayerNames.Reset();nextNames=0;remoteSequence=0;nextPhase=0;nextPhaseCheck=0;lastPhase=null;sequence=0;nextPlayer=0;nextSync=0;nextRenew=0;needsFull=false;
             if(Leases!=null)Leases=new LeaseBook(World.Related);
         }
         static string Password(){byte[] bytes=new byte[24];using(var r=RandomNumberGenerator.Create())r.GetBytes(bytes);return Convert.ToBase64String(bytes);}
@@ -149,7 +155,13 @@ namespace ShopTogether {
                     if(server.channel==null&&server.socket!=null&&server.socket.Poll(0,SelectMode.SelectWrite)){if((int)server.socket.GetSocketOption(SocketOptionLevel.Socket,SocketOptionName.Error)!=0)throw new Exception("~SMC147~");server.channel=new SecureChannel(server.socket,null,hostKey);}
                     Pump(server,false);Cursors.Tick(this);MachineSettings.Flush();
                     if(server.authenticated&&!startingClient&&pendingWorld.Count>0){startingClient=true;StartCoroutine(StartClientScene(generation));}
-                    if(pendingWorld.Count>0&&ReplicaSession.SceneReady){World.Apply(pendingWorld.Dequeue());if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
+                    if(pendingWorld.Count>0&&ReplicaSession.SceneReady){var next=pendingWorld.Dequeue();
+                        if(awaitingFull&&!next.full){}
+                        else{
+                            // An update that cannot be applied asks the host for the whole shop again instead of ending the session.
+                            try{World.Apply(next);awaitingFull=false;if(next.full)applyFailures=0;if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
+                            catch(Exception failure){if(++applyFailures>=5)throw;Debug.LogWarning("[ShopTogether] update not applied, asking the host for the whole shop: "+failure.Message);awaitingFull=true;server.Send(24,new byte[0]);}
+                        }}
                     if(Ready&&Time.realtimeSinceStartup>=nextRenew){nextRenew=Time.realtimeSinceStartup+5;Send(new Request{kind=RequestKind.Renew});}
                     if(Ready&&!LocalControl.Focused&&LocalLeases.Count>0)ReleaseAll();
                     if(Ready&&pendingWorld.Count==0){var resync=Drift.Step(World,2.0);if(resync!=null)server.Send(33,Encode(resync));}
@@ -202,7 +214,8 @@ namespace ShopTogether {
             for(int i=0;i<32&&peer.input.Count>=5;i++){int length=(peer.input[0]<<24)|(peer.input[1]<<16)|(peer.input[2]<<8)|peer.input[3];byte type=peer.input[4];
                 if(length<1||!ProtocolGuard.Valid(host,peer.authenticated,peer.matched,type,length-1))throw new Exception("~SMC029~");if(peer.input.Count<length+4)break;
                 if(host&&!peer.guard.Admit(Time.realtimeSinceStartup))throw new Exception("~SMC172~");byte[] data=new byte[length-1];peer.input.CopyTo(5,data,0,data.Length);peer.input.RemoveRange(0,length+4);Receive(peer,host,type,data);peer.partialSince=0;if(peer.closing||timer.ElapsedMilliseconds>=2)break;}
-            if(peer.input.Count>0){if(peer.partialSince==0)peer.partialSince=Time.realtimeSinceStartup;else if(Time.realtimeSinceStartup-peer.partialSince>15)throw new Exception("~SMC153~");}
+            // A big update over a slow upload takes a while: only a message that stops arriving altogether ends the link.
+            if(peer.input.Count>0){if(peer.partialSince==0||peer.input.Count!=peer.partialSize){peer.partialSince=Time.realtimeSinceStartup;peer.partialSize=peer.input.Count;}else if(Time.realtimeSinceStartup-peer.partialSince>60)throw new Exception("~SMC153~");}else peer.partialSize=0;
         }
         void Receive(Peer peer,bool host,byte type,byte[] data){
             if(!peer.authenticated){
