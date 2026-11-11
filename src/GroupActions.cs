@@ -13,7 +13,8 @@ namespace ShopTogether {
             if(session.IsHost)return session.Leases.Available(0,id,Time.realtimeSinceStartup);
             __result=0;if(!LocalControl.UserAction||id<=0)return false;
             var inventory=__0 as GameInventory;var target=__0 as GameItem;var address=session.World.Address(inventory);int targetId=session.World.Id(target);
-            if(address==null&&targetId==0)return false;long version;session.World.Versions.TryGetValue(id,out version);int count=Math.Min(__2,__1.unitCount);
+            if(address==null&&targetId==0)return false;long version;session.World.Versions.TryGetValue(id,out version);// The game passes -1 for "the whole stack" (group drags, quick transfers).
+            int count=__2<0?__1.unitCount:Math.Min(__2,__1.unitCount);if(count<1)return false;
             session.Submit(new Request{kind=RequestKind.AutoPlace,items=new[]{id},inventory=address,target=targetId,moves=new[]{new Placement{item=id,count=count,version=version}}});__result=count;return false;
         }
     }

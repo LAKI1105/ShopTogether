@@ -221,11 +221,8 @@ namespace ShopTogether {
             if (kit == null) { Note("~SMC207~"); Hand(); return; }
             GameItem bag = null;
             if (pack != null) {
-                bag = ItemSpawner.Spawn(pack.identifier);
+                bag = NewVoidBag(pack);
                 if (bag == null) { Note("~SMC224~"); Hand(); return; }
-                foreach (var inside in Contents(bag)) { if (inside.parentInventory != null) inside.parentInventory.Expel(inside); inside.Destroy(); }
-                GeneralHelper.SetItemOwned(bag, true);
-                bag.EnableTag(VoidTag);
                 GraphUtils.TryAcceptAll(kit.backpack, bag);
                 if (bag.parentInventory != kit.backpack) { bag.Destroy(); Note("~SMC224~"); Hand(); return; }
             }
@@ -271,8 +268,18 @@ namespace ShopTogether {
             return item.parentInventory != from;
         }
 
+        /// <summary>An empty, owned backpack of the same kind as the chosen one: the borrowed shape, never its contents.</summary>
+        internal static GameItem NewVoidBag(GameItem pack) {
+            var bag = pack != null ? ItemSpawner.Spawn(pack.identifier) : null;
+            if (bag == null) return null;
+            foreach (var inside in Contents(bag)) { if (inside.parentInventory != null) inside.parentInventory.Expel(inside); inside.Destroy(); }
+            GeneralHelper.SetItemOwned(bag, true);
+            bag.EnableTag(VoidTag);
+            return bag;
+        }
+
         /// <summary>Empties a void backpack into the shop and removes it; false when something did not fit (it stays in the bag).</summary>
-        static bool Unpack(GameItem bag, GameInventory holder) {
+        internal static bool Unpack(GameItem bag, GameInventory holder) {
             foreach (var inside in Contents(bag)) Home(inside);
             if (Contents(bag).Count == 0) { holder.Expel(bag); bag.Destroy(); return true; }
             return false;
@@ -569,6 +576,52 @@ namespace ShopTogether {
             else if (EmporiumEntry.Instance != null) EmporiumEntry.Instance.TryAddToPlayerInv(gameItem);   // never lost
             return false;
         }
+    }
+
+    /// <summary>
+    /// Host side, while playing together: the host goes out with a void backpack too. The chosen backpack only lends its
+    /// look and size and stays in the shop with everything in it; what the host carries back comes into the shop and the
+    /// void backpack disappears. A void backpack never becomes a shop item.
+    /// </summary>
+    [HarmonyPatch(typeof(EmporiumEntry), "TransferBackpackToInv")]
+    internal static class HostVoidBackpack {
+        [HarmonyPriority(Priority.First)]
+        static bool Prefix(EmporiumEntry __instance) {
+            var session = Connection.Current;
+            if (session == null || !session.IsHost) return true;
+            var pack = __instance.selectedBackpack; __instance.selectedBackpack = null;
+            var slot = __instance.afterhourPocketSlotInvBackpack;
+            if (slot == null) return false;
+            // A void backpack still holding what did not fit last time: empty it into the shop first.
+            foreach (var old in new List<GameItem>(slot.childItems)) if (OutingKits.IsVoidBag(old)) OutingKits.Unpack(old, slot);
+            if (pack == null || pack.parentInventory == null || slot.childItems.Count > 0) return false;
+            var bag = OutingKits.NewVoidBag(pack);
+            if (bag == null) return false;
+            GraphUtils.TryAcceptAll(slot, bag);
+            if (bag.parentInventory != slot) bag.Destroy();
+            return false;
+        }
+    }
+    [HarmonyPatch(typeof(EmporiumEntry), "TransferAfterhourToInv")]
+    internal static class HostVoidBackpackBack {
+        [HarmonyPriority(Priority.First)]
+        static void Prefix(EmporiumEntry __instance) {
+            var session = Connection.Current;
+            if (session == null || !session.IsHost) return;
+            foreach (var holder in new GameInventory[] { __instance.afterhourPocketSlotInvBackpack, __instance.afterhourPocketSlotInvLeft, __instance.afterhourPocketSlotInvRight })
+                if (holder != null) foreach (var bag in new List<GameItem>(holder.childItems)) if (OutingKits.IsVoidBag(bag)) OutingKits.Unpack(bag, holder);
+            // A void backpack dropped on the ground stays behind with whatever is in it, like anything left there.
+            if (__instance.afterhourInventory != null)
+                foreach (var bag in new List<GameItem>(__instance.afterhourInventory.childItems)) if (OutingKits.IsVoidBag(bag)) {
+                    foreach (var inside in OutingKits.Contents(bag)) { if (inside.parentInventory != null) inside.parentInventory.Expel(inside); inside.Destroy(); }
+                    __instance.afterhourInventory.Expel(bag); bag.Destroy();
+                }
+        }
+    }
+    [HarmonyPatch(typeof(EmporiumEntry), "TryAddToPlayerInv")]
+    internal static class VoidBagStaysOut {
+        [HarmonyPriority(Priority.First)]
+        static bool Prefix(GameItem gameItem) { return !OutingKits.IsVoidBag(gameItem); }
     }
 
     /// <summary>Host side: nobody sleeps while someone is still out.</summary>

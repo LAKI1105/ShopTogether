@@ -18,7 +18,7 @@ The host runs gameplay simulation and owns the save. Guests render replicated ga
 
 Compatibility with arbitrary third-party mods is not guaranteed. A mod with a new interface or custom state may need an adapter. Matching enabled mods and versions is recommended.
 
-Guests use temporary empty outing backpacks; the host keeps the base game's real-backpack behavior. Dr. Jackson and third-party destinations require following a host who has already arrived. Custom third-party windows such as BartenderMod and MercDispatch are not synchronized; lamp changes remain local. The host can hear a guest's phone call even while its panel is hidden. If the shop is full, put away leftover outing items before the host quits: those temporary inventories are not saved.
+During multiplayer, both the host and guests use temporary empty outing backpacks; the original bags and their contents stay in the shop. Dr. Jackson and third-party destinations require following a host who has already arrived. Custom third-party windows such as BartenderMod and MercDispatch are not synchronized; lamp changes remain local. The host can hear a guest's phone call even while its panel is hidden. If the shop is full, put away leftover outing items before the host quits: those temporary inventories are not saved.
 
 Direct connections use pinned TLS. Steam transport uses Steam networking identities. Incoming messages have direction, size and rate checks; actions are limited to registered game operations and valid accessible items. This does not expose a shell or general file access. The mod and game still run with your account's local permissions; these checks are not a security audit or a guarantee against every bug.
 
@@ -43,6 +43,8 @@ Package `ShopTogether.dll` with `src/manifest.xml`. For a .NET SDK build, set th
 The runtime harness needs Windows, Steam, the game and the enabled Workshop mod. Close the game before running it. It temporarily replaces the installed Workshop DLL, runs isolated test shops without saving, then restores the original files and closes only its own processes. Do not run two harness instances concurrently. The runner currently targets Workshop item 3837477869.
 
 Each process must report `[SMC COMPLETE]`. A successful build alone is not a runtime pass. Local dual-process tests do not verify two distinct Steam accounts, Internet routers, every third-party mod or eight-player performance. Real Steam achievement writes are suppressed in the test harness.
+
+`src/Tests/RunGroup.ps1 -Players 4 -SavePath <day70-save.es3>` (or `-Players 6`) runs a local group test from a disposable copy of a day-70 save. It reserves two counters for test items, checks independent menus, concurrent drags and first-holder ownership, and records frame and snapshot timings. Clients start sequentially to avoid the game's shared settings-file startup conflict. The runner restores settings and Workshop files and checks that the original save is unchanged. Add `-PerformanceOnly` to measure idle and concurrent rename-request latency without the functional drag sequence. All processes share one computer, so these timings do not measure separate computers or Internet latency.
 
 ## License
 

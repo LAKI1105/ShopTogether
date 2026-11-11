@@ -27,6 +27,8 @@ namespace ShopTogether {
             return true;
         }
         internal static void Unhold(object holder){int[] ids;if(!holders.TryGetValue(holder,out ids))return;holders.Remove(holder);var released=new List<int>();foreach(int id in ids){bool retained=false;foreach(var other in holders.Values)if(Array.IndexOf(other,id)>=0){retained=true;break;}if(!retained)released.Add(id);}if(Session!=null&&released.Count>0)Session.Release(released.ToArray());}
+        // A pick-up claim never outlives the mouse button: if a handler missed its reset, let the items go.
+        internal static void Sweep(){if(holders.Count==0||Input.GetMouseButton(0)||Input.GetMouseButton(1))return;foreach(var holder in new List<object>(holders.Keys))if(holder is ItemMouseDragHandler)Unhold(holder);}
         internal static void CancelLocal(){
             if(ItemMouseDragHandler.current!=null)ItemMouseDragHandler.current.UpdateReset();
             if(ItemContextHandler.current!=null)ItemContextHandler.current.UpdateReset();
@@ -43,7 +45,7 @@ namespace ShopTogether {
         internal static bool ShopAvailable(Connection session,int owner){var entry=EmporiumEntry.Instance;if(entry==null)return false;foreach(var inventory in new GameInventory[]{entry.backInvinvElement,entry.frontInvinvElement,StorePresentation.CustomerInventory()}){if(inventory==null)continue;foreach(var item in GraphUtils.FindChildrenType<GameItem>(inventory,null,null))if(!session.Leases.Available(owner,session.World.Id(item),Time.realtimeSinceStartup))return false;}return true;}
         internal static bool Execute(Connection session,int owner,Request request){
             if(!OutingKits.RequestAllowed(session,owner,request))return false;
-            Executing=true;
+            Executing=true;PanelRelay.Owner=owner;
             try {
                 double now=Time.realtimeSinceStartup;
                 if(request.kind==RequestKind.Move)return Move(session,owner,request,now);
@@ -84,7 +86,7 @@ namespace ShopTogether {
                     }
                 }
                 return false;
-            } finally {Executing=false;}
+            } finally {Executing=false;PanelRelay.Owner=0;}
         }
         static bool Reject(string reason){
 #if LAN_PROBE
@@ -128,12 +130,14 @@ namespace ShopTogether {
     internal static class ClientSave {static bool Prefix(){return !ReplicaSession.ClientStore;}}
     [HarmonyPatch]
     internal static class LocalItemPress {
-        static IEnumerable<MethodBase> TargetMethods(){yield return typeof(ItemMouseDragHandler).GetMethod("OnEventPress",BindingFlags.Instance|BindingFlags.NonPublic);yield return typeof(ItemContextHandler).GetMethod("OnEventPress",BindingFlags.Instance|BindingFlags.NonPublic);yield return typeof(ItemMouseDoubleClickHandler).GetMethod("OnEventPress",BindingFlags.Instance|BindingFlags.NonPublic);}
+        // Only picking an item up claims it. Opening, right-clicking or double-clicking an item never locks it for
+        // others (those handlers keep their last item until the next press, which left machines locked).
+        static IEnumerable<MethodBase> TargetMethods(){yield return typeof(ItemMouseDragHandler).GetMethod("OnEventPress",BindingFlags.Instance|BindingFlags.NonPublic);}
         [HarmonyPriority(Priority.First)] static bool Prefix(InputActionHandler __instance,ISet<KeyCode> __0){if(!NativeActions.Active||!(__0.Contains(KeyCode.Mouse0)||__0.Contains(KeyCode.Mouse1)))return true;GameItem item=RenderHandler.RaycastElement<GameItem>(Input.mousePosition,null);return item==null||NativeActions.Hold(__instance,new[]{NativeActions.Session.World.Id(item)});}
     }
     [HarmonyPatch]
     internal static class LocalItemReset {
-        static IEnumerable<MethodBase> TargetMethods(){yield return typeof(ItemMouseDragHandler).GetMethod("OnEventReset",BindingFlags.Instance|BindingFlags.NonPublic);yield return typeof(ItemContextHandler).GetMethod("OnEventReset",BindingFlags.Instance|BindingFlags.NonPublic);yield return typeof(ItemMouseDoubleClickHandler).GetMethod("OnEventReset",BindingFlags.Instance|BindingFlags.NonPublic);}
+        static IEnumerable<MethodBase> TargetMethods(){yield return typeof(ItemMouseDragHandler).GetMethod("OnEventReset",BindingFlags.Instance|BindingFlags.NonPublic);}
         static void Postfix(InputActionHandler __instance){NativeActions.Unhold(__instance);}
     }
     [HarmonyPatch(typeof(ItemMouseDoubleClickHandler),"OpenContentAction")]

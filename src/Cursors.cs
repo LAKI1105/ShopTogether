@@ -57,8 +57,8 @@ namespace ShopTogether {
     [HarmonyLib.HarmonyPatch(typeof(CommissaryUIManager), "CloseUI")] internal static class ActShopClose { static void Postfix() { Activity.Commissary = false; } }
     [HarmonyLib.HarmonyPatch(typeof(LabelerUIManager), "OpenUI")] internal static class ActLabelOpen { static void Postfix() { Activity.Labeler = true; } }
     [HarmonyLib.HarmonyPatch(typeof(LabelerUIManager), "CloseUI")] internal static class ActLabelClose { static void Postfix() { Activity.Labeler = false; } }
-    [HarmonyLib.HarmonyPatch(typeof(PaperUIManager), "OpenBook")] internal static class ActBookOpen { static void Postfix() { Activity.Book = true; Activity.Paper = false; } }
-    [HarmonyLib.HarmonyPatch(typeof(PaperUIManager), "OpenUI")] internal static class ActPaperOpen { static void Postfix() { if (!Activity.Book) Activity.Paper = true; } }
+    [HarmonyLib.HarmonyPatch(typeof(PaperUIManager), "OpenBook")] internal static class ActBookOpen { static void Postfix() { if (PanelRelay.Capturing) return; Activity.Book = true; Activity.Paper = false; } }
+    [HarmonyLib.HarmonyPatch(typeof(PaperUIManager), "OpenUI")] internal static class ActPaperOpen { static void Postfix() { if (PanelRelay.Capturing) return; if (!Activity.Book) Activity.Paper = true; } }
     [HarmonyLib.HarmonyPatch(typeof(PaperUIManager), "CloseUI")] internal static class ActPaperClose { static void Postfix() { Activity.Book = false; Activity.Paper = false; } }
 
     /// <summary>Names players typed for themselves. Shown as plain text only (no markup), at most 16 characters.</summary>

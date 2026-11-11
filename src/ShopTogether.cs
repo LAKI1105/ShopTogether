@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.7";
+        internal const string BuildVersion="1.3.10";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -66,7 +66,7 @@ namespace ShopTogether {
         }
         void OnApplicationQuit(){SteamRelay.ShuttingDown=true;}
         void OnDestroy(){SteamRelay.ShuttingDown=true;Stop();if(Current==this)Current=null;}
-        internal void Stop(){MachineSettings.Reset();ShopActions.Reset();OutingSupplies.Reset();if(IsHost){try{OutingKits.ReturnEveryone();}catch(Exception e){Debug.LogWarning("[ShopTogether] outing return: "+e.Message);}}OutingKits.Reset();
+        internal void Stop(){MachineSettings.Reset();PanelRelay.Reset();ShopActions.Reset();OutingSupplies.Reset();if(IsHost){try{OutingKits.ReturnEveryone();}catch(Exception e){Debug.LogWarning("[ShopTogether] outing return: "+e.Message);}}OutingKits.Reset();
             hostReadyVisible=false;lanOnly=false;hostNotice="";
             if(routerMapping!=null){routerMapping.Dispose();routerMapping=null;}mappingStatus=null;joinCandidates.Clear();localInvite="";externalInvite="";publicEndpoint="";
             if(publicAddress!=null){publicAddress.Dispose();publicAddress=null;}
@@ -134,7 +134,7 @@ namespace ShopTogether {
             if(publicAddress!=null&&publicAddress.IsCompleted){string ip=publicAddress.Value;publicAddress.Dispose();publicAddress=null;IPAddress parsed;if(IsHost&&IPAddress.TryParse(ip,out parsed)&&InviteCode.IsPublic(parsed)){if(routerMapping!=null){routerMapping.Dispose();routerMapping=null;}RefreshInvites(IPAddress.Parse(LocalAddress()),new IPEndPoint(parsed,int.Parse(portText)));mappingStatus=new MappingStatus{Message="~SMC071~"};}else status="~SMC144~";if(hostReadyVisible)ShowHostReady();}
             if(IsHost&&routerMapping!=null&&mappingStatus!=routerMapping.Current){mappingStatus=routerMapping.Current;RefreshInvites(mappingStatus.Local??IPAddress.Parse(LocalAddress()),mappingStatus.External);if(hostReadyVisible)ShowHostReady();}
             try{
-                if(IsHost||IsClient){SteamRelay.Poll();OutingSupplies.Tick();}
+                if(IsHost||IsClient){SteamRelay.Poll();OutingSupplies.Tick();NativeActions.Sweep();PanelRelay.Tick(this);}
                 if(IsHost){
                     SteamRelay.SteamChannel arrival;while((arrival=SteamRelay.NextArrival())!=null){if(peers.Count>=MaxFriends){arrival.Dispose();continue;}peers.Add(new Peer{channel=arrival,id=++nextPlayer,deadline=Time.realtimeSinceStartup+20});Debug.Log("[ShopTogether] friend connecting through Steam");}
                     if(listener.Poll(0,SelectMode.SelectRead)){var incoming=listener.Accept();if(peers.Count>=MaxFriends||!admissions.Admit(((IPEndPoint)incoming.RemoteEndPoint).Address.ToString(),Time.realtimeSinceStartup))incoming.Close();else{var peer=new Peer{socket=incoming,id=++nextPlayer,deadline=Time.realtimeSinceStartup+15};peers.Add(peer);peer.channel=new SecureChannel(incoming,identity.Certificate,null);}}
@@ -176,6 +176,7 @@ namespace ShopTogether {
         /// <summary>Runs a short on-screen effect (the friend-side replay of the shotgun shot).</summary>
         internal void PlayEffect(IEnumerator effect){if(effect!=null)StartCoroutine(effect);}
         internal void BroadcastAchievement(string text){byte[] bytes=Encoding.UTF8.GetBytes(text);if(bytes.Length>512)return;foreach(var p in peers.ToArray())if(p.authenticated&&p.modsOk){try{p.Send(Achievements.Message,bytes);}catch{}}}
+        internal void SendTo(int owner,byte type,byte[] data){foreach(var p in peers.ToArray())if(p.id==owner&&p.authenticated&&p.modsOk){try{p.Send(type,data);}catch{}}}
         internal bool HasPeer(int id){foreach(var p in peers)if(p.id==id&&p.authenticated)return true;return false;}
         internal string NameOf(int id){foreach(var p in peers)if(p.id==id)return string.IsNullOrEmpty(p.name)?"~SMC102~"+id:p.name;return "~SMC102~"+id;}
         internal string PeerIdentity(int owner){foreach(var p in peers)if(p.id==owner&&p.authenticated){var steam=p.channel as SteamRelay.SteamChannel;return steam!=null?"S"+steam.Remote.ToString(CultureInfo.InvariantCulture):NameIdentity(p.name);}return null;}
@@ -229,6 +230,7 @@ namespace ShopTogether {
             if(host&&type==36){if(!peer.modsOk||!peer.sceneReady)return;var call=WireJson.FromJson<RemoteCall>(Encoding.UTF8.GetString(data));if(call==null||call.sequence<=peer.lastRemote)throw new Exception("~SMC169~");peer.lastRemote=call.sequence;string refused=Ready?RemoteActions.Execute(this,peer.id,call):"~SMC082~";if(refused!=null)peer.Send(37,Encoding.UTF8.GetBytes(refused));else{nextSync=0;string note=RemoteActions.TakeNote();if(note!=null)peer.Send(37,Encoding.UTF8.GetBytes(note));}return;}
             if(!host&&type==34){var phase=WireJson.FromJson<PhaseState>(Encoding.UTF8.GetString(data));bool wasAway=HostPhase.Away;if(HostPhase.Apply(phase)&&ReplicaSession.SceneReady)peer.Send(24,new byte[0]);if(HostPhase.Away&&!wasAway&&Ready)ReleaseAll();return;}
             if(!host&&type==42){Achievements.FromHost(data);return;}
+            if(!host&&type==PanelRelay.Message){PanelRelay.FromHost(data);return;}
             if(!host&&type==37){RemoteActions.Notice(Encoding.UTF8.GetString(data));return;}
             if(host&&type==21){var request=WireJson.FromJson<Request>(Encoding.UTF8.GetString(data));if(request==null||request.sequence<=peer.lastSequence)throw new Exception("~SMC169~");peer.lastSequence=request.sequence;Process(peer.id,request,reply=>peer.Send(22,Encode(reply)));return;}
             if(!host&&type==20){var delta=WireJson.FromJson<WorldDelta>(Encoding.UTF8.GetString(data));if(delta==null||pendingWorld.Count>=16)throw new Exception("~SMC104~");pendingWorld.Enqueue(delta);return;}
@@ -252,7 +254,7 @@ namespace ShopTogether {
         internal void Release(int[] ids){foreach(int id in ids)deferredRelease.Add(id);FlushReleases();}
         internal void ReleaseAll(){waiting.Clear();var ids=new HashSet<int>(LocalLeases.Keys);ids.UnionWith(requested);Release(new List<int>(ids).ToArray());NativeActions.CancelLocal();}
         internal void Process(int owner,Request request,Action<LeaseReply> reply){
-            if(!IsHost||!Ready)return;World.Index();double now=Time.realtimeSinceStartup;
+            if(!IsHost||!Ready)return;World.Refresh();double now=Time.realtimeSinceStartup;
 #if LAN_PROBE
             if(request.kind==RequestKind.Move||request.kind==RequestKind.AutoPlace){var move=request.moves!=null&&request.moves.Length>0?request.moves[0]:null;long v=0;if(move!=null)World.Versions.TryGetValue(move.item,out v);Debug.Log("[SMC REQUEST] kind="+request.kind+" owner="+owner+" currentVersion="+v+" owns="+(move!=null&&Leases.Owns(owner,move.item,move.lease,now))+" move="+WireJson.ToJson(move));}
 #endif
@@ -342,7 +344,6 @@ namespace ShopTogether {
         internal bool ShowCursors{get{return Ready&&(IsHost||IsClient)&&EmporiumEntry.Instance!=null;}}
         void OnGUI(){Cursors.Draw(this);if(ShowCursors)Activity.Draw(IsHost?0:PlayerId);if(IsHost&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC089~")))ShowHostReady();if(IsClient&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC181~"))){Stop();ReturnToMenu();}
             if(IsClient&&Ready&&HostPhase.Away){GUI.Box(new Rect(Screen.width/2-220,Screen.height/2-40,440,80),Loc.Text(""));GUI.Label(new Rect(Screen.width/2-200,Screen.height/2-25,400,50),Loc.Text(HostPhase.Text));}
-            if(IsClient&&Ready&&!string.IsNullOrEmpty(RemoteActions.LastNote)&&Time.realtimeSinceStartup<RemoteActions.NoteUntil)GUI.Label(new Rect(Screen.width-420,66,410,22),Loc.Text(RemoteActions.LastNote));
-            if(IsClient&&Ready)GUI.Label(new Rect(Screen.width-420,44,410,22),Loc.Text(Drift.Corrections==0?"~SMC056~":"~SMC055~"+Drift.Corrections+"~SMC008~"));}
+        }
     }
 }

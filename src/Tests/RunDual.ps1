@@ -1,6 +1,6 @@
-param([ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features')][string]$Suite='all',[string]$GamePath=$env:PROBABLY_STOLEN_PATH)
+param([ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels')][string]$Suite='all',[string]$GamePath=$env:PROBABLY_STOLEN_PATH)
 $ErrorActionPreference='Stop'
-if($Suite -eq 'all'){ foreach($part in @('core','gun','death','phone','outing','join','extra','overflow','machines','features')){ & $PSCommandPath -Suite $part -GamePath $GamePath }; return }
+if($Suite -eq 'all'){ foreach($part in @('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels')){ & $PSCommandPath -Suite $part -GamePath $GamePath }; return }
 $project=Split-Path $PSScriptRoot -Parent
 if(-not $GamePath){$GamePath='D:\SteamLibrary\steamapps\common\Probably Stolen'}
 $game=[IO.Path]::GetFullPath($GamePath)

@@ -12,7 +12,7 @@ namespace ShopTogether {
         static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);Debug.Log("[SMC PASS] "+message);}
         internal static IEnumerator Run(Connection root){
             SuppressPersistence();
-            var runner=Argument("--smc-role")=="host"?HostCheck(root):Argument("--smc-role")=="client"?ClientCheck(root):Check(root);bool more;
+            var runner=Argument("--smc-group")!=null?GroupCheck(root):Argument("--smc-role")=="host"?HostCheck(root):Argument("--smc-role")=="client"?ClientCheck(root):Check(root);bool more;
             while(true){try{more=runner.MoveNext();}catch(Exception error){CaptureFailure();Debug.LogError("[SMC FAIL] "+error);break;}if(!more)break;yield return runner.Current;}
             CloseControl();root.Stop();float until=Time.realtimeSinceStartup+2;while(Time.realtimeSinceStartup<until)yield return null;yield return null;Application.Quit();
         }

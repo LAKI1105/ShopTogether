@@ -18,9 +18,18 @@ namespace ShopTogether {
         string lastStore,lastStation;float nextState;
         // Host: items to compare first (just changed), the round-robin position, and each item's last sent fingerprint.
         readonly HashSet<int> dirty=new HashSet<int>();readonly List<int> order=new List<int>();int orderCursor;readonly Dictionary<int,long> fingerprints=new Dictionary<int,long>();
-        internal void MarkDirty(GameItem item){int id;if(item!=null&&itemIds.TryGetValue(item,out id))dirty.Add(id);}
+        internal void MarkDirty(GameItem item){int id;if(item==null)return;if(itemIds.TryGetValue(item,out id))dirty.Add(id);else structureDirty=true;}
+        // Host side: walking the whole shop only when its shape may have changed. Inventory addresses are (container
+        // item id, inventory number inside that container), so they do not shift when items move; a new walk is needed
+        // only for new or removed items and containers. It happens when an unknown item changes, after a friend's
+        // request, when any known item sits outside the known inventories, and at least every two seconds.
+        bool structureDirty=true;float lastIndex=-100f;
+        internal void Refresh(bool force=false){
+            if(replicaMode||force||structureDirty||Time.realtimeSinceStartup-lastIndex>=2f||StaleParents()){Index();return;}
+        }
+        bool StaleParents(){foreach(var p in Items){var item=p.Value;if(item==null||item.parentInventory==null||!addresses.ContainsKey(item.parentInventory))return true;}return false;}
         internal static bool Applying;
-        internal void Reset(){LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
+        internal void Reset(){structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
         internal int Id(GameItem item){int id;return item!=null&&itemIds.TryGetValue(item,out id)?id:0;}
         internal void Prime(WorldDelta seed){
             if(seed==null||!seed.full||seed.store==null||seed.station==null)throw new InvalidOperationException("~SMC117~");
@@ -35,12 +44,12 @@ namespace ShopTogether {
             foreach(var extra in OutingKits.Roots())yield return extra;   // outing grounds and pockets (host and friends)
         }
         internal void Index() {
-            Items.Clear();Inventories.Clear();addresses.Clear();
+            Items.Clear();Inventories.Clear();addresses.Clear();structureDirty=false;lastIndex=Time.realtimeSinceStartup;
             var visited=new HashSet<GraphNodeStorage>();
             foreach(var root in Roots())Walk(root.Value,root.Key,0,new int[]{0},visited);
             foreach(var pair in new List<KeyValuePair<GameItem,int>>(itemIds))if(!Items.ContainsKey(pair.Value))itemIds.Remove(pair.Key);
         }
-        internal void Committed(Request request){long revision=++Version;var changed=new HashSet<int>(request.items??new int[0]);if(request.target>0)changed.Add(request.target);if(request.moves!=null)foreach(var move in request.moves)if(move.target>0)changed.Add(move.target);foreach(int id in changed){Versions[id]=revision;signatures[id]=null;}}
+        internal void Committed(Request request){structureDirty=true;long revision=++Version;var changed=new HashSet<int>(request.items??new int[0]);if(request.target>0)changed.Add(request.target);if(request.moves!=null)foreach(var move in request.moves)if(move.target>0)changed.Add(move.target);foreach(int id in changed){Versions[id]=revision;signatures[id]=null;}}
         void Walk(GraphNodeStorage node,int root,int owner,int[] ordinal,HashSet<GraphNodeStorage> visited) {
             if(node==null||!visited.Add(node))return;
             var item=node as GameItem;
@@ -62,7 +71,7 @@ namespace ShopTogether {
 #if LAN_PROBE
             var captureTimer=System.Diagnostics.Stopwatch.StartNew();
 #endif
-            Index();long version=++Version;var changed=new List<ItemRecord>();var removed=new List<int>();
+            Refresh(full);long version=++Version;var changed=new List<ItemRecord>();var removed=new List<int>();
             // A big store has thousands of items: a normal update compares new and just-changed items first, then
             // as many others as fit in a few milliseconds, continuing where the last update stopped.
             var timer=System.Diagnostics.Stopwatch.StartNew();var done=new HashSet<int>();

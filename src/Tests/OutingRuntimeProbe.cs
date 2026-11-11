@@ -20,6 +20,18 @@ namespace ShopTogether {
    h.Patch(AccessTools.Method(typeof(HealthData),"RollLuck"),prefix:new HarmonyMethod(typeof(RuntimeProbe),"NoLuck"));
    h.Patch(AccessTools.Method(typeof(HealthData),"RollBadLuck"),prefix:new HarmonyMethod(typeof(RuntimeProbe),"NoLuck"));
    h.Patch(AccessTools.Method(typeof(StoreUIManager),"Notify"),postfix:new HarmonyMethod(typeof(RuntimeProbe),"InjuryNotice"));
+   {
+    var original=ModHelper.SpawnItem("backpack_small");original.name="HOST_REAL_BAG";e.TryAddToPlayerInv(original);var originalHome=original.parentInventory;
+    var kept=ModHelper.SpawnItem("magnifier");kept.mayStackItemFunc=(x,y)=>false;Require(GraphUtils.TryAcceptAll(original,kept)==0,"host real bag contents fixture");
+    e.selectedBackpack=original;e.TransferBackpackToInv();var borrowed=e.afterhourPocketSlotInvBackpack.childItem;
+    Require(borrowed!=null&&OutingKits.IsVoidBag(borrowed)&&!ReferenceEquals(borrowed,original),"host native departure creates void backpack");
+    Require(original.parentInventory==originalHome&&OutingKits.Contents(original).Contains(kept),"host original bag and contents stay in shop");
+    Require(OutingKits.Contents(borrowed).Count==0&&!borrowed.MayRemove()&&borrowed.MaxNumRemove()==0,"host void backpack is empty and cannot be moved");
+    e.TryAddToPlayerInv(borrowed);Require(borrowed.parentInventory==e.afterhourPocketSlotInvBackpack,"void bag cannot become shop item");
+    var loot=ModHelper.SpawnItem("magnifier");loot.mayStackItemFunc=(x,y)=>false;Require(GraphUtils.TryAcceptAll(borrowed,loot)==0,"host void bag receives loot");
+    e.TransferAfterhourToInv();Require(e.afterhourPocketSlotInvBackpack.childItem==null&&loot.parentInventory!=null&&!OutingKits.Contents(original).Contains(loot),"host native return unpacks loot and removes void bag");
+    Require(original.parentInventory==originalHome&&OutingKits.Contents(original).Contains(kept),"host real bag remains unchanged after return");
+   }
    float woundWithout=ScavHelper.GetMinorWoundChance();var flashlight=ModHelper.SpawnItem("flashlight");e.TryAddToPlayerInv(flashlight);OutingSupplies.Reset();Require(Math.Abs(ScavHelper.GetMinorWoundChance()*2-woundWithout)<0.01f,"shop flashlight halves native injury probability");var bandage=ModHelper.SpawnItem("bandage_item");bandage.unitCount=1;bandage.mayStackItemFunc=(x,y)=>false;e.TryAddToPlayerInv(bandage);var backpack=ModHelper.SpawnItem("backpack_small");backpack.name="OUT_BACKPACK";e.TryAddToPlayerInv(backpack);Signal("OUT_READY");var wait=Wait(()=>OutingKits.AnyOut,"client independently entered dumping ground",40);while(wait.MoveNext())yield return wait.Current;
    Kit kit=null;foreach(var k in OutingKits.All)if(k.owner>0){kit=k;break;}int owner=kit.owner;var voidBag=kit.backpack.childItem;Require(OutingKits.IsVoidBag(voidBag)&&OutingKits.Contents(voidBag).Count==0,"borrowed backpack starts empty");root.World.Index();Require(!OutingKits.RequestAllowed(root,owner,new Request{kind=RequestKind.Move,items=new[]{root.World.Id(voidBag)}}),"void backpack cannot be moved through client request");Require(kit.location=="dumping_ground"&&kit.attempts==0,"friend starts own search count");Require(backpack.parentInventory!=kit.backpack&&backpack.parentInventory!=null&&kit.backpack.childItems.Count==1&&OutingKits.IsVoidBag(kit.backpack.childItems[0]),"original backpack stays in shop while friend receives void bag");
    int day=StoreStation.Instance.dayCounter;EndOfDayUIManager.Instance.OnEndDayButtonClick();Require(StoreStation.Instance.dayCounter==day&&DayGuards.Sleep()!=null,"host sleep denied while friend outside");Signal("OUT_SEARCH");
