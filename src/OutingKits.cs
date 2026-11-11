@@ -6,6 +6,22 @@ using HarmonyLib;
 using UnityEngine;
 
 namespace ShopTogether {
+    [HarmonyPatch(typeof(GameItem), "MayRemove")]
+    internal static class VoidBackpackPickup {
+        static bool Prefix(GameItem __instance, ref bool __result) {
+            if (Connection.Current == null || !Connection.Current.Ready || __instance.parentInventory == null || !OutingKits.IsVoidBag(__instance)) return true;
+            __result = false;
+            return false;
+        }
+    }
+    [HarmonyPatch(typeof(GameItem), "MaxNumRemove")]
+    internal static class VoidBackpackTransfer {
+        static bool Prefix(GameItem __instance, ref int __result) {
+            if (Connection.Current == null || !Connection.Current.Ready || __instance.parentInventory == null || !OutingKits.IsVoidBag(__instance)) return true;
+            __result = 0;
+            return false;
+        }
+    }
     /// <summary>
     /// Night outings for friends. The host goes out exactly as in the base game. A friend can go to the dumping
     /// ground or the commissary on their own: each friend gets their own ground, two pockets and backpack slot, and
@@ -111,7 +127,16 @@ namespace ShopTogether {
         }
 
         internal static Kit Of(int owner) { if (owner <= 0) return null; foreach (var k in All) if (k.owner == owner) return k; return null; }
-        internal static bool AnyOut { get { foreach (var k in All) if (k.owner != 0 && k.location != null) return true; return false; } }
+        /// <summary>Someone is still out, or still holds things in their outing slots that are not part of the save yet.</summary>
+        internal static bool AnyOut { get { foreach (var k in All) if (Waiting(k)) return true; return false; } }
+        /// <summary>A friend who left the game does not hold up the night: what they could not put away is placed in the
+        /// shop as soon as there is room (it is retried every few seconds).</summary>
+        static bool Waiting(Kit k) {
+            if (k.owner == 0) return false;
+            if (k.location != null) return true;
+            var session = Connection.Current;
+            return k.HasLeftovers && (session == null || session.HasPeer(k.owner));
+        }
         internal static bool FriendAt(int owner, string place) { var k = Of(owner); return k != null && k.location == place; }
 
         /// <summary>Host side: whether a player may touch items under this replica root.</summary>
@@ -137,6 +162,10 @@ namespace ShopTogether {
                 return address == null || MayUse(owner, address.root);
             };
             Func<InventoryAddress, bool> place = a => a == null || MayUse(owner, a.root);
+            // A void backpack is only a borrowed shape: it can be filled and emptied, never moved anywhere.
+            Func<int, bool> moved = id => { GameItem found; return id > 0 && world.Items.TryGetValue(id, out found) && IsVoidBag(found); };
+            if (request.items != null) foreach (int id in request.items) if (moved(id)) return false;
+            if (request.moves != null) foreach (var m in request.moves) if (m != null && moved(m.item)) return false;
             if (request.items != null) foreach (int id in request.items) if (!item(id)) return false;
             if (!item(request.target) || !place(request.inventory)) return false;
             if (request.moves != null) foreach (var m in request.moves) if (m != null && (!item(m.item) || !item(m.target) || !place(m.inventory))) return false;
@@ -194,6 +223,7 @@ namespace ShopTogether {
             if (pack != null) {
                 bag = ItemSpawner.Spawn(pack.identifier);
                 if (bag == null) { Note("~SMC224~"); Hand(); return; }
+                foreach (var inside in Contents(bag)) { if (inside.parentInventory != null) inside.parentInventory.Expel(inside); inside.Destroy(); }
                 GeneralHelper.SetItemOwned(bag, true);
                 bag.EnableTag(VoidTag);
                 GraphUtils.TryAcceptAll(kit.backpack, bag);
@@ -241,6 +271,13 @@ namespace ShopTogether {
             return item.parentInventory != from;
         }
 
+        /// <summary>Empties a void backpack into the shop and removes it; false when something did not fit (it stays in the bag).</summary>
+        static bool Unpack(GameItem bag, GameInventory holder) {
+            foreach (var inside in Contents(bag)) Home(inside);
+            if (Contents(bag).Count == 0) { holder.Expel(bag); bag.Destroy(); return true; }
+            return false;
+        }
+
         /// <summary>Host side: carried items and ground loot return to the shop and the empty void backpack disappears.
         /// The Serpico storyline observes the dumping-ground contents before they are returned.
         /// Nothing is ever thrown away for lack of room: what did not fit stays in the friend's outing slots, which they
@@ -252,12 +289,12 @@ namespace ShopTogether {
             try {
                 foreach (var item in new List<GameItem>(kit.backpack.childItems)) {
                     if (!IsVoidBag(item)) { if (!Home(item)) left = true; continue; }
-                    foreach (var inside in Contents(item)) if (!Home(inside)) left = true;
-                    if (Contents(item).Count == 0) { kit.backpack.Expel(item); item.Destroy(); }
+                    if (!Unpack(item, kit.backpack)) left = true;
                 }
-                foreach (var pocket in new GameInventory[] { kit.left, kit.right }) foreach (var item in new List<GameItem>(pocket.childItems)) if (!Home(item)) left = true;
+                foreach (var pocket in new GameInventory[] { kit.left, kit.right }) foreach (var item in new List<GameItem>(pocket.childItems)) { if (IsVoidBag(item)) { if (!Unpack(item, pocket)) left = true; } else if (!Home(item)) left = true; }
                 if (place == "dumping_ground") SerpicoStoryline.OnLeaveDumpingGround(kit.ground);
                 foreach (var item in new List<GameItem>(kit.ground.childItems)) {
+                    if (IsVoidBag(item)) { if (!Unpack(item, kit.ground)) left = true; continue; }
                     if (!Home(item)) left = true;
                 }
             } catch (Exception error) { Debug.LogWarning("[ShopTogether] friend return: " + error); left = true; }
@@ -321,7 +358,7 @@ namespace ShopTogether {
 
         internal static string OutNames(Connection session) {
             var names = new List<string>();
-            foreach (var k in All) if (k.owner != 0 && k.location != null) names.Add(session != null ? session.NameOf(k.owner) : "~SMC210~");
+            foreach (var k in All) if (Waiting(k)) names.Add((session != null ? session.NameOf(k.owner) : "~SMC210~") + (k.location == null ? "~SMC236~" : ""));
             return string.Join("、", names.ToArray());
         }
 

@@ -431,7 +431,7 @@ namespace ShopTogether {
     [HarmonyPatch]
     internal static class UiInputScope {
         static IEnumerable<MethodBase> TargetMethods() {
-            foreach (var m in new MethodBase[] { AccessTools.Method(typeof(TMPro.TMP_InputField), "SendOnEndEdit"), AccessTools.Method(typeof(TMPro.TMP_InputField), "SendOnSubmit"), AccessTools.Method(typeof(TMPro.TMP_Dropdown), "OnSelectItem"), AccessTools.Method(typeof(UnityEngine.UI.Toggle), "InternalToggle"), AccessTools.Method(typeof(UnityEngine.UI.Slider), "Set", new[] { typeof(float), typeof(bool) }) })
+            foreach (var m in new MethodBase[] { AccessTools.Method(typeof(TMPro.TMP_InputField), "SendOnEndEdit"), AccessTools.Method(typeof(TMPro.TMP_InputField), "SendOnSubmit"), AccessTools.Method(typeof(TMPro.TMP_Dropdown), "OnSelectItem"), AccessTools.Method(typeof(UnityEngine.UI.Toggle), "InternalToggle"), AccessTools.Method(typeof(UnityEngine.UI.Slider), "OnPointerDown"), AccessTools.Method(typeof(UnityEngine.UI.Slider), "OnDrag"), AccessTools.Method(typeof(UnityEngine.UI.Slider), "OnMove") })
                 if (m != null) yield return m;
         }
         static void Prefix(ref bool __state) { __state = LocalControl.Focused; if (__state) { LocalControl.depth++; MachineSettings.Input++; } }

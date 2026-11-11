@@ -271,8 +271,9 @@ namespace ShopTogether {
         [HarmonyPriority(Priority.First)]
         static bool Prefix(StoreUIManager __instance) {
             if (!ReplicaSession.ClientStore) {
-                if (!ShotgunView.Headless || __instance.isShootingMode) return true;
+                if (!ShotgunView.Headless) return true;
                 ShotgunView.Headless = false;
+                if (__instance.isShootingMode) return true;
                 if (NegociationUIManager.Instance != null) NegociationUIManager.Instance.CloseUI();
                 __instance.shootingUI.SetActive(false); __instance.shootingWoundRenderer.gameObject.SetActive(false);
                 return false;

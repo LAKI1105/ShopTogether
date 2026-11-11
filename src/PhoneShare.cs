@@ -108,10 +108,18 @@ namespace ShopTogether {
             lastSig = v.sig;
             state.phone = v;
         }
-        static string Clip(string s) { s = s ?? ""; return s.Length > 600 ? s.Substring(0, 600) : s; }
+        static string Clip(string s) { s = s ?? ""; return s.Length > 400 ? s.Substring(0, 400) : s; }
 
-        internal static void HostTick(Connection session) { users.RemoveWhere(id => !session.HasPeer(id)); }
-        internal static void Reset() { users.Clear(); hostUsing = false; if (hidden) Show(true); shownSig = 0; }
+        internal static void HostTick(Connection session) { if (users.RemoveWhere(id => !session.HasPeer(id)) > 0) PutDown(); }
+        /// <summary>Host side: nobody is on the phone any more and the host never picked it up: hang up and put it away.</summary>
+        static void PutDown() {
+            var phone = PhoneUIManager.Instance;
+            if (users.Count > 0 || hostUsing || !hidden || phone == null || phone.phonePanel == null) return;
+            phone.StopCall();
+            phone.phonePanel.SetActive(false);
+            Show(true);
+        }
+        internal static void Reset() { users.Clear(); PutDown(); hostUsing = false; if (hidden) Show(true); shownSig = 0; }
 
         // ---------------- friend side ----------------
 

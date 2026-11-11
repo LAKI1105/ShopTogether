@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.6";
+        internal const string BuildVersion="1.3.7";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -185,7 +185,7 @@ namespace ShopTogether {
         void BroadcastPhase(){
             if(!peers.Exists(p=>p.authenticated&&p.modsOk)||Time.realtimeSinceStartup<nextPhaseCheck)return;nextPhaseCheck=Time.realtimeSinceStartup+.25f;
             string now=WireJson.ToJson(HostPhase.Capture(Ready));if(now==lastPhase&&Time.realtimeSinceStartup<nextPhase)return;
-            nextPhase=Time.realtimeSinceStartup+1f;lastPhase=now;byte[] bytes=Encoding.UTF8.GetBytes(now);if(bytes.Length>16384)return;
+            nextPhase=Time.realtimeSinceStartup+1f;lastPhase=now;byte[] bytes=Encoding.UTF8.GetBytes(now);if(bytes.Length>65536){Debug.LogWarning("[ShopTogether] phase too large: "+bytes.Length);return;}
             foreach(var p in peers.ToArray())if(p.authenticated&&p.modsOk){try{p.Send(34,bytes);}catch{Leases.Disconnect(p.id);p.Dispose();peers.Remove(p);}}
         }
         static byte[] Encode<T>(T data){byte[] bytes=Encoding.UTF8.GetBytes(WireJson.ToJson(data));if(bytes.Length>LargeTransfer.MaxPayload)throw new InvalidOperationException("~SMC075~");return bytes;}

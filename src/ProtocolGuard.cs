@@ -22,7 +22,7 @@ namespace ShopTogether {
                 || type == 30 && length > 0 && length <= 16384 || type == 33 && length > 0 && length <= 16384 || type == 36 && length > 0 && length <= 65536 || type == 38 && length == 8 || type == 41 && length == 1;
             return type == 20 && length > 0 && length <= 4 * 1024 * 1024 || type == 22 && length > 0 && length <= 4096
                 || type == 31 && length > 0 && length <= 32768 || type == 32 && length > 0 && length <= 4 * 1024 * 1024
-                || type == 34 && length > 0 && length <= 16384 || type == 39 && length >= 4 && length <= 4 + 12 * 8 || type == 40 && length > 0 && length <= 4096
+                || type == 34 && length > 0 && length <= 65536 || type == 39 && length >= 4 && length <= 4 + 12 * 8 || type == 40 && length > 0 && length <= 4096
                 || type == 26 && length > LargeTransfer.Header && length <= LargeTransfer.Header + LargeTransfer.Chunk || type == 37 && length > 0 && length <= 1024 || type == 42 && length > 0 && length <= 512;
         }
         internal static bool Finite(float value) { return !float.IsNaN(value) && !float.IsInfinity(value); }

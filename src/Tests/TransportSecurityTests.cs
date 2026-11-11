@@ -53,7 +53,7 @@ class SecurityProbe {
             var admission=new AdmissionGuard();for(int i=0;i<8;i++)if(!admission.Admit("peer",0))throw new Exception("admission burst");Require(!admission.Admit("peer",0)&&admission.Admit("peer",10),"connection attempt limit and recovery");
             Require(!ProtocolGuard.Valid(true,true,true,20,4096)&&ProtocolGuard.Valid(true,true,true,21,1024),"host accepts requests, never client world snapshots");
             Require(ProtocolGuard.Valid(true,true,true,36,200)&&!ProtocolGuard.Valid(true,true,true,36,65537)&&!ProtocolGuard.Valid(true,true,true,34,10)&&!ProtocolGuard.Valid(true,true,true,37,10),"host accepts bounded friend actions, never phase or refusal messages");
-            Require(ProtocolGuard.Valid(false,true,true,34,40)&&ProtocolGuard.Valid(false,true,true,37,40)&&!ProtocolGuard.Valid(false,true,true,34,16385)&&!ProtocolGuard.Valid(false,true,true,36,40),"friend accepts bounded phase and refusal messages, never action requests");
+            Require(ProtocolGuard.Valid(false,true,true,34,40)&&ProtocolGuard.Valid(false,true,true,37,40)&&!ProtocolGuard.Valid(false,true,true,34,65537)&&!ProtocolGuard.Valid(false,true,true,36,40),"friend accepts bounded phase and refusal messages, never action requests");
             {
                 var big=new byte[6*1024*1024];var rng=new Random(7);for(int i=0;i<big.Length;i++)big[i]=(byte)(i%97==0?rng.Next(256):'a'+(i%26));
                 var packed=LargeTransfer.Pack(20,big);Require(packed.Type==26&&packed.Parts.Length>=1,"large store update is compressed into pieces");

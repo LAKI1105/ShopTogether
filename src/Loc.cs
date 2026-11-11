@@ -266,6 +266,7 @@ namespace ShopTogether {
             new [] { "你和房主的「同店協作」版本不同，請雙方都到工作坊更新到最新版後重開遊戲", "你和房主的模组版本不同，请双方都在创意工坊更新到最新版后重开游戏", "Your mod version differs from the host's. Both players must update from the Workshop and restart the game", "ホストと MOD のバージョンが異なります。双方がワークショップで最新版に更新し、ゲームを再起動してください", "Tu versión del mod no coincide con la del anfitrión. Ambos deben actualizar desde Workshop y reiniciar el juego", "호스트와 모드 버전이 다릅니다. 양쪽 모두 창작마당에서 최신 버전으로 업데이트하고 게임을 다시 시작하세요", "Votre version du mod diffère de celle de l’hôte. Mettez tous deux le mod à jour via le Workshop puis relancez le jeu", "Версия мода отличается от версии хозяина. Обновите мод через Мастерскую на обоих компьютерах и перезапустите игру" },
             new [] { "同店協作", "多人操作：可能很混乱", "Multiplayer Control: Probably Chaotic", "マルチ操作：たぶん大混乱", "Control multijugador: probablemente caótico", "멀티플레이 조작: 아마도 대혼란", "Contrôle multijoueur : probablement chaotique", "Совместное управление: вероятно, хаос" },
             new [] { "，加入需要「多人同時操作」模組", "，加入需要多人操作模组", "; joining requires the Multiplayer Control mod", "。参加にはマルチ操作 MOD が必要です", "; para unirte necesitas el mod Control multijugador", "; 참가하려면 멀티플레이 조작 모드가 필요합니다", " ; le mod Contrôle multijoueur est nécessaire pour rejoindre", "; для подключения нужен мод совместного управления" },
+            new [] { "（外出欄還有東西）", "（外出栏还有东西）", " (outing items still need storing)", "（外出欄に未収納の品があります）", " (quedan objetos de la salida)", " (외출 물품 정리가 남아 있음)", " (objets de sortie à ranger)", " (вещи из вылазки ещё не убраны)" },
         };
     }
 }

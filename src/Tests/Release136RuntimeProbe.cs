@@ -41,7 +41,7 @@ namespace ShopTogether {
    NativeClick(0,()=>phone.OpenUI());Require(group.alpha==1&&group.blocksRaycasts,"host can reveal ongoing shared call");
    var view=new PhaseState();PhoneShare.Capture(view);Signal("PHONE_SHARED");
    wait=Wait(()=>Received("PHONE_SAME"),"both phone users see same dialogue",40);while(wait.MoveNext())yield return wait.Current;
-   Signal("PHONE_DONE");
+   NativeClick(0,()=>phone.CloseUI());Require(group.alpha==0&&phone.phonePanel.activeSelf,"guest phone remains hidden after host puts it down");Signal("PHONE_DISCONNECT");wait=Wait(()=>!root.HasPeer(1)&&!phone.phonePanel.activeSelf,"last guest disconnect hangs up hidden host phone",40);while(wait.MoveNext())yield return wait.Current;Signal("PHONE_DONE");
   }
   static IEnumerator PhoneClient(Connection root){
    CheckAchievementSetting();var wait=Wait(()=>Received("PHONE_READY"),"phone fixture ready",40);while(wait.MoveNext())yield return wait.Current;
@@ -51,14 +51,14 @@ namespace ShopTogether {
    var talk=DialoguePhoneUIManager.Instance;wait=Wait(()=>talk.currentDialog!=null&&talk.currentDialog.plainText=="SMC shared phone question"&&talk.currentDialog.choices!=null&&talk.currentDialog.choices.Count==1,"host call choices replicated",40);while(wait.MoveNext())yield return wait.Current;
    NativeClick(0,()=>talk.SelectChoice(0));wait=Wait(()=>Received("PHONE_SHARED"),"host also picked up",40);while(wait.MoveNext())yield return wait.Current;
    Require(phoneChoices==0,"phone dialogue result never runs locally on client");Require(PhoneUIManager.Instance.phonePanel.activeSelf,"client stays on shared phone");Signal("PHONE_SAME");
-   wait=Wait(()=>Received("PHONE_DONE"),"phone verification finished",40);while(wait.MoveNext())yield return wait.Current;
+   wait=Wait(()=>Received("PHONE_DISCONNECT"),"host put down shared phone",40);while(wait.MoveNext())yield return wait.Current;root.Stop();wait=Wait(()=>Received("PHONE_DONE"),"phone verification finished",40);while(wait.MoveNext())yield return wait.Current;
   }
   static IEnumerator OverflowHost(Connection root){
    var store=PlayerStore.Instance;store.storeState=PlayerStore.StoreState.CLOSED;store.isAfterhoursIntroduced=true;store.healthData.woundState=0;store.healthData.isWoundedFresh=false;
    Signal("OVERFLOW_GO");var wait=Wait(()=>OutingKits.AnyOut,"overflow client outside",40);while(wait.MoveNext())yield return wait.Current;Kit kit=null;foreach(var k in OutingKits.All)if(k.location!=null){kit=k;break;}
    var loot=ModHelper.SpawnItem("magnifier");loot.name="SMC_OVERFLOW_LOOT";loot.mayStackItemFunc=(x,y)=>false;Require(GraphUtils.TryAcceptAll(kit.ground,loot)==0&&loot.parentInventory==kit.ground,"overflow ground loot placed");
    var blocked=new Dictionary<GameInventory,Func<GameItem,GameInventory,bool>>();foreach(var r in WorldReplica.Roots())if(r.Key<40&&!blocked.ContainsKey(r.Value)){blocked[r.Value]=r.Value.mayInventoryAddItemFunc;r.Value.mayInventoryAddItemFunc=(a,b)=>false;}
-   try{Signal("OVERFLOW_RETURN");wait=Wait(()=>!OutingKits.AnyOut,"return with no shop capacity",40);while(wait.MoveNext())yield return wait.Current;Require(kit.HasLeftovers&&kit.owner>0&&loot.parentInventory==kit.ground,"no-capacity return preserves loot and ownership");Signal("OVERFLOW_HELD");wait=Wait(()=>Received("OVERFLOW_BLOCKED"),"another outing blocked until leftovers empty",40);while(wait.MoveNext())yield return wait.Current;}
+   try{Signal("OVERFLOW_RETURN");wait=Wait(()=>kit.location==null,"return with no shop capacity",40);while(wait.MoveNext())yield return wait.Current;Require(kit.HasLeftovers&&kit.owner>0&&loot.parentInventory==kit.ground,"no-capacity return preserves loot and ownership");Require(OutingKits.AnyOut&&DayGuards.Sleep()!=null,"sleep blocked while connected friend has unstored outing items");Signal("OVERFLOW_HELD");wait=Wait(()=>Received("OVERFLOW_BLOCKED"),"another outing blocked until leftovers empty",40);while(wait.MoveNext())yield return wait.Current;}
    finally{foreach(var r in blocked)r.Key.mayInventoryAddItemFunc=r.Value;}
    Signal("OVERFLOW_MOVE");wait=Wait(()=>Received("OVERFLOW_DROPPED"),"client submitted manual drop",40);while(wait.MoveNext())yield return wait.Current;wait=Wait(()=>true&&loot.parentInventory==EmporiumEntry.Instance.backInvinvElement,"leftover dragged into shop and committed by host",40);while(wait.MoveNext())yield return wait.Current;Signal("OVERFLOW_DONE");
   }
