@@ -40,7 +40,7 @@ Package `ShopTogether.dll` with `src/manifest.xml`. For a .NET SDK build, set th
 ./src/Tests/RunDual.ps1
 ```
 
-The runtime harness needs Windows, Steam, the game and the enabled Workshop mod. Close the game before running it. It temporarily replaces the installed Workshop DLL, runs isolated test shops without saving, then restores the original files and closes only its own processes. Do not run two harness instances concurrently. The runner currently targets Workshop item 3837477869.
+The runtime harness needs Windows, Steam, the game and the enabled Workshop mod. Close the game before running it. It runs a disposable game copy on a verified private Windows desktop with isolated test profiles, and closes only its own processes. It does not replace the subscribed Workshop files. Do not run two harness instances concurrently. The runner currently targets Workshop item 3837477869.
 
 Each process must report `[SMC COMPLETE]`. A successful build alone is not a runtime pass. Local dual-process tests do not verify two distinct Steam accounts, Internet routers, every third-party mod or eight-player performance. Real Steam achievement writes are suppressed in the test harness.
 

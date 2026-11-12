@@ -165,6 +165,8 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(ShopActions).GetMethod("SetAppraisalAllowed", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("ApplyPerk", BF)));
             AddAdapter(M(() => typeof(OutingSupplies).GetMethod("UseBandage", BF)));
+            AddAdapter(M(() => typeof(DumpingGround).GetMethod("DumpWaste", BF)));
+            AddAdapter(M(() => typeof(DumpingGround).GetMethod("FeedSerpico", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("ConfirmPanel", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("CancelPanel", BF)));
             // The shop phone: one phone, calls run on the host.

@@ -262,7 +262,7 @@ namespace ShopTogether {
 
         /// <summary>Puts one thing a friend brought back into the shop, where the base game puts what the shopkeeper
         /// brings home: the back counter, then the shelves, then the showcase, then the front counter.</summary>
-        static bool Home(GameItem item) {
+        internal static bool Home(GameItem item) {
             var e = EmporiumEntry.Instance;
             if (e == null || item == null) return false;
             var from = item.parentInventory;
@@ -303,7 +303,7 @@ namespace ShopTogether {
                     if (!Unpack(item, kit.backpack)) left = true;
                 }
                 foreach (var pocket in new GameInventory[] { kit.left, kit.right }) foreach (var item in new List<GameItem>(pocket.childItems)) { if (IsVoidBag(item)) { if (!Unpack(item, pocket)) left = true; } else if (!Home(item)) left = true; }
-                if (place == "dumping_ground") SerpicoStoryline.OnLeaveDumpingGround(kit.ground);
+                if (place == "dumping_ground") { bool feeding = SerpicoStoryline.IsFoodWindowOpen(); SerpicoStoryline.OnLeaveDumpingGround(kit.ground); DumpingGround.FriendLeaves(kit.ground, feeding); }
                 foreach (var item in new List<GameItem>(kit.ground.childItems)) {
                     if (IsVoidBag(item)) { if (!Unpack(item, kit.ground)) left = true; continue; }
                     if (!Home(item)) left = true;
@@ -617,10 +617,19 @@ namespace ShopTogether {
     }
     [HarmonyPatch(typeof(EmporiumEntry), "TransferAfterhourToInv")]
     internal static class HostVoidBackpackBack {
+        static bool pendingGround;
+        internal static bool HasLeftovers {
+            get {
+                var e = EmporiumEntry.Instance;
+                if (!pendingGround || e == null) return false;
+                if (e.afterhourInventory.childItems.Count > 0 || e.afterhourPocketSlotInvBackpack.childItems.Count > 0 || e.afterhourPocketSlotInvLeft.childItems.Count > 0 || e.afterhourPocketSlotInvRight.childItems.Count > 0) return true;
+                pendingGround = false; return false;
+            }
+        }
         [HarmonyPriority(Priority.First)]
-        static void Prefix(EmporiumEntry __instance) {
+        static bool Prefix(EmporiumEntry __instance, bool countsDumpedWaste) {
             var session = Connection.Current;
-            if (session == null || !session.IsHost) return;
+            if (session == null || !session.IsHost) return true;
             foreach (var holder in new GameInventory[] { __instance.afterhourPocketSlotInvBackpack, __instance.afterhourPocketSlotInvLeft, __instance.afterhourPocketSlotInvRight })
                 if (holder != null) foreach (var bag in new List<GameItem>(holder.childItems)) if (OutingKits.IsVoidBag(bag)) OutingKits.Unpack(bag, holder);
             // A void backpack dropped on the ground stays behind with whatever is in it, like anything left there.
@@ -629,6 +638,20 @@ namespace ShopTogether {
                     foreach (var inside in OutingKits.Contents(bag)) { if (inside.parentInventory != null) inside.parentInventory.Expel(inside); inside.Destroy(); }
                     __instance.afterhourInventory.Expel(bag); bag.Destroy();
                 }
+            if (!countsDumpedWaste) return true;
+            // The normal dumping-ground return discards the entire ground. Count waste as usual,
+            // but carry the other finds home; leave overflow accessible in the outing window.
+            foreach (var holder in new GameInventory[] { __instance.afterhourPocketSlotInvBackpack, __instance.afterhourPocketSlotInvRight, __instance.afterhourPocketSlotInvLeft })
+                if (holder != null) foreach (var item in new List<GameItem>(holder.childItems)) __instance.TryAddToPlayerInv(item);
+            foreach (var item in new List<GameItem>(__instance.afterhourInventory.childItems)) {
+                if (item.identifier == "nuclear_waste") {
+                    PlayerStore.GetStoreClientData().nuclearWasteDumped++;
+                    __instance.afterhourInventory.Expel(item); item.Destroy();
+                } else OutingKits.Home(item);
+            }
+            pendingGround = true;
+            if (HasLeftovers) { __instance.ShowAfterhourInv(); if (StoreUIManager.Instance != null) StoreUIManager.Instance.Notify(Loc.Text("~SMC225~")); }
+            return false;
         }
     }
     [HarmonyPatch(typeof(EmporiumEntry), "TryAddToPlayerInv")]
@@ -643,7 +666,9 @@ namespace ShopTogether {
         [HarmonyPriority(Priority.First)]
         static bool Prefix() {
             var session = Connection.Current;
-            if (session == null || !session.IsHost || !OutingKits.AnyOut) return true;
+            if (session == null || !session.IsHost) return true;
+            if (HostVoidBackpackBack.HasLeftovers) { if (StoreUIManager.Instance != null) StoreUIManager.Instance.Notify(Loc.Text("~SMC225~")); return false; }
+            if (!OutingKits.AnyOut) return true;
             if (StoreUIManager.Instance != null) StoreUIManager.Instance.Notify(Loc.Text("~SMC211~" + OutingKits.OutNames(session) + "~SMC212~"));
             return false;
         }

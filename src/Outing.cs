@@ -215,6 +215,7 @@ namespace ShopTogether {
         }
         internal static string Sleep() {
             if (Store == null || EndOfDayUIManager.Instance == null || Away || Store.storeState == PlayerStore.StoreState.OPEN) return "~SMC076~";
+            if (HostVoidBackpackBack.HasLeftovers) return "~SMC225~";
             if (OutingKits.AnyOut) return "~SMC211~" + OutingKits.OutNames(Connection.Current) + "~SMC212~";
             int cost = 0;
             foreach (var service in Store.storeService) if (service != null && service.unlocked && service.isUsing) cost += service.cost;

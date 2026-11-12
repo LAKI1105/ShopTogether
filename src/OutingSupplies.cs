@@ -68,6 +68,7 @@ namespace ShopTogether {
             nextCheck = Time.realtimeSinceStartup + .3f;
             if (!Together || EmporiumEntry.Instance == null) return;
             var store = PlayerStore.Instance;
+            OutingHint();
             int count = Together && Outside && store != null && store.healthData != null && !store.healthData.isWoundStable ? Bandages().Count : -1;
             if (count == shownCount) return;
             shownCount = count;
@@ -80,6 +81,28 @@ namespace ShopTogether {
             if (map != null) builder.SetPosition(map.panelPosition + new Vector2(0f, -260f));
             builder.Show();
         }
+        // Once a night, on arriving outside: the backpack taken out is empty by design, which looks like lost items.
+        // A small window that stays until it is closed (a passing notice is easy to miss on arrival).
+        const string HintWindow = "shop_together.outing_hint";
+        static int hintDay = -1; static bool hintShown;
+        static void OutingHint() {
+            var s = Connection.Current; var station = StoreStation.Instance; var ui = CustomUIManager.Instance;
+            if (s == null || station == null || ui == null) return;
+            var map = MapUIManager.Instance;
+            bool outside = s.IsHost ? map != null && map.Current != null && !map.IsInTransit : OutingKits.Here != null || OutingKits.Joined != null;
+            if (!outside) { if (hintShown) { ui.CloseWindow(HintWindow); hintShown = false; } return; }
+            // The guest's destination is set before the black-screen transition finishes. Wait until
+            // the destination UI is actually ready, otherwise the transition can close this window.
+            var storeUI = StoreUIManager.Instance;
+            if (storeUI != null && storeUI.blackscreen != null && storeUI.blackscreen.gameObject.activeInHierarchy) return;
+            int day = s.IsClient && HostPhase.Last != null ? HostPhase.Last.day : station.dayCounter;
+            if (hintDay == day) return;
+            hintDay = day; hintShown = true;
+            var builder = CustomUIManager.Window(HintWindow, Loc.Text("~SMC249~"), "meta").SetSize(560f, 300f).Center();
+            builder.AddLabel(Loc.Text("~SMC248~")); builder.AddLabel(Loc.Text("~SMC251~")); builder.AddLabel(Loc.Text("~SMC252~"));
+            builder.AddButton(Loc.Text("~SMC250~"), () => { hintShown = false; if (CustomUIManager.Instance != null) CustomUIManager.Instance.CloseWindow(HintWindow); });
+            builder.Show();
+        }
         static void Press() {
             var s = Connection.Current;
             if (s == null) return;
@@ -87,7 +110,7 @@ namespace ShopTogether {
             if (s.IsHost) UseBandage();
             else RemoteActions.Forward(RemoteActions.Adapter("UseBandage", 0), null, new object[0]);
         }
-        internal static void Reset() { cache.Clear(); shownCount = -1; if (CustomUIManager.Instance != null) CustomUIManager.Instance.CloseWindow(Window); }
+        internal static void Reset() { cache.Clear(); shownCount = -1; hintDay = -1; hintShown = false; if (CustomUIManager.Instance != null) CustomUIManager.Instance.CloseWindow(HintWindow); if (CustomUIManager.Instance != null) CustomUIManager.Instance.CloseWindow(Window); }
 
         [HarmonyPatch(typeof(EmporiumEntry), "IsAfterhourHaveOwnedItems")]
         internal static class ShopTools {

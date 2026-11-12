@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.21";
+        internal const string BuildVersion="1.3.22";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -71,7 +71,7 @@ namespace ShopTogether {
         }
         void OnApplicationQuit(){SteamRelay.ShuttingDown=true;}
         void OnDestroy(){SteamRelay.ShuttingDown=true;Stop();if(Current==this)Current=null;}
-        internal void Stop(){MachineSettings.Reset();PanelRelay.Reset();ShopActions.Reset();OutingSupplies.Reset();if(IsHost){try{OutingKits.ReturnEveryone();}catch(Exception e){Debug.LogWarning("[ShopTogether] outing return: "+e.Message);}}OutingKits.Reset();
+        internal void Stop(){MachineSettings.Reset();PanelRelay.Reset();ShopActions.Reset();OutingSupplies.Reset();DumpingGround.Reset();if(IsHost){try{OutingKits.ReturnEveryone();}catch(Exception e){Debug.LogWarning("[ShopTogether] outing return: "+e.Message);}}OutingKits.Reset();
             hostReadyVisible=false;lanOnly=false;hostNotice="";
             if(routerMapping!=null){routerMapping.Dispose();routerMapping=null;}mappingStatus=null;joinCandidates.Clear();localInvite="";externalInvite="";publicEndpoint="";
             if(publicAddress!=null){publicAddress.Dispose();publicAddress=null;}
@@ -139,7 +139,7 @@ namespace ShopTogether {
             if(publicAddress!=null&&publicAddress.IsCompleted){string ip=publicAddress.Value;publicAddress.Dispose();publicAddress=null;IPAddress parsed;if(IsHost&&IPAddress.TryParse(ip,out parsed)&&InviteCode.IsPublic(parsed)){if(routerMapping!=null){routerMapping.Dispose();routerMapping=null;}RefreshInvites(IPAddress.Parse(LocalAddress()),new IPEndPoint(parsed,int.Parse(portText)));mappingStatus=new MappingStatus{Message="~SMC071~"};}else status="~SMC144~";if(hostReadyVisible)ShowHostReady();}
             if(IsHost&&routerMapping!=null&&mappingStatus!=routerMapping.Current){mappingStatus=routerMapping.Current;RefreshInvites(mappingStatus.Local??IPAddress.Parse(LocalAddress()),mappingStatus.External);if(hostReadyVisible)ShowHostReady();}
             try{
-                if(IsHost||IsClient){SteamRelay.Poll();Diagnostics.Soft("supplies",OutingSupplies.Tick);NativeActions.Sweep();Diagnostics.Soft("panels",()=>PanelRelay.Tick(this));Diagnostics.Soft("machine panels",()=>MachineDisplay.Tick(this));if(IsClient)Diagnostics.Flush(this);}
+                if(IsHost||IsClient){SteamRelay.Poll();Diagnostics.Soft("supplies",OutingSupplies.Tick);Diagnostics.Soft("dumping ground",DumpingGround.Tick);NativeActions.Sweep();Diagnostics.Soft("panels",()=>PanelRelay.Tick(this));Diagnostics.Soft("machine panels",()=>MachineDisplay.Tick(this));if(IsClient)Diagnostics.Flush(this);}
                 if(IsHost){
                     SteamRelay.SteamChannel arrival;while((arrival=SteamRelay.NextArrival())!=null){if(peers.Count>=MaxFriends){arrival.Dispose();continue;}peers.Add(new Peer{channel=arrival,id=++nextPlayer,deadline=Time.realtimeSinceStartup+20});Debug.Log("[ShopTogether] friend connecting through Steam");}
                     if(listener.Poll(0,SelectMode.SelectRead)){var incoming=listener.Accept();if(peers.Count>=MaxFriends||!admissions.Admit(((IPEndPoint)incoming.RemoteEndPoint).Address.ToString(),Time.realtimeSinceStartup))incoming.Close();else{var peer=new Peer{socket=incoming,id=++nextPlayer,deadline=Time.realtimeSinceStartup+15};peers.Add(peer);peer.channel=new SecureChannel(incoming,identity.Certificate,null);}}
