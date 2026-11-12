@@ -35,6 +35,19 @@ try{
     $bridgeType=$redirectAssembly.MainModule.GetType('IsolatedWorkshopRedirect')
     $bridgeMethod=@($bridgeType.Methods | Where-Object {$_.Name -eq 'Apply'})
     if($bridgeMethod.Count -ne 1){throw 'Missing test path redirect'}
+    $profileMethod=@($bridgeType.Methods | Where-Object {$_.Name -eq 'PersistentPath'})
+    if($profileMethod.Count -ne 1){throw 'Missing isolated test profile redirect'}
+    $profileRef=$module.ImportReference($profileMethod[0])
+    $profileCalls=0
+    foreach($type in $module.Types){foreach($candidate in $type.Methods){
+        # Preserve the original machine-specific trust salt when reading the copied settings.
+        if(-not $candidate.HasBody -or ($type.Name -eq 'ModTrust' -and $candidate.Name -eq 'ComputeMac')){continue}
+        foreach($instruction in $candidate.Body.Instructions){
+            $operand=$instruction.Operand
+            if($operand -is [Mono.Cecil.MethodReference] -and $operand.DeclaringType.FullName -eq 'UnityEngine.Application' -and $operand.Name -eq 'get_persistentDataPath'){$instruction.Operand=$profileRef;$profileCalls++}
+        }
+    }}
+    if($profileCalls -eq 0){throw 'Could not redirect game test profile'}
     $il=$method[0].Body.GetILProcessor()
     $call=$il.Create([Mono.Cecil.Cil.OpCodes]::Call,[Mono.Cecil.MethodReference]$module.ImportReference($bridgeMethod[0]))
     $cast=$il.Create([Mono.Cecil.Cil.OpCodes]::Castclass,[Mono.Cecil.TypeReference]$method[0].ReturnType)
@@ -47,4 +60,20 @@ try{
     $saveIl=$save[0].Body.GetILProcessor();$saveIl.Append($saveIl.Create([Mono.Cecil.Cil.OpCodes]::Ret))
     $assembly.Write((Join-Path $managed 'Assembly-CSharp.dll'))
 }finally{$redirectAssembly.Dispose();$assembly.Dispose()}
+
+# Easy Save obtains its default path from a separate managed assembly. Redirect it too;
+# every test player receives a disposable copy of the profile rather than the live files.
+$firstpass=[Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $managed 'Assembly-CSharp-firstpass.dll'),$reader)
+$redirectAssembly=[Mono.Cecil.AssemblyDefinition]::ReadAssembly($bridge,$reader)
+try{
+    $module=$firstpass.MainModule
+    $profileMethod=@($redirectAssembly.MainModule.GetType('IsolatedWorkshopRedirect').Methods | Where-Object {$_.Name -eq 'PersistentPath'})
+    $profileRef=$module.ImportReference($profileMethod[0]);$profileCalls=0
+    foreach($type in $module.Types){foreach($candidate in $type.Methods){if(-not $candidate.HasBody){continue};foreach($instruction in $candidate.Body.Instructions){
+        $operand=$instruction.Operand
+        if($operand -is [Mono.Cecil.MethodReference] -and $operand.DeclaringType.FullName -eq 'UnityEngine.Application' -and $operand.Name -eq 'get_persistentDataPath'){$instruction.Operand=$profileRef;$profileCalls++}
+    }}}
+    if($profileCalls -eq 0){throw 'Could not redirect Easy Save test profile'}
+    $firstpass.Write((Join-Path $managed 'Assembly-CSharp-firstpass.dll'))
+}finally{$redirectAssembly.Dispose();$firstpass.Dispose()}
 'ISOLATED_GAME_READY'

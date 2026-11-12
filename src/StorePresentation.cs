@@ -15,6 +15,9 @@ namespace ShopTogether {
         public ChoiceView[] choices;
         public int negotiatedItem;
         public int clientsLeft;
+        public int[] judged,buying,buyingShallow;
+        public BarterView barter;
+        public GunOrderView gunOrder;
     }
     // Only resolved customer values and text cross the wire. No delegates or dialogue actions are serialized.
     internal sealed class StorePresentation {
@@ -29,7 +32,7 @@ namespace ShopTogether {
             var ui=DialogUIManager.Instance;var dialog=ui==null?null:ui.currentDialog;
             var manager=PlayerStore.Instance.storeClientManager;
             var result=new StoreView{customer=instance==null?0:customerSerial,hasDialog=dialog!=null,negotiatedItem=world.Id(PlayerStore.Instance.currentNegociatedItem),clientsLeft=manager!=null&&manager.clientStack!=null?manager.clientStack.Count:0};
-            if(instance!=null){var blueprint=instance.GetClientBlueprint();result.customerFields=new Dictionary<string,string>();foreach(var field in fields)result.customerFields[field.Name]=JsonConvert.SerializeObject(ModReflect.Get(blueprint,field.Name));result.sprite=blueprint.spriteName;}
+            if(instance!=null){var blueprint=instance.GetClientBlueprint();Diagnostics.Soft("customer deals",()=>CustomerDeals.Capture(blueprint,world,result));result.customerFields=new Dictionary<string,string>();foreach(var field in fields)result.customerFields[field.Name]=JsonConvert.SerializeObject(ModReflect.Get(blueprint,field.Name));result.sprite=blueprint.spriteName;}
             if(dialog!=null){result.title=dialog.title;result.text=dialog.plainText;var choices=new List<ChoiceView>();if(dialog.choices!=null)for(int i=0;i<dialog.choices.Count;i++){var line=dialog.choices[i].Item2;choices.Add(new ChoiceView{title=line.title,text=line.plainText,enabled=dialog.IsChoiceEnabledAt(i)});}result.choices=choices.ToArray();}
             string lineSignature=JsonConvert.SerializeObject(new object[]{result.title,result.text,result.choices});if(dialog!=lastDialog||lineSignature!=lastLine){lastDialog=dialog;lastLine=lineSignature;dialogSerial++;}result.dialog=dialogSerial;return result;
         }
@@ -37,7 +40,7 @@ namespace ShopTogether {
         internal long DialogRevision {get{return appliedDialog;}}
         /// <summary>Friend: customers still waiting today (the queue itself only exists on the host).</summary>
         internal static int ClientsLeft;
-        internal void ApplyCustomer(StoreView view){
+        internal void ApplyCustomer(StoreView view,WorldReplica world){
             if(view==null)return;ClientsLeft=Math.Max(0,Math.Min(1000,view.clientsLeft));
             bool changed=view.customer!=appliedCustomer;
             if(changed){
@@ -46,9 +49,10 @@ namespace ShopTogether {
                 if(view.customer!=0)ModReflect.Set(PlayerStore.Instance.currentClientInstance,"storeClient",new StoreClient());
                 appliedCustomer=view.customer;
             }
-            if(view.customer==0){if(StoreUIManager.Instance!=null)StoreUIManager.Instance.HideClient();return;}
+            if(view.customer==0){CustomerDeals.Reset();if(StoreUIManager.Instance!=null)StoreUIManager.Instance.HideClient();return;}
             var blueprint=PlayerStore.Instance.currentClientInstance.GetClientBlueprint();
             foreach(var field in fields){string value;if(view.customerFields!=null&&view.customerFields.TryGetValue(field.Name,out value))ModReflect.Set(blueprint,field.Name,JsonConvert.DeserializeObject(value,field.FieldType,new JsonSerializerSettings{TypeNameHandling=TypeNameHandling.None,MetadataPropertyHandling=MetadataPropertyHandling.Ignore,MaxDepth=8}));}
+            Diagnostics.Soft("customer deals",()=>CustomerDeals.Apply(blueprint,view,world,changed));
             if(StoreClientMono.Instance!=null){if(appliedSprite!=view.sprite&&!string.IsNullOrEmpty(view.sprite)){StoreClientMono.Instance.image.sprite=SpriteDict.Instance.ShowClientSprite(view.sprite);appliedSprite=view.sprite;}if(changed){StoreUIManager.Instance.DisplayClient();StoreClientMono.Instance.SetImmediatlyArrive();}}
         }
         internal void ApplyDialogue(StoreView view,WorldReplica world){

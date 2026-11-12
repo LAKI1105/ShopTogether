@@ -41,11 +41,16 @@ namespace ShopTogether {
         }
         internal static string Of(int id) { int c; return others.TryGetValue(id, out c) ? Labels[c] : ""; }
         internal static void Reset() { others.Clear(); Inspecting = Commissary = Labeler = Book = Paper = false; }
+        static GUIStyle line;
         internal static void Draw(int self) {
-            float y = 92; GUI.color = Color.white;
+            // Grows with the screen height, like the cursors, so it stays readable above 1080p.
+            float k = Mathf.Max(1f, Screen.height / 1080f);
+            int font = Mathf.RoundToInt(14 * k);
+            if (line == null || line.fontSize != font) line = new GUIStyle(GUI.skin.label) { fontSize = font, wordWrap = false };
+            float y = 92 * k; GUI.color = Color.white;
             foreach (var p in others) {
                 if (p.Key == self || p.Value == 0) continue;
-                GUI.Label(new Rect(Screen.width - 420, y, 410, 22), Loc.Text(PlayerNames.Of(p.Key) + "：" + Labels[p.Value])); y += 22;
+                GUI.Label(new Rect(Screen.width - 420 * k, y, 410 * k, 22 * k), Loc.Text(PlayerNames.Of(p.Key) + "：" + Labels[p.Value]), line); y += 22 * k;
             }
         }
     }
@@ -91,11 +96,13 @@ namespace ShopTogether {
         }
         internal static void Draw() {
             if (Time.realtimeSinceStartup > until || Event.current.type != EventType.Repaint) return;
-            if (style == null) style = new GUIStyle(GUI.skin.box) { fontSize = 16, wordWrap = false, padding = new RectOffset(10, 10, 6, 6) };
-            var size = style.CalcSize(new GUIContent(text));
+            int font = Mathf.RoundToInt(16 * Mathf.Max(1f, Screen.height / 1080f));
+            if (style == null || style.fontSize != font) style = new GUIStyle(GUI.skin.box) { fontSize = font, wordWrap = false, padding = new RectOffset(10, 10, 6, 6) };
+            string shown = Loc.Text(text);
+            var size = style.CalcSize(new GUIContent(shown));
             var m = Input.mousePosition; float x = m.x + 18, y = Screen.height - m.y + 18;
             if (x + size.x > Screen.width) x = Screen.width - size.x - 4; if (y + size.y > Screen.height) y = Screen.height - size.y - 4;
-            int depth = GUI.depth; GUI.depth = -1001; GUI.Box(new Rect(x, y, size.x, size.y), Loc.Text(text), style); GUI.depth = depth;
+            int depth = GUI.depth; GUI.depth = -1001; GUI.Box(new Rect(x, y, size.x, size.y), shown, style); GUI.depth = depth;
         }
     }
 
@@ -103,7 +110,22 @@ namespace ShopTogether {
         sealed class Pointer { internal float X, Y, Seen; }
         static readonly Dictionary<int, Pointer> others = new Dictionary<int, Pointer>();
         static float next, lastSentAt; static float lastX = -1, lastY = -1;
-        static GUIStyle dot, label;
+        static GUIStyle dot, label; static float styledAt;
+        // Setting: how large other players' cursors and names are drawn here. Also follows the screen height,
+        // so a 1440p or 4K screen does not shrink them.
+        static ConfigEntry<float> scaleSetting;
+        internal const float DefaultScale = 1.5f;
+        internal static void DefineSettings() {
+            try { scaleSetting = ModConfig.For("shop_together").Define("cursor_scale", DefaultScale, Loc.Text("~SMC220~"), () => Loc.Text("~SMC244~"), 0.5f, 4f, () => Loc.Text("~SMC245~")); }
+            catch (Exception e) { Debug.LogWarning("[ShopTogether] cursor size setting: " + e.Message); }
+        }
+        internal static float Scale {
+            get {
+                float user = DefaultScale; try { if (scaleSetting != null) user = scaleSetting.Value; } catch { }
+                if (float.IsNaN(user) || float.IsInfinity(user)) user = DefaultScale;
+                return Mathf.Clamp(user, 0.5f, 4f) * Mathf.Max(1f, Screen.height / 1080f);
+            }
+        }
         static readonly Color[] colors = { new Color(1f, .78f, .2f), new Color(.35f, .85f, 1f), new Color(.55f, 1f, .45f), new Color(1f, .45f, .75f), new Color(.75f, .55f, 1f), new Color(1f, .55f, .3f), new Color(.3f, 1f, .85f), new Color(.95f, .95f, .95f) };
 
         internal static bool Seen(int id) { Pointer p; return others.TryGetValue(id, out p) && Time.realtimeSinceStartup - p.Seen < 3f; }
@@ -175,9 +197,11 @@ namespace ShopTogether {
         internal static void Draw(Connection c) {
             if (c.ShowCursors) ItemBusyHint.Draw();
             if (!c.ShowCursors || others.Count == 0 || Event.current.type != EventType.Repaint) return;
-            if (dot == null) {
-                dot = new GUIStyle(GUI.skin.label) { fontSize = 26, alignment = TextAnchor.MiddleCenter };
-                label = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold, wordWrap = false };
+            float k = Scale;
+            if (dot == null || styledAt != k) {
+                styledAt = k;
+                dot = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(26 * k), alignment = TextAnchor.MiddleCenter };
+                label = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(15 * k), fontStyle = FontStyle.Bold, wordWrap = false };
             }
             float now = Time.realtimeSinceStartup; var old = GUI.color; int depth = GUI.depth; GUI.depth = -1000;
             foreach (var p in others) {
@@ -185,8 +209,9 @@ namespace ShopTogether {
                 float sx = p.Value.X * Screen.width, sy = (1f - p.Value.Y) * Screen.height;
                 var color = colors[Math.Abs(p.Key) % colors.Length];
                 string doing = Activity.Of(p.Key); string name = PlayerNames.Of(p.Key) + (doing.Length > 0 ? "・" + doing : "");
-                GUI.color = new Color(0, 0, 0, .7f); GUI.Label(new Rect(sx - 11, sy - 13, 30, 30), Loc.Text("➤"), dot); GUI.Label(new Rect(sx + 15, sy + 9, 260, 24), Loc.Text(name), label);
-                GUI.color = color; GUI.Label(new Rect(sx - 13, sy - 15, 30, 30), Loc.Text("➤"), dot); GUI.Label(new Rect(sx + 14, sy + 8, 260, 24), Loc.Text(name), label);
+                string arrow = Loc.Text("➤"), shown = Loc.Text(name);
+                GUI.color = new Color(0, 0, 0, .7f); GUI.Label(new Rect(sx - 11 * k, sy - 13 * k, 30 * k, 30 * k), arrow, dot); GUI.Label(new Rect(sx + 15 * k, sy + 9 * k, 260 * k, 24 * k), shown, label);
+                GUI.color = color; GUI.Label(new Rect(sx - 13 * k, sy - 15 * k, 30 * k, 30 * k), arrow, dot); GUI.Label(new Rect(sx + 14 * k, sy + 8 * k, 260 * k, 24 * k), shown, label);
             }
             GUI.color = old; GUI.depth = depth;
         }

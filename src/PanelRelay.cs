@@ -171,7 +171,7 @@ namespace ShopTogether {
             foreach (var call in calls) { try { Open(s, call); } catch (Exception e) { Debug.LogWarning("[ShopTogether] panel: " + e.Message); } }
         }
 
-        internal static void Reset() { waiting.Clear(); confirms.Clear(); CounterTrades.Reset(); ScratchInteraction.Reset(); Owner = 0; SourceItem = null; SourceIsActivation = false; nextConfirm = 0; }
+        internal static void Reset() { waiting.Clear(); confirms.Clear(); CounterTrades.Reset(); CustomerDeals.Reset(); ScratchInteraction.Reset(); Owner = 0; SourceItem = null; SourceIsActivation = false; nextConfirm = 0; }
 
         static GameItem Item(Connection s, PanelCall c, int i) {
             if (c.items == null || i >= c.items.Length || c.items[i] <= 0) return null;

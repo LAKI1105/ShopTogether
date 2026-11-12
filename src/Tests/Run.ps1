@@ -8,8 +8,8 @@ $testRoot=Join-Path (Split-Path ([IO.Path]::GetFullPath($OutputPath)) -Parent) (
 [void](New-Item -ItemType Directory -Path $testRoot)
 try {
     $testExe=Join-Path $testRoot 'SecurityProbe.exe'
-    $sources=@('AuthorityModel.cs','DirectConnection.cs','InviteCode.cs','RouterRules.cs','ProtocolGuard.cs','SecureChannel.cs','LargeTransfer.cs','MessageStream.cs') | ForEach-Object {Join-Path $project $_}
-    $sources+=@(Join-Path $PSScriptRoot 'TransportSecurityTests.cs'; Join-Path $PSScriptRoot 'RoomSetupTests.cs')
+    $sources=@('AuthorityModel.cs','DirectConnection.cs','InviteCode.cs','RouterRules.cs','ProtocolGuard.cs','SecureChannel.cs','LargeTransfer.cs','MessageStream.cs','Diagnostics.cs') | ForEach-Object {Join-Path $project $_}
+    $sources+=@(Join-Path $PSScriptRoot 'TransportSecurityTests.cs'; Join-Path $PSScriptRoot 'RoomSetupTests.cs'; Join-Path $PSScriptRoot 'SecurityProbeStubs.cs')
     & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:exe /nowarn:0649 "/out:$testExe" "/r:$managed\Mono.Security.dll" $sources
     if($LASTEXITCODE -ne 0){throw 'Test harness compilation failed'}
     Copy-Item -LiteralPath "$managed\Mono.Security.dll" -Destination $testRoot

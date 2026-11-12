@@ -191,23 +191,27 @@ namespace ShopTogether {
         // Like the shopkeeper, each friend goes out once per night.
         static readonly HashSet<string> outTonight = new HashSet<string>();   // by Steam account / name, so rejoining does not reset it
         static int outDay = -1;
+        // A friend without a Steam link or a name is still someone: fall back to their number in this session.
+        static string Who(int owner) { var s = Connection.Current; if (s == null || owner <= 0) return null; return s.PeerIdentity(owner) ?? "P" + owner; }
+        internal static string Me(Connection s) { return s == null ? null : s.MyIdentity ?? (s.PlayerId > 0 ? "P" + s.PlayerId : null); }
         static void NewNight() { int day = StoreStation.Instance != null ? StoreStation.Instance.dayCounter : -1; if (day != outDay) { outDay = day; outTonight.Clear(); } }
 
         /// <summary>Host side: a friend leaves the shop for a location, taking the backpack they chose (or none).</summary>
         internal static void Go(string place, GameItem pack) {
             int owner = RemoteActions.CurrentOwner;
             var map = MapUIManager.Instance; var store = PlayerStore.Instance; var e = EmporiumEntry.Instance;
-            if (owner <= 0 || map == null || store == null || e == null || place == null) return;
+            if (owner <= 0 || place == null) return;
+            if (map == null || store == null || e == null) { Note("~SMC203~"); Hand(); return; }
             if (!FriendMayGo(place)) { Note("~SMC202~"); Hand(); return; }
             NewNight();
             if (store.storeState != PlayerStore.StoreState.CLOSED || !store.isAfterhoursIntroduced) { Note("~SMC203~"); Hand(); return; }
             if (HealthData.IsSeriouslyWounded() || StartingPerkContent.IsAgoraphobiaResting() || (StoreStation.Instance != null && StoreStation.Instance.storeEventManager.IsEventActive("crackdown"))) { Note("~SMC203~"); Hand(); return; }
-            string who = Connection.Current != null ? Connection.Current.PeerIdentity(owner) : null;
-            if (who == null) return;
+            string who = Who(owner);
+            if (who == null) { Note("~SMC243~"); Hand(); return; }
+            if (Of(owner) != null && Of(owner).location != null) { Note("~SMC241~"); Hand(); return; }
             if (outTonight.Contains(who)) { Note("~SMC204~"); Hand(); return; }
             var location = AfterhourLocation.Get(place);
             if (location == null || !location.IsDiscovered() || !location.IsAvailable()) { Note("~SMC205~"); Hand(); return; }
-            if (Of(owner) != null && Of(owner).location != null) return;
             bool hunted = StoreClientData.IsButcherHunting();
             if (Of(owner) != null && Of(owner).HasLeftovers) { Note("~SMC223~"); Hand(); return; }
             if (pack != null) {
@@ -240,12 +244,12 @@ namespace ShopTogether {
         /// <summary>Host side: a friend in the shop joins the host where the host is. This is that friend's outing tonight.</summary>
         internal static void Join() {
             int owner = RemoteActions.CurrentOwner; var map = MapUIManager.Instance; var store = PlayerStore.Instance;
-            if (owner <= 0 || map == null || store == null || joined.Contains(owner)) return;
-            if (map.Current == null || map.IsInTransit || FriendMayGo(map.Current.Id)) { Note("~SMC215~"); Hand(); return; }
-            if (Of(owner) != null && Of(owner).location != null) return;
+            if (owner <= 0) return;
+            if (joined.Contains(owner) || (Of(owner) != null && Of(owner).location != null)) { Note("~SMC241~"); Hand(); return; }
+            if (map == null || store == null || map.Current == null || map.IsInTransit || FriendMayGo(map.Current.Id)) { Note("~SMC215~"); Hand(); return; }
             NewNight();
-            string who = Connection.Current != null ? Connection.Current.PeerIdentity(owner) : null;
-            if (who == null) return;
+            string who = Who(owner);
+            if (who == null) { Note("~SMC243~"); Hand(); return; }
             if (outTonight.Contains(who)) { Note("~SMC204~"); Hand(); return; }
             joined.Add(owner); outTonight.Add(who);
         }
@@ -401,7 +405,7 @@ namespace ShopTogether {
                 if (s.kitOwners[i] == session.PlayerId && s.kitOwners[i] != 0) { place = s.kitPlaces[i]; left = s.kitLeft[i]; }
             }
             bool leftChanged = left != MyLeft; MyLeft = left;
-            string me = session.MyIdentity;
+            string me = Me(session);
             WentOut = s.outTonight != null && me != null && Array.IndexOf(s.outTonight, me) >= 0;
             if (place != here) {
                 string leaving = here; here = place;
@@ -506,6 +510,7 @@ namespace ShopTogether {
         }
 
         static void Enter(string place) {
+            shown = place;
             var location = AfterhourLocation.Get(place); var map = MapUIManager.Instance; var e = EmporiumEntry.Instance;
             if (TransitUI.IsOpen) TransitUI.Close();
             map.CloseUI(false);
@@ -524,7 +529,9 @@ namespace ShopTogether {
             AudioManager.Instance.Play2("open_door");
         }
 
+        static string shown;   // the place this friend's screen shows
         static void Leave(string place) {
+            shown = null;
             var map = MapUIManager.Instance; var e = EmporiumEntry.Instance;
             if (place == "commissary" && CommissaryUIManager.Instance != null) CommissaryUIManager.Instance.CloseUI();
             if (closePanel != null) closePanel.Invoke(map, null);
@@ -542,10 +549,16 @@ namespace ShopTogether {
             AudioManager.Instance.Play2("close_door");
         }
 
+        /// <summary>Friend: the screen still shows a place the host no longer has this friend at (a missed update). Back to the shop.</summary>
+        internal static bool LeaveStale() {
+            if (here != null || joinedAt != null || shown == null || MapUIManager.Instance == null || EmporiumEntry.Instance == null) return false;
+            string at = shown; Visual(() => Leave(at)); return true;
+        }
+
         internal static void ResetView() {
             if (here != null && EmporiumEntry.Instance != null && MapUIManager.Instance != null) Visual(() => Leave(here));
             if (joinedAt != null && EmporiumEntry.Instance != null && MapUIManager.Instance != null) { string at = joinedAt; joinedAt = null; Visual(() => LeaveHost(at)); }
-            here = null; joinedAt = null; mirrorSig = null; MyLeft = 0;
+            here = null; joinedAt = null; mirrorSig = null; MyLeft = 0; shown = null;
             if (kits != null) foreach (var k in kits) { k.owner = 0; k.location = null; }
         }
     }

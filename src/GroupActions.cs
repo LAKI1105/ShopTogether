@@ -34,7 +34,7 @@ namespace ShopTogether {
             foreach(var item in selected){int id=session.World.Id(item);if(id<=0)return false;if(session.IsHost){if(!session.Leases.Available(0,id,Time.realtimeSinceStartup))return false;continue;}
                 GridShape shape=(GridShape)ModReflect.CallStatic(typeof(ItemMultiSelectHandler),"TranslatedShape",new object[]{item,__1,__2});long version;session.World.Versions.TryGetValue(id,out version);ids.Add(id);moves.Add(new Placement{item=id,count=item.unitCount,x=shape.minX,y=shape.minY,rotation=shape.orientation,flip=shape.flipped,version=version,inventory=session.World.Address(__0)});
             }
-            if(session.IsHost)return true;if(LocalControl.UserAction)session.Submit(new Request{kind=RequestKind.Move,items=ids.ToArray(),moves=moves.ToArray()});return false;
+            if(session.IsHost)return true;if(ids.Count>128){RemoteActions.Notice("~SMC246~");return false;}if(LocalControl.UserAction)session.Submit(new Request{kind=RequestKind.Move,items=ids.ToArray(),moves=moves.ToArray()});return false;
         }
     }
 }

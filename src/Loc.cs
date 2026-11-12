@@ -270,7 +270,13 @@ namespace ShopTogether {
             new [] { "● 房間開啟中", "● 房间开启中", "● Room is open", "● ルーム開放中", "● Sala abierta", "● 방 열림", "● Salle ouverte", "● Комната открыта" },
             new [] { "連線狀態", "连线状态", "Connection status", "接続状況", "Estado de la conexión", "연결 상태", "État de la connexion", "Состояние подключения" },
             new [] { "● 已連線到多人店鋪", "● 已连线到多人店铺", "● Connected to a shared shop", "● 共同店舗に接続中", "● Conectado a una tienda compartida", "● 공동 상점에 연결됨", "● Connecté à une boutique partagée", "● Подключено к общему магазину" },
-            new [] { "… 連線中", "… 连线中", "… Connecting", "… 接続中", "… Conectando", "… 연결 중", "… Connexion", "… Подключение" }
+            new [] { "… 連線中", "… 连线中", "… Connecting", "… 接続中", "… Conectando", "… 연결 중", "… Connexion", "… Подключение" },
+            new [] { "你已經在外面了", "你已经在外面了", "You are already outside", "すでに外出中です", "Ya estás fuera", "이미 밖에 나와 있습니다", "Vous êtes déjà dehors", "Вы уже снаружи" },
+            new [] { "還沒連上房主，請稍候再試", "还没连上房主，请稍候再试", "Not connected to the host yet. Try again in a moment", "まだホストに接続していません。少し待ってからもう一度どうぞ", "Aún no estás conectado al anfitrión. Inténtalo de nuevo en un momento", "아직 호스트와 연결되지 않았습니다. 잠시 후 다시 시도하세요", "Pas encore connecté à l’hôte. Réessayez dans un instant", "Нет связи с хостом. Попробуйте чуть позже" },
+            new [] { "房主認不出你的連線，請重新加入", "房主认不出你的连线，请重新加入", "The host could not identify your connection. Please rejoin", "ホストがあなたの接続を確認できません。参加し直してください", "El anfitrión no pudo identificar tu conexión. Vuelve a unirte", "호스트가 연결을 확인하지 못했습니다. 다시 참가하세요", "L’hôte n’a pas pu identifier votre connexion. Rejoignez la partie", "Хост не смог определить ваше подключение. Подключитесь заново" },
+            new [] { "其他玩家游標大小", "其他玩家光标大小", "Other players' cursor size", "他のプレイヤーのカーソルの大きさ", "Tamaño del cursor de otros jugadores", "다른 플레이어 커서 크기", "Taille du curseur des autres joueurs", "Размер курсоров других игроков" },
+            new [] { "其他玩家的游標和名字在你畫面上顯示的大小（1 = 原本大小）", "其他玩家的光标和名字在你画面上显示的大小（1 = 原本大小）", "How large other players' cursors and names appear on your screen (1 = original size)", "他のプレイヤーのカーソルと名前を画面に表示する大きさ（1 = 元の大きさ）", "Tamaño con el que ves los cursores y nombres de otros jugadores (1 = tamaño original)", "다른 플레이어의 커서와 이름이 내 화면에 보이는 크기 (1 = 원래 크기)", "Taille des curseurs et des noms des autres joueurs sur votre écran (1 = taille d’origine)", "Размер курсоров и имён других игроков на вашем экране (1 = исходный размер)" },
+            new [] { "一次最多移動 128 件物品", "一次最多移动 128 件物品", "You can move at most 128 items at once", "一度に動かせるのは 128 個までです", "Puedes mover como máximo 128 objetos a la vez", "한 번에 최대 128개까지 옮길 수 있습니다", "Vous pouvez déplacer 128 objets au maximum à la fois", "За раз можно переместить не более 128 предметов" }
         };
     }
 }

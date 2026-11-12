@@ -1,15 +1,16 @@
 param(
-    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319')]
+    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
     [string]$GamePath=$env:PROBABLY_STOLEN_PATH
 )
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'TestProfile.ps1')
 $project=Split-Path $PSScriptRoot -Parent
 if(-not $GamePath){$GamePath='D:\SteamLibrary\steamapps\common\Probably Stolen'}
 $game=[IO.Path]::GetFullPath($GamePath)
 $workshop=Join-Path (Split-Path (Split-Path $game -Parent) -Parent) 'workshop\content\4348910\3837477869'
 if(Get-Process 'Probably Stolen' -ErrorAction SilentlyContinue){throw 'Close the game before running the isolated test.'}
-if($Suite -contains 'all'){$Suite=@('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319')}
+if($Suite -contains 'all'){$Suite=@('core','gun','death','phone','outing','join','extra','overflow','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320')}
 $workshopDll=Join-Path $workshop 'ShopTogether.dll'
 $workshopHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $workshopDll).Hash
 $scratchRoot=[IO.Path]::GetFullPath((Join-Path (Split-Path $project -Parent) 'work'))
@@ -26,6 +27,9 @@ function Read-TestLog([string]$path){
 }
 function Start-TestGame([string]$role,[string]$part,[string[]]$extra){
     $log=Join-Path $scratch ("smc-$role.log")
+    $profile=Join-Path $scratch ("profile-$role")
+    if(-not(Test-Path -LiteralPath $profile)){New-IsolatedTestProfile $profile}
+    $env:SHOPTOGETHER_TEST_PERSISTENT_PATH=$profile
     $arguments=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$log+'"'),'--smc-role',$role)+$(if($part -ne 'core'){@('--smc-suite',$part)}else{@()})+$extra
     # The child starts with the private desktop explicitly assigned; there is no visible-desktop fallback.
     return $privateDesktop.Start((Join-Path $isolated 'Probably Stolen.exe'),($arguments -join ' '),$isolated)

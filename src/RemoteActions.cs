@@ -64,7 +64,10 @@ namespace ShopTogether {
         /// <summary>Friend side: send an action to the host. Returns false when it could not be expressed.</summary>
         internal static bool Forward(Entry e, object instance, object[] args) {
             var session = Session;
-            if (e == null || session == null || !session.IsClient || !session.Ready) return false;
+            if (session == null || !session.IsClient) return false;
+            // A friend's click that cannot be sent says so instead of doing nothing.
+            if (!session.Ready) { Notice("~SMC242~"); return false; }
+            if (e == null) { Refused++; Notice("~SMC128~"); return false; }
             if (HostPhase.Away) { Notice(HostPhase.Text); return true; }
             var call = Encode(e, instance, args);
             if (call == null) { Refused++; Notice("~SMC128~"); return true; }
@@ -126,7 +129,7 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(LabelAdapters).GetMethod("RepeatLabels", BF)), 2000);
 
             // --- counter conversation: the host's own panel checks the current customer before acting ---
-            foreach (string name in new[] { "OnWholesaleClick", "OnInterogationButtonClick", "OnGlasseButtonClick" })
+            foreach (string name in new[] { "OnWholesaleClick", "OnInterogationButtonClick", "OnGlasseButtonClick", "OnLeftArrowButtonClick", "OnRightArrowButtonClick" })
                 Add(M(() => typeof(NegociationUIManager).GetMethod(name, BF)), Singleton(), k => NegociationUIManager.Instance);
             foreach (string name in new[] { "Blackmail", "DemandBuyingDiscount", "OfferBuyingMarkup", "OfferDiscount", "OfferMarkup", "ThreatenAug" })
                 Add(M(() => typeof(BargainUIManager).GetMethod(name, BF)), Singleton(), k => BargainUIManager.Instance);
@@ -213,9 +216,13 @@ namespace ShopTogether {
             return call;
         }
 
+        static string lastNotice; static float lastNoticeAt;
         internal static void Notice(string text) {
             if (text == null) return;
             if (text.Length > 120) text = text.Substring(0, 120);
+            float now = Time.realtimeSinceStartup;
+            if (text == lastNotice && now - lastNoticeAt < 1.5f) return;   // the same message again at once (a held button, every frame) is shown once
+            lastNotice = text; lastNoticeAt = now;
             LastNote = Loc.Text(text); NoteUntil = Time.realtimeSinceStartup + 4f;
             try { if (StoreUIManager.Instance != null) StoreUIManager.Instance.Notify(Loc.Text(text)); } catch { }
         }

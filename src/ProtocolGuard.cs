@@ -19,7 +19,7 @@ namespace ShopTogether {
                 return versionMatched && type == 2 && length == 4;
             }
             if (host) return type == 24 && length == 0 || type == 21 && length > 0 && length <= 65536
-                || type == 30 && length > 0 && length <= 16384 || type == 33 && length > 0 && length <= 16384 || type == 36 && length > 0 && length <= 65536 || type == 38 && length == 8 || type == 41 && length == 1;
+                || type == 30 && length > 0 && length <= 16384 || type == 33 && length > 0 && length <= 16384 || type == 36 && length > 0 && length <= 65536 || type == 38 && length == 8 || type == 41 && length == 1 || type == Diagnostics.Message && length > 0 && length <= Diagnostics.Limit;
             return type == 20 && length > 0 && length <= 4 * 1024 * 1024 || type == 22 && length > 0 && length <= 4096
                 || type == 31 && length > 0 && length <= 32768 || type == 32 && length > 0 && length <= 4 * 1024 * 1024
                 || type == 34 && length > 0 && length <= 65536 || type == 39 && length >= 4 && length <= 4 + 12 * 8 || type == 40 && length > 0 && length <= 4096

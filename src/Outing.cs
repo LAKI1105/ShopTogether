@@ -274,7 +274,10 @@ namespace ShopTogether {
         [HarmonyPriority(Priority.First)]
         static bool Prefix(AfterhourLocation location) {
             if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
-            if (!ReplicaSession.IsReplica || location == null || !LocalControl.Focused || OutingKits.Here != null || OutingKits.Joined != null) return false;
+            // Every refusal says why: a click that silently does nothing looks like a broken door.
+            if (location == null) return false;
+            if (!ReplicaSession.IsReplica) { RemoteActions.Notice("~SMC242~"); return false; }
+            if (OutingKits.Here != null || OutingKits.Joined != null) { RemoteActions.Notice("~SMC241~"); return false; }
             if (!OutingKits.FriendMayGo(location.Id)) {
                 // Dr. Jackson and other mods' places: only together with the host, while the host is there.
                 if (EmporiumEntry.Instance != null) EmporiumEntry.Instance.selectedBackpack = null;   // coming along shares the host's ground
@@ -298,7 +301,9 @@ namespace ShopTogether {
             if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
             if (OutingKits.Joined != null) { if (ReplicaSession.IsReplica && LocalControl.Focused) RemoteActions.Forward(RemoteActions.Adapter("Unjoin", 0), null, new object[0]); return false; }
             var kit = OutingKits.Mine;
-            if (!ReplicaSession.IsReplica || OutingKits.Here == null || kit == null || !LocalControl.Focused) return false;
+            if (!ReplicaSession.IsReplica) { RemoteActions.Notice("~SMC242~"); return false; }
+            if (OutingKits.Here == null) { OutingKits.LeaveStale(); return false; }   // nothing to return from on the host: just leave the view
+            if (kit == null) { RemoteActions.Notice("~SMC242~"); return false; }
             Action go = () => RemoteActions.Forward(RemoteActions.Adapter("Back", 0), null, new object[0]);
             if (kit.ground.childItems.Count == 0 || GenericConfirmationUIManager.Instance == null) { go(); return false; }
             string warning = null;

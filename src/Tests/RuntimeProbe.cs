@@ -2,12 +2,26 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 namespace ShopTogether {
     internal static partial class RuntimeProbe {
         static bool Skip(){return false;}
+        // The disposable test copy must never accept a connection from the network.
+        static bool ProbeListen(int preferredPort,bool automatic,ref Socket __result){
+            for(int attempt=0;;attempt++){
+                var socket=new Socket(AddressFamily.InterNetwork,SocketType.Stream,ProtocolType.Tcp);socket.ExclusiveAddressUse=true;
+                try{socket.Bind(new IPEndPoint(IPAddress.Loopback,attempt==0?preferredPort:0));socket.Listen(3);socket.Blocking=false;__result=socket;return false;}
+                catch(SocketException error){socket.Close();if(!automatic||attempt>0||error.SocketErrorCode!=SocketError.AddressAlreadyInUse)throw;}
+                catch{socket.Close();throw;}
+            }
+        }
+        static bool ProbeLocalAddress(ref string __result){__result="127.0.0.1";return false;}
+        static IEnumerator NoRouterMapping(){yield break;}
+        static bool ProbeRouterMapping(ref IEnumerator __result){__result=NoRouterMapping();return false;}
         static bool Initial(PlayerStore __instance){__instance.saveSlotId=-777;__instance.runID="smc-isolated-runtime-test";return false;}
         static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);Debug.Log("[SMC PASS] "+message);}
         internal static IEnumerator Run(Connection root){
@@ -48,6 +62,9 @@ namespace ShopTogether {
             harmony.Patch(AccessTools.Method(typeof(PlayerStore),"InitialSave"),new HarmonyMethod(typeof(RuntimeProbe).GetMethod("Initial",BindingFlags.Static|BindingFlags.NonPublic)));
             harmony.Patch(AccessTools.Method(typeof(PlayerStore),"SaveGame"),skip);
             harmony.Patch(AccessTools.Method(typeof(AchievementTracker),"Unlock"),skip);harmony.Patch(AccessTools.Method(typeof(AchievementTracker),"IncrementCountAndUnlock"),skip);
+            harmony.Patch(AccessTools.Method(typeof(DirectConnection),"Listen"),new HarmonyMethod(typeof(RuntimeProbe),"ProbeListen"));
+            harmony.Patch(AccessTools.Method(typeof(Connection),"LocalAddress"),new HarmonyMethod(typeof(RuntimeProbe),"ProbeLocalAddress"));
+            harmony.Patch(AccessTools.Method(typeof(RouterMapping),"Run"),new HarmonyMethod(typeof(RuntimeProbe),"ProbeRouterMapping"));
         }
     }
 }

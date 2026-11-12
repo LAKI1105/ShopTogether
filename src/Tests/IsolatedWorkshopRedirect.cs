@@ -5,6 +5,12 @@ using System.Collections;
 using System.Reflection;
 
 public static class IsolatedWorkshopRedirect {
+    public static string PersistentPath() {
+        string folder = Environment.GetEnvironmentVariable("SHOPTOGETHER_TEST_PERSISTENT_PATH");
+        if (string.IsNullOrEmpty(folder) || !System.IO.Path.IsPathRooted(folder) || !System.IO.Directory.Exists(folder))
+            throw new InvalidOperationException("The isolated test profile is missing");
+        return folder;
+    }
     public static object Apply(object items) {
         string folder = Environment.GetEnvironmentVariable("SHOPTOGETHER_PROBE_FOLDER");
         var list = items as IList;

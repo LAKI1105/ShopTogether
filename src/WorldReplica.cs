@@ -36,7 +36,9 @@ namespace ShopTogether {
         /// anything the callbacks try to move, spawn, destroy or tag is skipped. Display updates still run.
         /// </summary>
         internal static int Sandbox; internal static GameItem SandboxItem; internal static bool SandboxMovePermit;
-        static bool Placed(GameItem item,Func<bool> move){var was=SandboxItem;bool permit=SandboxMovePermit;Sandbox++;SandboxItem=item;SandboxMovePermit=true;try{return move();}finally{Sandbox--;SandboxItem=was;SandboxMovePermit=permit;}}
+        // A game reaction to the move (the counter reacting to an item, a customer rule) may fail on a friend's copy, which lacks
+        // the host's customer data. The move itself is what matters: report the reaction and judge by where the item ended up.
+        static bool Placed(GameItem item,Func<bool> move,GameInventory target=null){var was=SandboxItem;bool permit=SandboxMovePermit;Sandbox++;SandboxItem=item;SandboxMovePermit=true;try{return move();}catch(Exception e){Diagnostics.Report("placing "+(item!=null?item.identifier:"?"),e);return item!=null&&(target!=null?item.parentInventory==target:item.parentInventory==null);}finally{Sandbox--;SandboxItem=was;SandboxMovePermit=permit;}}
         static bool Gone(GameItem item){var element=item as GameItemElement;return item==null||element!=null&&element.IsDestroyed();}
         static void Remove(GameItem item){if(Gone(item))return;var inv=item.parentInventory;if(inv!=null)Placed(item,()=>inv.Expel(item));item.Destroy();}
         internal void Reset(){structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
@@ -168,7 +170,7 @@ namespace ShopTogether {
             try {
                 if(delta.store!=null){int slot=PlayerStore.Instance.saveSlotId;StoreState.Apply(PlayerStore.Instance,Convert.FromBase64String(delta.store));PlayerStore.Instance.saveSlotId=slot;StoreAppliedAt=delta.version;}
                 if(delta.station!=null){StoreState.ApplyStation(StoreStation.Instance,Convert.FromBase64String(delta.station));StationAppliedAt=delta.version;}
-                Presentation.ApplyCustomer(delta.presentation);var incoming=new HashSet<int>();foreach(var r in delta.items){if(r.id<=0||r.node==null||!incoming.Add(r.id)||r.parent==null)throw new InvalidOperationException("~SMC100~");}
+                Presentation.ApplyCustomer(delta.presentation,this);var incoming=new HashSet<int>();foreach(var r in delta.items){if(r.id<=0||r.node==null||!incoming.Add(r.id)||r.parent==null)throw new InvalidOperationException("~SMC100~");}
                 if(!replicaMode){if(!delta.full)throw new InvalidOperationException("~SMC118~");itemIds.Clear();BindInitial(delta);replicaMode=true;}
                 Index();
                 // Removed items go last: a removed container (an emptied void backpack) may still hold items this
@@ -190,7 +192,7 @@ namespace ShopTogether {
                 var visited=new HashSet<GraphNodeStorage>();foreach(var root in Roots())Walk(root.Value,root.Key,0,new int[]{0},visited);
                 foreach(var r in delta.items){GameItem item=Items[r.id];Walk(item,r.parent.root,r.id,new int[]{0},visited);}
                 if(delta.grids!=null)foreach(var g in delta.grids){GameInventory inv;if(g.width<1||g.height<1||g.width>512||g.height>512)throw new InvalidOperationException("~SMC112~");if(Inventories.TryGetValue(g.address.Key,out inv)){var grid=inv as GameGridInventory;if(grid!=null&&(grid.inventoryShape.width!=g.width||grid.inventoryShape.height!=g.height))grid.SetShape(g.width,g.height);}}
-                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv))throw new InvalidOperationException("~SMC069~");if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item)))throw new InvalidOperationException("~SMC142~");}item.Validate();}
+                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv))throw new InvalidOperationException("~SMC069~");if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~");}item.Validate();}
                 foreach(var item in leaving){if(Gone(item))continue;try{Remove(item);}catch(Exception e){Debug.LogWarning("[ShopTogether] remove: "+e.Message);}}
                 // Tags the game reads (custom names, conditions...) live in each item's derived state, which the game
                 // recomputes from its own and its children's state. Recompute it for every applied item and its containers.

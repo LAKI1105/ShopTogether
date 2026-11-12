@@ -78,6 +78,7 @@ class SecurityProbe {
             Require(ProtocolGuard.Valid(false,true,true,40,200)&&!ProtocolGuard.Valid(false,true,true,40,4097)&&!ProtocolGuard.Valid(true,true,true,40,200),"player name list only from host, bounded");
             Require(ProtocolGuard.Valid(true,true,true,41,1)&&!ProtocolGuard.Valid(true,true,true,41,2)&&!ProtocolGuard.Valid(false,true,true,41,1),"activity: one byte, friend to host only");
             Require(ProtocolGuard.Valid(false,true,true,43,300)&&!ProtocolGuard.Valid(false,true,true,43,16385)&&!ProtocolGuard.Valid(true,true,true,43,300),"reading-panel relay only from host, bounded");
+            Require(ProtocolGuard.Valid(true,true,true,Diagnostics.Message,Diagnostics.Limit)&&!ProtocolGuard.Valid(true,false,false,Diagnostics.Message,1)&&!ProtocolGuard.Valid(true,true,true,Diagnostics.Message,Diagnostics.Limit+1)&&!ProtocolGuard.Valid(false,true,true,Diagnostics.Message,1),"diagnostics require an authenticated client, correct direction and bounded length");
             SteamStream();
             RoomSetupTests.Run();
             // Certificate and TLS checks need the game's own Mono runtime (Mono.Security); they run inside the game in RunDual.ps1.
