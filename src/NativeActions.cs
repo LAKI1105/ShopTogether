@@ -67,6 +67,7 @@ namespace ShopTogether {
                     switch((ItemOperation)request.operation){
                         case ItemOperation.Activate:if(!item.MayActivateSlotItem()||!item.CanActivateSlotItem())return false;item.ActivateSlotItem();return true;
                         case ItemOperation.Toggle:if(!item.MayToggleSlotItem()||!item.CanToggleSlotItem())return false;item.ToggleSlotItem();return true;
+                        case ItemOperation.Configure:if(!item.MayConfigureSlotItem()||!item.CanConfigureSlotItem())return false;item.ConfigureSlotItem();return true;
                         case ItemOperation.Unload:if(item.IsTag("IS_UNLOAD_DISABLED_TAG")||item.contentWindow==null||item.parentInventory==null)return false;item.TryUnloadAll(true);return true;
                         // Selection/equipping is a local UI mode. Only the eventual Target changes the host world.
                         case ItemOperation.Use:case ItemOperation.Equip:return false;
@@ -157,13 +158,13 @@ namespace ShopTogether {
     }
     [HarmonyPatch]
     internal static class ClientItemAction {
-        static IEnumerable<MethodBase> TargetMethods(){yield return typeof(GameItem).GetMethod("ActivateSlotItem");yield return typeof(GameItem).GetMethod("ToggleSlotItem");yield return typeof(GameItem).GetMethod("Target",new[]{typeof(GameItem)});}
+        static IEnumerable<MethodBase> TargetMethods(){yield return typeof(GameItem).GetMethod("ActivateSlotItem");yield return typeof(GameItem).GetMethod("ToggleSlotItem");yield return typeof(GameItem).GetMethod("ConfigureSlotItem");yield return typeof(GameItem).GetMethod("Target",new[]{typeof(GameItem)});}
         static bool Prefix(GameItem __instance,MethodBase __originalMethod,object[] __args){GameItem viewed=__args.Length>0?__args[0] as GameItem:null;bool view=__originalMethod.Name=="Target"&&viewed!=null&&NativeActions.ViewTool(__instance);
             if(!ReplicaSession.ClientStore){if(NativeActions.Active&&LocalControl.UserAction&&!view){var s=NativeActions.Session;if(!s.Leases.Available(0,s.World.Id(__instance),Time.realtimeSinceStartup))return false;if(__args.Length>0&&__args[0] is GameItem&&!s.Leases.Available(0,s.World.Id((GameItem)__args[0]),Time.realtimeSinceStartup))return false;}return true;}if(WorldReplica.Applying)return false;if(!NativeActions.Active||!LocalControl.UserAction)return false;
             if(__originalMethod.Name=="ActivateSlotItem"&&LocalControl.LocalChoice(__instance.parentInventory,__instance)&&EmporiumEntry.Instance.FindChoiceAction(__instance)!=null)return true;
             // Looking tools (magnifier, rename labeler) only open a panel on this player's own screen.
             if(view){if(__instance.onThisTargetItemFunc!=null)__instance.onThisTargetItemFunc(__instance,viewed);return false;}
-            var op=__originalMethod.Name=="ActivateSlotItem"?ItemOperation.Activate:__originalMethod.Name=="ToggleSlotItem"?ItemOperation.Toggle:ItemOperation.Target;GameItem target=__args.Length>0?__args[0] as GameItem:null;NativeActions.Session.Submit(new Request{kind=RequestKind.ItemAction,operation=(int)op,items=target==null?new[]{NativeActions.Session.World.Id(__instance)}:new[]{NativeActions.Session.World.Id(__instance),NativeActions.Session.World.Id(target)},target=target==null?0:NativeActions.Session.World.Id(target)});return false;}
+            var op=__originalMethod.Name=="ActivateSlotItem"?ItemOperation.Activate:__originalMethod.Name=="ToggleSlotItem"?ItemOperation.Toggle:__originalMethod.Name=="ConfigureSlotItem"?ItemOperation.Configure:ItemOperation.Target;GameItem target=__args.Length>0?__args[0] as GameItem:null;NativeActions.Session.Submit(new Request{kind=RequestKind.ItemAction,operation=(int)op,items=target==null?new[]{NativeActions.Session.World.Id(__instance)}:new[]{NativeActions.Session.World.Id(__instance),NativeActions.Session.World.Id(target)},target=target==null?0:NativeActions.Session.World.Id(target)});return false;}
     }
     [HarmonyPatch]
     internal static class ClientShopAction {

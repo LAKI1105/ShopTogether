@@ -74,6 +74,11 @@ namespace ShopTogether {
                 AccessTools.Method(typeof(WildNetworkUI), "Open"),
                 AccessTools.Method(typeof(AppraisalItemsWindow), "Open", new[] { typeof(bool) }),
                 AccessTools.Method(typeof(DialogSettingUIManager), "OpenUI"),
+                // Machine windows that open when the machine itself is clicked (not a button inside its window).
+                AccessTools.Method(typeof(HopperHelper), "OpenWindow", new[] { typeof(GameItem) }),
+                AccessTools.Method(typeof(HopperHelper), "OpenOutletWindow", new[] { typeof(GameItem) }),
+                AccessTools.Method(typeof(MachineStorageCoordinator), "OpenWindow", new[] { typeof(GameItem) }),
+                AccessTools.Method(typeof(MindReprogrammerHelper), "OpenWindow", new[] { typeof(GameItem) }),
             };
         }
 
@@ -211,6 +216,10 @@ namespace ShopTogether {
                 case 44: WildNetworkUI.Open(); break;
                 case 45: AppraisalItemsWindow.Open(); break;
                 case 46: if (DialogSettingUIManager.Instance != null) DialogSettingUIManager.Instance.OpenUI(); break;
+                case 47: if (a != null) HopperHelper.OpenWindow(a); break;
+                case 48: if (a != null) HopperHelper.OpenOutletWindow(a); break;
+                case 49: if (a != null) MachineStorageCoordinator.OpenWindow(a); break;
+                case 50: if (a != null) MindReprogrammerHelper.OpenWindow(a); break;
                 case 43: {
                     var ui = NegociationUIManager.Instance; if (ui == null) break;
                     ui.OpenConfirmPanel(); var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");

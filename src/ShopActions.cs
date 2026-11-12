@@ -55,9 +55,9 @@ namespace ShopTogether {
         }
         /// <summary>Host side: the "confront" button of the chemical scanner.</summary>
         internal static void ConfrontChem(GameItem item) {
-            if (item == null || DialogUIManager.Instance == null || InspectionUIManager.IsConfrontLocked() || !ChemScannerUIManager.CanConfrontChem(item)) return;
+            if (item == null || DialogUIManager.Instance == null || InspectionUIManager.IsConfrontLocked() || !ChemScannerUIManager.CanConfrontChem(item)) { RemoteActions.PendingNote = "~SMC247~"; return; }
             var feature = ChemicalProductHelper.GetChemicalFeature(item);
-            if (feature != null && DialogUIManager.Instance.StartDialogue(feature.GetExposeDialog())) InspectableHelper.OnConfrontSuccess(item);
+            if (feature != null && DialogUIManager.Instance.StartDialogue(feature.GetExposeDialog())) InspectableHelper.OnConfrontSuccess(item); else RemoteActions.PendingNote = "~SMC247~";
         }
 
         // ---------------- features found by looking (scale, water tests, ingots…) ----------------
@@ -129,8 +129,11 @@ namespace ShopTogether {
             if (!allowed) list.Add(type.id);
         }
         internal static void ApplyPerk(GameItem item, string perkId) {
-            var perk = perkId != null ? StartingPerk.GetPerkById(perkId) : null;
-            if (item != null && perk != null && MindReprogrammerHelper.CanApply(item, perk)) MindReprogrammerHelper.Apply(item, perk);
+            if (item == null || string.IsNullOrEmpty(perkId) || !item.IsTag("MIND_REPROGRAMMER_TAG") || !GeneralHelper.IsItemOwned(item)) return;
+            StartingPerk perk = null;
+            foreach (var candidate in MindReprogrammerHelper.GetEditablePerks())
+                if (candidate != null && candidate.id == perkId) { perk = candidate; break; }
+            if (perk != null && MindReprogrammerHelper.CanApply(item, perk)) MindReprogrammerHelper.Apply(item, perk);
         }
 
         internal static void Reset() { sortedHere.Clear(); sentDiscoveries.Clear(); }
@@ -212,6 +215,24 @@ namespace ShopTogether {
                 string id = manager != null ? manager.currentSelectedId : (selected != null ? selected.GetValue(null) as string : null);
                 if (!string.IsNullOrEmpty(id)) Send("BuyWild", id);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Closing the Wild after the reminder customer sent you there sends that customer away; on a friend's screen
+        /// the game's own dismissal is local (and blocked), so the host is asked to do it.
+        /// </summary>
+        [HarmonyPatch]
+        internal static class WildReminderLeaves {
+            static IEnumerable<MethodBase> TargetMethods() {
+                yield return AccessTools.Method(typeof(WildUIManager), "CloseUI");
+                yield return AccessTools.Method(typeof(WildNetworkUI), "OnWindowClosed");
+            }
+            static void Postfix() {
+                if (!Friend || !Act || !LocalControl.UserAction) return;
+                var store = PlayerStore.Instance; var current = store != null ? store.currentClientInstance : null;
+                var blueprint = current != null ? current.GetClientBlueprint() : null;
+                if (blueprint != null && blueprint.identifier == "wild_upgrade_reminder") store.TryPlayerDismissCurrentClient(false);
             }
         }
 

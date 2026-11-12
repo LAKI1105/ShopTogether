@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace ShopTogether {
     internal enum RequestKind { Claim=1, Release=2, Renew=3, Move=4, ItemAction=5, ShopAction=6, AutoPlace=7, Sort=8 }
-    internal enum ItemOperation { Activate=1, Toggle=2, Unload=3, Use=4, Equip=5, Target=6, Pin=7 }
+    internal enum ItemOperation { Activate=1, Toggle=2, Unload=3, Use=4, Equip=5, Target=6, Pin=7, Configure=8 }
     internal enum ShopOperation { NextCustomer=1, Buy=2, Sell=3, BuyAll=4, SellAll=5, AdvanceDialogue=6, ChooseDialogue=7 }
     [Serializable] internal sealed class InventoryAddress { public int root, container, ordinal; public string Key { get { return root+":"+container+":"+ordinal; } } }
     [Serializable] internal sealed class Placement { public int item, count, x, y, rotation, target; public bool flip; public long version, lease; public InventoryAddress inventory; }

@@ -22,7 +22,7 @@ namespace ShopTogether {
     }
     [HarmonyPatch(typeof(ItemMultiSelectHandler),"StartGroupDrag")]
     internal static class GroupClaim {
-        static bool Prefix(ItemMultiSelectHandler __instance){if(!NativeActions.Active)return true;var selected=ModReflect.Get<List<GameItemElement>>(__instance,"selectedItems");var ids=new List<int>();foreach(var item in selected){int id=NativeActions.Session.World.Id(item);if(id>0)ids.Add(id);}return ids.Count==0||NativeActions.Hold(__instance,ids.ToArray());}
+        static bool Prefix(ItemMultiSelectHandler __instance){if(!NativeActions.Active)return true;var session=NativeActions.Session;var selected=ModReflect.Get<List<GameItemElement>>(__instance,"selectedItems");if(session.IsClient&&selected.Count>128){RemoteActions.Notice("~SMC246~");return false;}var ids=new List<int>();foreach(var item in selected){int id=session.World.Id(item);if(id>0)ids.Add(id);}return ids.Count==0||NativeActions.Hold(__instance,ids.ToArray());}
     }
     [HarmonyPatch(typeof(ItemMultiSelectHandler),"ClearSelection")]
     internal static class GroupRelease {static void Postfix(ItemMultiSelectHandler __instance){NativeActions.Unhold(__instance);}}

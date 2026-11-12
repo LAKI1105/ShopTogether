@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.20";
+        internal const string BuildVersion="1.3.21";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -267,11 +267,11 @@ namespace ShopTogether {
                 else foreach(var l in World.RemoteLeases)if(l.Value!=PlayerId&&(l.Key==id||World.Related(l.Key,id)))return l.Value;}
             return -1;
         }
-        void OnLocalReply(LeaseReply reply){if(!reply.granted){int owner=BusyOwner(reply.items);ItemBusyHint.Show(owner);}if(reply.items!=null)foreach(int id in reply.items){requested.Remove(id);if(reply.granted)LocalLeases[id]=reply.token;else LocalLeases.Remove(id);}if(!reply.granted)status=reply.reason;FlushWaiting();}
+        void OnLocalReply(LeaseReply reply){if(!reply.granted){int owner=BusyOwner(reply.items);ItemBusyHint.Show(owner);}if(reply.items!=null)foreach(int id in reply.items){requested.Remove(id);if(reply.granted)LocalLeases[id]=reply.token;else LocalLeases.Remove(id);}if(!reply.granted){status=reply.reason;if(!string.IsNullOrEmpty(reply.reason)&&BusyOwner(reply.items)<0)RemoteActions.Notice(reply.reason);}FlushWaiting();}   // a refused action says why (busy items already show who has them)
         internal void Claim(int[] ids){var fresh=new List<int>();foreach(int id in ids){deferredRelease.Remove(id);if(!LocalLeases.ContainsKey(id)&&requested.Add(id))fresh.Add(id);}for(int at=0;at<fresh.Count;at+=128)Send(new Request{kind=RequestKind.Claim,items=fresh.GetRange(at,Math.Min(128,fresh.Count-at)).ToArray()});}   // the host takes at most 128 per request
         internal void Submit(Request request){if(request.items==null||request.items.Length==0)return;Claim(request.items);waiting.Add(request);FlushWaiting();}
         void FlushWaiting(){while(waiting.Count>0){var request=waiting[0];bool pending=false,denied=false;foreach(int id in request.items){if(requested.Contains(id))pending=true;else if(!LocalLeases.ContainsKey(id))denied=true;}if(pending)break;waiting.RemoveAt(0);if(denied)continue;if(request.moves!=null)foreach(var m in request.moves)m.lease=LocalLeases[m.item];else request.lease=LocalLeases[request.items[0]];Send(request);foreach(int id in request.items)if(!NativeActions.Retains(id))deferredRelease.Add(id);}FlushReleases();}
-        void FlushReleases(){var release=new List<int>();foreach(int id in deferredRelease){if(requested.Contains(id))continue;bool busy=false;foreach(var r in waiting)if(Array.IndexOf(r.items,id)>=0){busy=true;break;}if(!busy)release.Add(id);}if(release.Count==0)return;foreach(int id in release){deferredRelease.Remove(id);LocalLeases.Remove(id);}for(int at=0;at<release.Count;at+=512)Send(new Request{kind=RequestKind.Release,items=release.GetRange(at,Math.Min(512,release.Count-at)).ToArray()});}
+        void FlushReleases(){var release=new List<int>();foreach(int id in deferredRelease){if(requested.Contains(id))continue;bool busy=false;foreach(var r in waiting)if(Array.IndexOf(r.items,id)>=0){busy=true;break;}if(!busy)release.Add(id);}if(release.Count==0)return;foreach(int id in release){deferredRelease.Remove(id);LocalLeases.Remove(id);}for(int at=0;at<release.Count;at+=128)Send(new Request{kind=RequestKind.Release,items=release.GetRange(at,Math.Min(128,release.Count-at)).ToArray()});}
         internal void Release(int[] ids){foreach(int id in ids)deferredRelease.Add(id);FlushReleases();}
         internal void ReleaseAll(){waiting.Clear();var ids=new HashSet<int>(LocalLeases.Keys);ids.UnionWith(requested);Release(new List<int>(ids).ToArray());NativeActions.CancelLocal();}
         internal void Process(int owner,Request request,Action<LeaseReply> reply){
@@ -280,14 +280,14 @@ namespace ShopTogether {
             if(request.kind==RequestKind.Move||request.kind==RequestKind.AutoPlace){var move=request.moves!=null&&request.moves.Length>0?request.moves[0]:null;long v=0;if(move!=null)World.Versions.TryGetValue(move.item,out v);Debug.Log("[SMC REQUEST] kind="+request.kind+" owner="+owner+" currentVersion="+v+" owns="+(move!=null&&Leases.Owns(owner,move.item,move.lease,now))+" move="+WireJson.ToJson(move));}
 #endif
             if(request.kind==RequestKind.Renew){Leases.Renew(owner,now);return;}
-            if(request.items==null||request.items.Length>1024)throw new Exception("~SMC170~");
+            if(request.items==null)throw new Exception("~SMC170~");
+            // A bounded refusal must not echo an oversized list or turn a release into a disconnect.
+            if(request.items.Length>128){reply(new LeaseReply{sequence=request.sequence,items=new int[0],reason="~SMC246~"});return;}
             if(request.kind==RequestKind.Release){Leases.Release(owner,request.items);return;}
-            // Too many items in one request is refused, not a disconnect (a large selection).
-            if(request.items.Length>128){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC246~"});return;}
             foreach(int id in request.items)if(!World.Items.ContainsKey(id)){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC095~"});return;}
             if(request.kind==RequestKind.Claim){long token;bool ok=Leases.Claim(owner,request.items,now,out token);reply(new LeaseReply{sequence=request.sequence,items=request.items,owner=owner,token=token,granted=ok,reason=ok?null:"~SMC096~"});return;}
             // A game error while running a friend's action refuses that action; it must not cut the friend off.
-            bool success=false;try{success=NativeActions.Execute(this,owner,request);if(success)World.Committed(request);}catch(Exception failure){success=false;Debug.LogWarning("[ShopTogether] action by "+PlayerNames.Of(owner)+" failed on host ("+request.kind+"): "+failure);}finally{if(!success)reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC167~"});nextSync=0;}
+            bool success=false;string failed="~SMC167~";try{success=NativeActions.Execute(this,owner,request);if(success)World.Committed(request);}catch(Exception failure){success=false;failed="~SMC085~";Debug.LogWarning("[ShopTogether] action by "+PlayerNames.Of(owner)+" failed on host ("+request.kind+"): "+failure);}finally{if(!success)reply(new LeaseReply{sequence=request.sequence,items=request.items,reason=failed});nextSync=0;}
         }
         // The main-menu box always shows where things stand and leads back to the room: a room that is open stays
         // reachable from here (and from the button at the top right in the shop) instead of being created again.

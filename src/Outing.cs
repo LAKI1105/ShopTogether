@@ -170,7 +170,7 @@ namespace ShopTogether {
             if (PlayerStore.Instance == null || id == null) return;
             foreach (var service in PlayerStore.Instance.storeService) {
                 if (service == null || service.id != id) continue;
-                if (!service.unlocked || service.isMandatory || service.IsOnCooldown()) return;
+                if (!service.unlocked || service.isMandatory || service.IsOnCooldown()) { RemoteActions.PendingNote = "~SMC247~"; return; }
                 service.isUsing = on;
                 var panel = EndOfDayUIManager.Instance;
                 if (panel != null && panel.IsOpen) panel.InitUI();
@@ -192,8 +192,8 @@ namespace ShopTogether {
         internal static void ConfrontWater(GameItem item) {
             if (item == null || DialogUIManager.Instance == null) return;
             var feature = WaterFeatureHelper.GetWaterFeature(item);
-            if (feature == null || !feature.CanExposeFeature() || InspectionUIManager.IsConfrontLocked() || GeneralHelper.IsItemOwned(item) || feature.IsExposed() || feature.IsFeatureMatch()) return;
-            if (DialogUIManager.Instance.StartDialogue(feature.GetExposeDialog())) InspectableHelper.OnConfrontSuccess(item);
+            if (feature == null || !feature.CanExposeFeature() || InspectionUIManager.IsConfrontLocked() || GeneralHelper.IsItemOwned(item) || feature.IsExposed() || feature.IsFeatureMatch()) { RemoteActions.PendingNote = "~SMC247~"; return; }
+            if (DialogUIManager.Instance.StartDialogue(feature.GetExposeDialog())) InspectableHelper.OnConfrontSuccess(item); else RemoteActions.PendingNote = "~SMC247~";
         }
     }
 
@@ -302,7 +302,7 @@ namespace ShopTogether {
             if (OutingKits.Joined != null) { if (ReplicaSession.IsReplica && LocalControl.Focused) RemoteActions.Forward(RemoteActions.Adapter("Unjoin", 0), null, new object[0]); return false; }
             var kit = OutingKits.Mine;
             if (!ReplicaSession.IsReplica) { RemoteActions.Notice("~SMC242~"); return false; }
-            if (OutingKits.Here == null) { OutingKits.LeaveStale(); return false; }   // nothing to return from on the host: just leave the view
+            if (OutingKits.Here == null) { if (!OutingKits.LeaveStale() && LocalControl.UserAction) RemoteActions.Notice("~SMC247~"); return false; }   // clear a stale view, or explain why there is nowhere to return from
             if (kit == null) { RemoteActions.Notice("~SMC242~"); return false; }
             Action go = () => RemoteActions.Forward(RemoteActions.Adapter("Back", 0), null, new object[0]);
             if (kit.ground.childItems.Count == 0 || GenericConfirmationUIManager.Instance == null) { go(); return false; }

@@ -110,14 +110,18 @@ namespace ShopTogether {
             SlotMarker slot=destination.TryFindOneValidInventorySlot(item);if(slot==null)throw new Exception("No test destination slot");
             EmporiumEntry.Instance.ShowFrontCounters();EmporiumEntry.Instance.invWindow.Show();EmporiumEntry.Instance.Validate(true);Canvas.ForceUpdateCanvases();
             var grid=(GameGridInventory)destination;var preview=((GameItemElement)item).tempShape.Build();float size=UISettings.current.gridSize;SlotMarker actual=null;
+            bool mustMove=Argument("--smc-group")!=null;int oldX=item.modifiedShape.minX,oldY=item.modifiedShape.minY;
             for(int y=0;y<=grid.inventoryShape.height-preview.height && actual==null;y++)for(int col=0;col<=grid.inventoryShape.width-preview.width;col++){
-                int x=Argument("--smc-group")!=null?grid.inventoryShape.width-preview.width-int.Parse(Argument("--smc-index"))*(preview.width+1)-col:item.name=="SMC_CLIENT_ITEM"?grid.inventoryShape.width-preview.width-col:col;if(x<0)continue;
+                int maxX=grid.inventoryShape.width-preview.width;
+                // Wrap each group player's starting column so later players still search the whole grid.
+                int x=Argument("--smc-group")!=null?maxX-(int.Parse(Argument("--smc-index"))*(preview.width+1)+col)%(maxX+1):item.name=="SMC_CLIENT_ITEM"?maxX-col:col;
                 var shape=new GridShapeBuilder(preview).SetPosition(x,y).Build();
                 Vector3 target=grid.rectTransform.TransformPoint(new Vector3((shape.minX+(shape.maxX-shape.minX+1)*.5f)*size,-(shape.minY+(shape.maxY-shape.minY+1)*.5f)*size,0));
                 Vector3 old=pointer;pointer+=target-(Vector3)((GameItemElement)item).GetFakeRotatorCenteredPosition();ItemMouseDragHandler.current.UpdateMouseMove(pointer,pointer-old);ItemMouseDragHandler.current.UpdateUpdate();
-                var hit=ModReflect.Get<SlotMarker>(ItemMouseDragHandler.current,"lastSlot");if(hit!=null&&hit.inventory==destination){actual=hit;break;}
+                var hit=ModReflect.Get<SlotMarker>(ItemMouseDragHandler.current,"lastSlot");if(hit!=null&&hit.inventory==destination&&(!mustMove||hit.itemGridShape!=null&&(hit.itemGridShape.minX!=oldX||hit.itemGridShape.minY!=oldY)&&grid.CheckShapePlacement(item,hit.itemGridShape,new List<GameItem>{item}))){actual=hit;break;}
             }
             Require(actual!=null,"native cursor resolved the drop destination");
+            if(mustMove)Require(actual.itemGridShape.minX!=oldX||actual.itemGridShape.minY!=oldY,"group drop selects a different cell ("+oldX+","+oldY+" -> "+actual.itemGridShape.minX+","+actual.itemGridShape.minY+")");
             pressed.Remove(KeyCode.Mouse0);ItemMouseDragHandler.current.UpdateRelease(new HashSet<KeyCode>{KeyCode.Mouse0});
         }
         static GameItem Find(Connection session,string name){foreach(var item in session.World.Items.Values)if(item.name==name)return item;return null;}

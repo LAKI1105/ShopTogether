@@ -258,7 +258,7 @@ namespace ShopTogether {
 
         /// <summary>Host side: the friend comes back. Like the base game, what is carried comes home and what is left on
         /// the ground stays there (the Serpico storyline still sees food left at the dumping ground).</summary>
-        internal static void Back() { var kit = Of(RemoteActions.CurrentOwner); if (kit != null && kit.location != null) Return(kit, false); }
+        internal static void Back() { var kit = Of(RemoteActions.CurrentOwner); if (kit != null && kit.location != null) Return(kit, false); else { Note("~SMC247~"); Hand(); } }
 
         /// <summary>Puts one thing a friend brought back into the shop, where the base game puts what the shopkeeper
         /// brings home: the back counter, then the shelves, then the showcase, then the front counter.</summary>
@@ -321,7 +321,7 @@ namespace ShopTogether {
         /// <summary>Host side: one search at the dumping ground for a friend, with their own attempts and ground.</summary>
         internal static void Scavenge() {
             var kit = Of(RemoteActions.CurrentOwner); var e = EmporiumEntry.Instance; var store = PlayerStore.Instance;
-            if (kit == null || kit.location != "dumping_ground" || e == null || store == null) return;
+            if (kit == null || kit.location != "dumping_ground" || e == null || store == null) { Note("~SMC247~"); Hand(); return; }
             // The game reads the shopkeeper's ground, pockets and attempts; for this search they are the friend's own
             // (tools they carry and their loot work exactly as in the base game).
             var ground = e.afterhourInventory; var left = e.afterhourPocketSlotInvLeft; var pack = e.afterhourPocketSlotInvBackpack; var right = e.afterhourPocketSlotInvRight;
@@ -656,7 +656,9 @@ namespace ShopTogether {
         [HarmonyPriority(Priority.First)]
         static bool Prefix() {
             if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
-            if (ReplicaSession.IsReplica && OutingKits.Here == "dumping_ground" && LocalControl.Focused) RemoteActions.Forward(RemoteActions.Adapter("Scavenge", 0), null, new object[0]);
+            if (!LocalControl.UserAction) return false;
+            if (ReplicaSession.IsReplica && OutingKits.Here == "dumping_ground") RemoteActions.Forward(RemoteActions.Adapter("Scavenge", 0), null, new object[0]);
+            else RemoteActions.Notice("~SMC247~");
             return false;
         }
     }
