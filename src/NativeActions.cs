@@ -135,7 +135,14 @@ namespace ShopTogether {
         // Only picking an item up claims it. Opening, right-clicking or double-clicking an item never locks it for
         // others (those handlers keep their last item until the next press, which left machines locked).
         static IEnumerable<MethodBase> TargetMethods(){yield return typeof(ItemMouseDragHandler).GetMethod("OnEventPress",BindingFlags.Instance|BindingFlags.NonPublic);}
-        [HarmonyPriority(Priority.First)] static bool Prefix(InputActionHandler __instance,ISet<KeyCode> __0){if(!NativeActions.Active||!(__0.Contains(KeyCode.Mouse0)||__0.Contains(KeyCode.Mouse1)))return true;GameItem item=RenderHandler.RaycastElement<GameItem>(Input.mousePosition,null);return item==null||NativeActions.Hold(__instance,new[]{NativeActions.Session.World.Id(item)});}
+        [HarmonyPriority(Priority.First)] static bool Prefix(InputActionHandler __instance,ISet<KeyCode> __0){
+            if(!NativeActions.Active||!(__0.Contains(KeyCode.Mouse0)||__0.Contains(KeyCode.Mouse1)))return true;
+            GameItem item=RenderHandler.RaycastElement<GameItem>(Input.mousePosition,null);if(item==null)return true;
+            var session=NativeActions.Session;int id=session.World.Id(item);
+            // Only the host may assign an ID. Guests must use an ID supplied in the host's snapshot.
+            if(id<=0&&session.IsHost){try{id=session.World.EnsureHostItem(item);}catch(Exception error){Diagnostics.Report("index new item",error);}}
+            return NativeActions.Hold(__instance,new[]{id});
+        }
     }
     [HarmonyPatch]
     internal static class LocalItemReset {

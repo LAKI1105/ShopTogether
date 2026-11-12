@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.23";
+        internal const string BuildVersion="1.3.24";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -258,6 +258,13 @@ namespace ShopTogether {
             throw new Exception("~SMC047~");
         }
         internal void SendToHost(byte type,byte[] data){if(IsClient&&server!=null&&server.authenticated)server.Send(type,data);}
+        // A completed search can add items or merge stacks without invoking an item-change callback.
+        // Prioritize this one ground inventory on the next update rather than waiting for a full scan.
+        internal void SyncGroundSoon(GameInventory ground){
+            if(!IsHost||!Ready||ground==null)return;
+            foreach(var item in ground.childItems)World.MarkDirty(item);
+            nextSync=0;
+        }
         internal void Send(Request request){if(request.kind!=RequestKind.Renew&&request.kind!=RequestKind.Release)Outgoing++;if(IsClient&&HostPhase.Away&&request.kind!=RequestKind.Release&&request.kind!=RequestKind.Renew){status=HostPhase.Text;if(request.items!=null)NativeActions.CancelItems(request.items);return;}request.sequence=++sequence;if(IsHost)Process(0,request,OnLocalReply);else if(IsClient&&server!=null&&server.authenticated)server.Send(21,Encode(request));}
         /// <summary>The other player currently holding any of these items, or -1.</summary>
         internal int BusyOwner(int[] ids){

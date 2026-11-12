@@ -43,6 +43,16 @@ namespace ShopTogether {
         static void Remove(GameItem item){if(Gone(item))return;var inv=item.parentInventory;if(inv!=null)Placed(item,()=>inv.Expel(item));item.Destroy();}
         internal void Reset(){structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
         internal int Id(GameItem item){int id;return item!=null&&itemIds.TryGetValue(item,out id)?id:0;}
+        // A host may pick up an item in the same frame the game creates it. Register just that item's subtree
+        // in its already-known inventory rather than waiting for the periodic full-world index.
+        internal int EnsureHostItem(GameItem item){
+            int id=Id(item);if(id>0||item==null||replicaMode||item.parentInventory==null)return id;
+            var parent=item.parentInventory;InventoryAddress address;
+            if(!parent.childItems.Contains(item))return 0;
+            if(!addresses.TryGetValue(parent,out address)){Index();return Id(item);}
+            Walk(item,address.root,address.container,new int[]{0},new HashSet<GraphNodeStorage>());
+            return Id(item);
+        }
         internal void Prime(WorldDelta seed){
             if(seed==null||!seed.full||seed.store==null||seed.station==null)throw new InvalidOperationException("~SMC117~");
             Applying=true;

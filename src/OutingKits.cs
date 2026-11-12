@@ -342,7 +342,7 @@ namespace ShopTogether {
             // The game reads the shopkeeper's ground, pockets and attempts; for this search they are the friend's own
             // (tools they carry and their loot work exactly as in the base game).
             var ground = e.afterhourInventory; var left = e.afterhourPocketSlotInvLeft; var pack = e.afterhourPocketSlotInvBackpack; var right = e.afterhourPocketSlotInvRight;
-            int attempts = store.scavengingAttempts, wounds = store.healthData.woundState;
+            int attempts = store.scavengingAttempts, wounds = store.healthData.woundState, before = kit.attempts;
             Capturing = true;
             try {
                 e.afterhourInventory = kit.ground; e.afterhourPocketSlotInvLeft = kit.left; e.afterhourPocketSlotInvBackpack = kit.backpack; e.afterhourPocketSlotInvRight = kit.right;
@@ -354,6 +354,7 @@ namespace ShopTogether {
                 e.afterhourInventory = ground; e.afterhourPocketSlotInvLeft = left; e.afterhourPocketSlotInvBackpack = pack; e.afterhourPocketSlotInvRight = right;
                 store.scavengingAttempts = attempts; Capturing = false;
             }
+            if (kit.attempts != before && Connection.Current != null) Connection.Current.SyncGroundSoon(kit.ground);
             Hand();
             // The body is shared: the host is told when a friend got hurt.
             if (store.healthData.woundState > wounds && StoreUIManager.Instance != null && Connection.Current != null)
@@ -709,12 +710,22 @@ namespace ShopTogether {
     [HarmonyPatch(typeof(ScavHelper), "ScavengeDumpingGrounds")]
     internal static class FriendScavenge {
         [HarmonyPriority(Priority.First)]
-        static bool Prefix() {
-            if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
+        static bool Prefix(out int __state) {
+            __state = int.MinValue;
+            if (!ReplicaSession.ClientStore || WorldReplica.Applying) {
+                var session = Connection.Current;
+                if (session != null && session.IsHost && !OutingKits.Capturing && PlayerStore.Instance != null) __state = PlayerStore.Instance.scavengingAttempts;
+                return true;
+            }
             if (!LocalControl.UserAction) return false;
             if (ReplicaSession.IsReplica && OutingKits.Here == "dumping_ground") RemoteActions.Forward(RemoteActions.Adapter("Scavenge", 0), null, new object[0]);
             else RemoteActions.Notice("~SMC247~");
             return false;
+        }
+        static void Postfix(int __state) {
+            var session = Connection.Current;var store = PlayerStore.Instance;var entry = EmporiumEntry.Instance;
+            if (__state != int.MinValue && session != null && session.IsHost && !OutingKits.Capturing && store != null && entry != null && store.scavengingAttempts != __state)
+                session.SyncGroundSoon(entry.afterhourInventory);
         }
     }
 
