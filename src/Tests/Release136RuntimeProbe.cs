@@ -8,6 +8,8 @@ namespace ShopTogether {
  internal static partial class RuntimeProbe {
   static IEnumerator RunExtended(Connection root,bool host){
    string suite=Argument("--smc-suite");
+   if(suite=="return1323")return host?ReturnHost1323(root):ReturnGuest1323(root);
+   if(suite=="session1323")return host?SessionHost1323(root):SessionGuest1323(root);
    if(suite=="dump1322")return host?DumpHost1322(root):DumpGuest1322(root);
    if(suite=="hint1322")return host?HintHost1322(root):HintGuest1322(root);
    if(suite=="release1321")return host?Release1321Host(root):Release1321Client(root);
@@ -71,9 +73,9 @@ namespace ShopTogether {
   static IEnumerator OverflowHost(Connection root){
    var store=PlayerStore.Instance;store.storeState=PlayerStore.StoreState.CLOSED;store.isAfterhoursIntroduced=true;store.healthData.woundState=0;store.healthData.isWoundedFresh=false;
    Signal("OVERFLOW_GO");var wait=Wait(()=>OutingKits.AnyOut,"overflow client outside",40);while(wait.MoveNext())yield return wait.Current;Kit kit=null;foreach(var k in OutingKits.All)if(k.location!=null){kit=k;break;}
-   var loot=ModHelper.SpawnItem("magnifier");loot.name="SMC_OVERFLOW_LOOT";loot.mayStackItemFunc=(x,y)=>false;Require(GraphUtils.TryAcceptAll(kit.ground,loot)==0&&loot.parentInventory==kit.ground,"overflow ground loot placed");
+   var loot=ModHelper.SpawnItem("magnifier");loot.name="SMC_OVERFLOW_LOOT";loot.mayStackItemFunc=(x,y)=>false;Require(GraphUtils.TryAcceptAll(kit.left,loot)==0&&loot.parentInventory==kit.left,"overflow carried loot placed");
    var blocked=new Dictionary<GameInventory,Func<GameItem,GameInventory,bool>>();foreach(var r in WorldReplica.Roots())if(r.Key<40&&!blocked.ContainsKey(r.Value)){blocked[r.Value]=r.Value.mayInventoryAddItemFunc;r.Value.mayInventoryAddItemFunc=(a,b)=>false;}
-   try{Signal("OVERFLOW_RETURN");wait=Wait(()=>kit.location==null,"return with no shop capacity",40);while(wait.MoveNext())yield return wait.Current;Require(kit.HasLeftovers&&kit.owner>0&&loot.parentInventory==kit.ground,"no-capacity return preserves loot and ownership");Require(OutingKits.AnyOut&&DayGuards.Sleep()!=null,"sleep blocked while connected friend has unstored outing items");Signal("OVERFLOW_HELD");wait=Wait(()=>Received("OVERFLOW_BLOCKED"),"another outing blocked until leftovers empty",40);while(wait.MoveNext())yield return wait.Current;}
+   try{Signal("OVERFLOW_RETURN");wait=Wait(()=>kit.location==null,"return with no shop capacity",40);while(wait.MoveNext())yield return wait.Current;Require(kit.HasLeftovers&&kit.owner>0&&loot.parentInventory==kit.left,"no-capacity return preserves carried loot and ownership");Require(OutingKits.AnyOut&&DayGuards.Sleep()!=null,"sleep blocked while connected friend has unstored outing items");Signal("OVERFLOW_HELD");wait=Wait(()=>Received("OVERFLOW_BLOCKED"),"another outing blocked until leftovers empty",40);while(wait.MoveNext())yield return wait.Current;}
    finally{foreach(var r in blocked)r.Key.mayInventoryAddItemFunc=r.Value;}
    Signal("OVERFLOW_MOVE");wait=Wait(()=>Received("OVERFLOW_DROPPED"),"client submitted manual drop",40);while(wait.MoveNext())yield return wait.Current;wait=Wait(()=>true&&loot.parentInventory==EmporiumEntry.Instance.backInvinvElement,"leftover dragged into shop and committed by host",40);while(wait.MoveNext())yield return wait.Current;Signal("OVERFLOW_DONE");
   }

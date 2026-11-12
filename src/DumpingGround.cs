@@ -132,7 +132,7 @@ namespace ShopTogether {
         }
 
         /// <summary>Host side, a friend leaving the dumping ground: as in the base game, the waste left there counts as
-        /// dumped and is gone, and food Serpico took is gone (everything else they left still comes home).</summary>
+        /// dumped and is gone, and food Serpico took is gone. Used only for a deliberate return.</summary>
         internal static void FriendLeaves(GameInventory ground, bool serpicoTookFood) {
             if (ground == null) return;
             foreach (var item in new List<GameItem>(ground.childItems)) {

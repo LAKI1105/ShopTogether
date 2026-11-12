@@ -12,6 +12,8 @@ A community co-op mod for **Probably Stolen**. Run the game on each computer and
 4. 外出拾荒使用自己的外出欄。Dr. Jackson 與其他模組地點須等房主先抵達，再選同一地點跟隨。
 5. 多人成就開關由每台電腦自行設定。關閉只影響自己的多人期間成就解鎖與進度。
 
+正常回店時，只帶回背包和口袋裡的物品；留在地上的物品不會帶回。朋友斷線或房間結束時，地上的物品也會回收。房主在 Dr. Jackson 時，朋友帶回的物品會放到店裡的倉庫。
+
 ## How it works
 
 The host runs gameplay simulation and owns the save. Guests render replicated game state and send validated action requests. This is neither desktop streaming nor remote keyboard/mouse injection. Item leases arbitrate competing actions; separate local UI state keeps one player's menus and aiming view from replacing another player's screen.
@@ -19,6 +21,8 @@ The host runs gameplay simulation and owns the save. Guests render replicated ga
 Compatibility with arbitrary third-party mods is not guaranteed. A mod with a new interface or custom state may need an adapter. Matching enabled mods and versions is recommended.
 
 During multiplayer, both the host and guests use temporary empty outing backpacks; the original bags and their contents stay in the shop. Dr. Jackson and third-party destinations require following a host who has already arrived. Custom third-party windows such as BartenderMod and MercDispatch are not synchronized; lamp changes remain local. The host can hear a guest's phone call even while its panel is hidden. If the shop is full, put away leftover outing items before the host quits: those temporary inventories are not saved.
+
+On a normal return, items in the backpack and pockets come home; items left on the ground do not. A guest's ground items are also recovered on disconnect or session shutdown. If the host is at Dr. Jackson, the returning guest's items go to shop storage.
 
 Direct connections use pinned TLS. Steam transport uses Steam networking identities. Incoming messages have direction, size and rate checks; actions are limited to registered game operations and valid accessible items. This does not expose a shell or general file access. The mod and game still run with your account's local permissions; these checks are not a security audit or a guarantee against every bug.
 

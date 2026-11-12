@@ -266,6 +266,13 @@ namespace ShopTogether {
             var e = EmporiumEntry.Instance;
             if (e == null || item == null) return false;
             var from = item.parentInventory;
+            // While the host is at a place that uses the shop counters (Dr. Jackson's), they are that place's counter:
+            // things coming home go to the shop's storage instead, where a friend can reach them.
+            var here = MapUIManager.Instance != null ? MapUIManager.Instance.Current : null;
+            if (here != null && here.ShowsStoreCounters) {
+                GraphUtils.TryAccept(e.invElement, item);
+                return item.parentInventory != from;
+            }
             e.TryAddToPlayerInv(item);
             if (item.parentInventory != from) return true;
             GraphUtils.TryAcceptAll(e.frontInvinvElement, item);
@@ -289,10 +296,11 @@ namespace ShopTogether {
             return false;
         }
 
-        /// <summary>Host side: carried items and ground loot return to the shop and the empty void backpack disappears.
-        /// The Serpico storyline observes the dumping-ground contents before they are returned.
-        /// Nothing is ever thrown away for lack of room: what did not fit stays in the friend's outing slots, which they
-        /// see in the shop and empty by hand.</summary>
+        /// <summary>Host side: what the friend carries (backpack, pockets) returns to the shop and the empty void backpack
+        /// disappears. What is left on the ground stays behind, as in the base game, unless the friend was brought back
+        /// without choosing to leave (keepGround). Serpico and the waste count see the dumping ground first.
+        /// Nothing carried is thrown away for lack of room: what did not fit stays in the friend's outing slots, which
+        /// they see in the shop and empty by hand.</summary>
         static void Return(Kit kit, bool keepGround) {
             string place = kit.location;
             var location = place != null ? AfterhourLocation.Get(place) : null;
@@ -303,8 +311,17 @@ namespace ShopTogether {
                     if (!Unpack(item, kit.backpack)) left = true;
                 }
                 foreach (var pocket in new GameInventory[] { kit.left, kit.right }) foreach (var item in new List<GameItem>(pocket.childItems)) { if (IsVoidBag(item)) { if (!Unpack(item, pocket)) left = true; } else if (!Home(item)) left = true; }
-                if (place == "dumping_ground") { bool feeding = SerpicoStoryline.IsFoodWindowOpen(); SerpicoStoryline.OnLeaveDumpingGround(kit.ground); DumpingGround.FriendLeaves(kit.ground, feeding); }
-                foreach (var item in new List<GameItem>(kit.ground.childItems)) {
+                // Disconnect/session shutdown is recovery, not a deliberate delivery at the dumping ground.
+                if (!keepGround && place == "dumping_ground") { bool feeding = SerpicoStoryline.IsFoodWindowOpen(); SerpicoStoryline.OnLeaveDumpingGround(kit.ground); DumpingGround.FriendLeaves(kit.ground, feeding); }
+                if (!keepGround) {
+                    // As in the base game, whatever is left on the ground stays behind (a dropped bag with what is in it).
+                    // Waste left at the dumping ground was counted above.
+                    foreach (var item in new List<GameItem>(kit.ground.childItems)) {
+                        foreach (var inside in GraphUtils.FindAllChildrenType<GameItem>(item)) if (!ReferenceEquals(inside, item) && inside.parentInventory != null) { inside.parentInventory.Expel(inside); inside.Destroy(); }
+                        kit.ground.Expel(item); item.Destroy();
+                    }
+                } else foreach (var item in new List<GameItem>(kit.ground.childItems)) {
+                    // Brought back without choosing to leave (disconnected, session ended): nothing they found is lost.
                     if (IsVoidBag(item)) { if (!Unpack(item, kit.ground)) left = true; continue; }
                     if (!Home(item)) left = true;
                 }
@@ -429,7 +446,7 @@ namespace ShopTogether {
             var mine = Mine;
             bool leftovers = place == null && joinedAt == null && mine != null && mine.HasLeftovers;
             if (place == null && joinedAt == null && mine != null && leftovers != mine.window.IsVisible()) Visual(() => {
-                if (leftovers) { mine.window.Show(); mine.window.Validate(); mine.window.Center(); } else mine.window.Hide();
+                if (leftovers) { mine.window.Show(); mine.window.Validate(); mine.window.Center(); mine.window.ToFront(true); } else mine.window.Hide();
             });
 
             // While the host is out, the visitor at the host's counter (Dr. Jackson) is not standing in this shop.
@@ -545,7 +562,7 @@ namespace ShopTogether {
             // Returning runs later in the blackscreen callback, after Follow may already have shown leftovers.
             // Reopen after the native UI cleanup so a completed transition cannot hide the recovery panel.
             var ownKit = Mine;
-            if (ownKit != null && ownKit.HasLeftovers) { ownKit.window.Show(); ownKit.window.Validate(); ownKit.window.Center(); }
+            if (ownKit != null && ownKit.HasLeftovers) { ownKit.window.Show(); ownKit.window.Validate(); ownKit.window.Center(); ownKit.window.ToFront(true); }
             AudioManager.Instance.Play2("close_door");
         }
 
@@ -638,20 +655,33 @@ namespace ShopTogether {
                     foreach (var inside in OutingKits.Contents(bag)) { if (inside.parentInventory != null) inside.parentInventory.Expel(inside); inside.Destroy(); }
                     __instance.afterhourInventory.Expel(bag); bag.Destroy();
                 }
-            if (!countsDumpedWaste) return true;
-            // The normal dumping-ground return discards the entire ground. Count waste as usual,
-            // but carry the other finds home; leave overflow accessible in the outing window.
-            foreach (var holder in new GameInventory[] { __instance.afterhourPocketSlotInvBackpack, __instance.afterhourPocketSlotInvRight, __instance.afterhourPocketSlotInvLeft })
-                if (holder != null) foreach (var item in new List<GameItem>(holder.childItems)) __instance.TryAddToPlayerInv(item);
+            // Then the base-game return: pockets and backpack come home, the ground stays behind (waste on the dumping
+            // ground counted as dumped). What stays behind is destroyed here rather than only taken out of the ground.
             foreach (var item in new List<GameItem>(__instance.afterhourInventory.childItems)) {
-                if (item.identifier == "nuclear_waste") {
-                    PlayerStore.GetStoreClientData().nuclearWasteDumped++;
-                    __instance.afterhourInventory.Expel(item); item.Destroy();
-                } else OutingKits.Home(item);
+                if (countsDumpedWaste && item.identifier == "nuclear_waste") PlayerStore.GetStoreClientData().nuclearWasteDumped++;
+                foreach (var inside in GraphUtils.FindAllChildrenType<GameItem>(item)) if (!ReferenceEquals(inside, item) && inside.parentInventory != null) { inside.parentInventory.Expel(inside); inside.Destroy(); }
+                __instance.afterhourInventory.Expel(item); item.Destroy();
             }
-            pendingGround = true;
-            if (HasLeftovers) { __instance.ShowAfterhourInv(); if (StoreUIManager.Instance != null) StoreUIManager.Instance.Notify(Loc.Text("~SMC225~")); }
-            return false;
+            return true;
+        }
+        static void Postfix(EmporiumEntry __instance) {
+            var session = Connection.Current;
+            if (session == null || !session.IsHost) return;
+            // The native return can leave carried items in their outing slots when the shop is full.
+            // Keep the sleep guard active until the host has moved every remaining item into the shop.
+            pendingGround = __instance.afterhourInventory.childItems.Count > 0 ||
+                __instance.afterhourPocketSlotInvBackpack.childItems.Count > 0 ||
+                __instance.afterhourPocketSlotInvLeft.childItems.Count > 0 ||
+                __instance.afterhourPocketSlotInvRight.childItems.Count > 0;
+            if (pendingGround && StoreUIManager.Instance != null) StoreUIManager.Instance.Notify(Loc.Text("~SMC225~"));
+        }
+    }
+    [HarmonyPatch(typeof(MapUIManager), "OnReturning")]
+    internal static class HostAfterhourReturnWindow {
+        static void Postfix() {
+            var session = Connection.Current;
+            if (session != null && session.IsHost && HostVoidBackpackBack.HasLeftovers && EmporiumEntry.Instance != null)
+                EmporiumEntry.Instance.ShowAfterhourInv();
         }
     }
     [HarmonyPatch(typeof(EmporiumEntry), "TryAddToPlayerInv")]
