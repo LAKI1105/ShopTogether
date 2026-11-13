@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324')]
+    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
     [string]$GamePath=$env:PROBABLY_STOLEN_PATH
 )
@@ -81,7 +81,7 @@ try{
             foreach($role in @('host','client')){
                 Write-Output "Native ${part} ${role}:";$text=Read-TestLog (Join-Path $scratch "smc-$role.log")
                 if($part -eq 'hint1322' -and $env:SMC_HINT_EVIDENCE_DIR){$picture=[regex]::Match($text,'\[SMC-HINT-IMAGE\] ([A-Za-z0-9+/=]+)');if($picture.Success){[IO.File]::WriteAllBytes((Join-Path $env:SMC_HINT_EVIDENCE_DIR "$role.png"),[Convert]::FromBase64String($picture.Groups[1].Value));Write-Output "HINT_IMAGE_SAVED $role"}}
-                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF)|Init failed: 多人|Trust check failed:|\[ModLoader\].*shop_together'}
+                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF)|Init failed: 多人|Trust check failed:|\[ModLoader\].*shop_together|(?i)friend .*reported:.*(fountain click|click pause|drag end|layout|load)'}
                 $text -split '\r?\n' | Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4 | ForEach-Object ToString
             }
             Stop-TestProcesses $started;$started=@()
