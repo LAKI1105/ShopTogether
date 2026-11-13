@@ -22,7 +22,9 @@ namespace ShopTogether {
         static bool ProbeLocalAddress(ref string __result){__result="127.0.0.1";return false;}
         static IEnumerator NoRouterMapping(){yield break;}
         static bool ProbeRouterMapping(ref IEnumerator __result){__result=NoRouterMapping();return false;}
-        static bool Initial(PlayerStore __instance){__instance.saveSlotId=-777;__instance.runID="smc-isolated-runtime-test";return false;}
+        // The real InitialSave calls SaveGame, which initializes this buffer. The isolated test skips disk saves
+        // but must keep that in-memory invariant for other mods that encode items immediately.
+        static bool Initial(PlayerStore __instance){__instance.saveSlotId=-777;__instance.runID="smc-isolated-runtime-test";if(__instance.savedItemFeatureList==null)__instance.savedItemFeatureList=new List<ItemFeature>();return false;}
         static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);Debug.Log("[SMC PASS] "+message);}
         internal static IEnumerator Run(Connection root){
             SuppressPersistence();

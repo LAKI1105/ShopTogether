@@ -13,14 +13,18 @@ public static class IsolatedWorkshopRedirect {
     }
     public static object Apply(object items) {
         string folder = Environment.GetEnvironmentVariable("SHOPTOGETHER_PROBE_FOLDER");
+        string visitor = Environment.GetEnvironmentVariable("SHOPTOGETHER_VISIT_FOLDER");
         var list = items as IList;
         if (string.IsNullOrEmpty(folder) || list == null) return items;
         for (int i = 0; i < list.Count; i++) {
             object entry = list[i];
             if (entry == null) continue;
             FieldInfo id = entry.GetType().GetField("Item1"), path = entry.GetType().GetField("Item2");
-            if (id == null || path == null || !(id.GetValue(entry) is ulong) || (ulong)id.GetValue(entry) != 3837477869UL) continue;
-            path.SetValue(entry, folder);
+            if (id == null || path == null || !(id.GetValue(entry) is ulong)) continue;
+            ulong workshopId = (ulong)id.GetValue(entry);
+            if (workshopId == 3837477869UL) path.SetValue(entry, folder);
+            else if (workshopId == 3828909239UL && !string.IsNullOrEmpty(visitor)) path.SetValue(entry, visitor);
+            else continue;
             list[i] = entry;
         }
         return items;

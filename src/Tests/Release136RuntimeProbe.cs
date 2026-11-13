@@ -9,6 +9,9 @@ namespace ShopTogether {
   static IEnumerator RunExtended(Connection root,bool host){
    string suite=Argument("--smc-suite");
    if(suite=="numeric1326")return host?NumericHost1326(root):NumericClient1326(root);
+#if PM_REAL_PROBE
+   if(suite=="probably_real")return host?ProbablyRealHost(root):ProbablyRealGuest(root);
+#endif
    if(suite=="probably_compat")return host?ProbablyCompatHost(root):ProbablyCompatGuest(root);
    if(suite=="immediate1324")return host?ImmediateHost1324(root):ImmediateGuest1324(root);
    if(suite=="return1323")return host?ReturnHost1323(root):ReturnGuest1323(root);

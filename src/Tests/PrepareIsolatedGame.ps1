@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$GamePath,[Parameter(Mandatory=$true)][string]$Target)
+param([Parameter(Mandatory=$true)][string]$GamePath,[Parameter(Mandatory=$true)][string]$Target,[switch]$AllowApprovedTestTrust)
 $ErrorActionPreference='Stop'
 $game=[IO.Path]::GetFullPath($GamePath)
 $targetPath=[IO.Path]::GetFullPath($Target)
@@ -15,6 +15,11 @@ $managed=Join-Path $targetPath 'Probably Stolen_Data\Managed'
 $bridge=Join-Path $managed 'ShopTogetherTestRedirect.dll'
 & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:library "/out:$bridge" (Join-Path $PSScriptRoot 'IsolatedWorkshopRedirect.cs')
 if($LASTEXITCODE -ne 0){throw 'Could not build the isolated Workshop path redirect'}
+$approval=Join-Path $managed 'ShopTogetherIsolatedApproval.dll'
+if($AllowApprovedTestTrust){
+    & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /noconfig /nostdlib /target:library "/out:$approval" "/r:$managed\mscorlib.dll" "/r:$managed\System.dll" "/r:$managed\System.Core.dll" "/r:$managed\netstandard.dll" "/r:$managed\Assembly-CSharp.dll" "/r:$managed\UnityEngine.CoreModule.dll" "/r:$managed\Newtonsoft.Json.dll" (Join-Path $PSScriptRoot 'IsolatedApproval.cs') (Join-Path $PSScriptRoot 'IsolatedVisitorTest.cs')
+    if($LASTEXITCODE -ne 0){throw 'Could not build the isolated approval helper'}
+}
 
 # Only this disposable game copy is changed. Its normal mod scanning and capability checks remain enabled.
 # The subscribed Workshop folder, the installed game, and the user's saved trust records are never written here.
@@ -56,8 +61,19 @@ try{
     $trust=$module.GetType('ModTrust')
     $save=@($trust.Methods | Where-Object {$_.Name -eq 'Save' -and $_.Parameters.Count -eq 0})
     if($save.Count -ne 1){throw 'Could not isolate the mod trust record'}
-    $save[0].Body.Instructions.Clear();$save[0].Body.ExceptionHandlers.Clear();$save[0].Body.Variables.Clear()
-    $saveIl=$save[0].Body.GetILProcessor();$saveIl.Append($saveIl.Create([Mono.Cecil.Cil.OpCodes]::Ret))
+    if(-not $AllowApprovedTestTrust){
+        $save[0].Body.Instructions.Clear();$save[0].Body.ExceptionHandlers.Clear();$save[0].Body.Variables.Clear()
+        $saveIl=$save[0].Body.GetILProcessor();$saveIl.Append($saveIl.Create([Mono.Cecil.Cil.OpCodes]::Ret))
+    }else{
+        $helper=[Mono.Cecil.AssemblyDefinition]::ReadAssembly($approval,$reader)
+        try{
+            $tick=@($helper.MainModule.GetType('IsolatedApproval').Methods | Where-Object {$_.Name -eq 'Tick'})
+            $menu=@($module.GetType('MainMenuUIController').Methods | Where-Object {$_.Name -eq 'Update' -and $_.HasBody})
+            if($tick.Count -ne 1 -or $menu.Count -ne 1){throw 'Could not install isolated approval automation'}
+            $menuIl=$menu[0].Body.GetILProcessor()
+            $menuIl.InsertBefore($menu[0].Body.Instructions[0],$menuIl.Create([Mono.Cecil.Cil.OpCodes]::Call,[Mono.Cecil.MethodReference]$module.ImportReference($tick[0])))
+        }finally{$helper.Dispose()}
+    }
     $assembly.Write((Join-Path $managed 'Assembly-CSharp.dll'))
 }finally{$redirectAssembly.Dispose();$assembly.Dispose()}
 

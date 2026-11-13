@@ -184,6 +184,9 @@ namespace ShopTogether {
             if(Argument("--smc-suite")==null){var tlsCheck=TlsCheck();while(tlsCheck.MoveNext())yield return tlsCheck.Current;}
             NewGameData.Instance.skipIntro=true;NewGameData.Instance.disableTutorialHint=true;MainMenuUIController.Instance.StartNewGameClick();
             wait=Wait(()=>EmporiumEntry.Instance!=null&&ItemMouseDragHandler.current!=null,"host isolated shop",90);while(wait.MoveNext())yield return wait.Current;yield return new WaitForSecondsRealtime(2);
+#if PM_REAL_PROBE
+            if(Argument("--smc-suite")=="probably_real"||Argument("--smc-suite")==null)IsolatedVisitorTest.DismissLogin();
+#endif
             InstallInput();var a=ModHelper.SpawnItem("magnifier");var b=ModHelper.SpawnItem("magnifier");a.mayStackItemFunc=(x,y)=>false;b.mayStackItemFunc=(x,y)=>false;a.name="SMC_HOST_ITEM";b.name="SMC_CLIENT_ITEM";b.ModifyTag("FEED_DISPENSER_TARGET_PERCENT_INT",t=>t.Enable().SetInt(85));GraphUtils.TryAcceptAll(EmporiumEntry.Instance.invElement,a,1);GraphUtils.TryAcceptAll(EmporiumEntry.Instance.invElement,b,1);foreach(var live in EmporiumEntry.Instance.invElement.childItems){if(live.name=="SMC_HOST_ITEM")a=live;if(live.name=="SMC_CLIENT_ITEM")b=live;}Require(a.unitCount>0&&b.unitCount>0,"test fixtures retain live native items");ShowStorage();
             wait=Wait(()=>!StoreUIManager.Instance.blackscreen.gameObject.activeInHierarchy,"initial shop transition finished",30);while(wait.MoveNext())yield return wait.Current;ShowStorage();yield return null;pointer=Point(a);yield return null;yield return null;Context(a);Require(MenuOpen,"native context preflight");ItemContextHandler.current.UpdateReset();int ticks=0;a.onOneSecondItemFunc=(x,y,z)=>{ticks++;x.unitValue=UnityEngine.Random.Range(100000,200000);};
             control=new UdpClient(new IPEndPoint(IPAddress.Loopback,0));string code=root.ProbeOpen();root.World.Index();
