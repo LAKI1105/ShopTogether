@@ -240,6 +240,8 @@ namespace ShopTogether {
             Build();
             Entry e;
             if (call == null || call.key == null || !byKey.TryGetValue(call.key, out e)) return "~SMC030~";
+            if (ProbablyMultiplayerCompat.BlockRemote(session, owner)) return "~SMC271~";
+            if (ProbablyMultiplayerCompat.VisitActive && (e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton))) return "~SMC271~";
             if (e.HostOnly != null) return e.HostOnly;
             if ((e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades)) && !CounterTrades.Allowed(owner)) return "~SMC217~";
             if (HostPhase.Busy(session.Ready) != null) return "~SMC080~";
@@ -262,6 +264,7 @@ namespace ShopTogether {
                     case "item": {
                         int id; GameItem item;
                         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) || !session.World.Items.TryGetValue(id, out item) || item == null) return "~SMC095~";
+                        if (ProbablyMultiplayerCompat.Protected(item)) return "~SMC271~";
                         if (!want.IsInstanceOfType(item)) return "~SMC171~";
                         if (!session.Leases.Available(owner, id, now)) return "~SMC096~";
                         var at = session.World.Address(item.parentInventory); if(at != null && !OutingKits.MayUse(owner,at.root)) return "~SMC217~";
@@ -287,6 +290,7 @@ namespace ShopTogether {
                 }
             }
             if (!e.Method.IsStatic && target is GameItem) {
+                if (ProbablyMultiplayerCompat.Protected((GameItem)target)) return "~SMC271~";
                 int id = session.World.Id((GameItem)target);
                 var at = session.World.Address(((GameItem)target).parentInventory); if(at != null && !OutingKits.MayUse(owner,at.root)) return "~SMC217~";
                 if (id == 0 || !session.Leases.Available(owner, id, now)) return "~SMC096~";

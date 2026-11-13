@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326')]
+    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','probably_compat')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
     [string]$GamePath=$env:PROBABLY_STOLEN_PATH
 )

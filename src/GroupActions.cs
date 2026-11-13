@@ -22,7 +22,7 @@ namespace ShopTogether {
     }
     [HarmonyPatch(typeof(ItemMultiSelectHandler),"StartGroupDrag")]
     internal static class GroupClaim {
-        static bool Prefix(ItemMultiSelectHandler __instance){if(!NativeActions.Active)return true;var session=NativeActions.Session;var selected=ModReflect.Get<List<GameItemElement>>(__instance,"selectedItems");if(session.IsClient&&selected.Count>128){RemoteActions.Notice("~SMC246~");return false;}var ids=new List<int>();foreach(var item in selected){int id=session.World.Id(item);if(id>0)ids.Add(id);}return ids.Count==0||NativeActions.Hold(__instance,ids.ToArray());}
+        static bool Prefix(ItemMultiSelectHandler __instance){if(!NativeActions.Active)return true;var session=NativeActions.Session;var selected=ModReflect.Get<List<GameItemElement>>(__instance,"selectedItems");if(session.IsClient&&selected.Count>128){RemoteActions.Notice("~SMC246~");return false;}var ids=new List<int>();foreach(var item in selected){if(session.IsHost&&(ProbablyMultiplayerCompat.TradeLocked||ProbablyMultiplayerCompat.Protected(item))){RemoteActions.Notice("~SMC272~");return false;}int id=session.World.Id(item);if(id>0)ids.Add(id);}return ids.Count==0||NativeActions.Hold(__instance,ids.ToArray());}
     }
     [HarmonyPatch(typeof(ItemMultiSelectHandler),"ClearSelection")]
     internal static class GroupRelease {static void Postfix(ItemMultiSelectHandler __instance){NativeActions.Unhold(__instance);}}
@@ -31,7 +31,7 @@ namespace ShopTogether {
         [HarmonyPriority(Priority.First)] static bool Prefix(ItemMultiSelectHandler __instance,GameInventory __0,int __1,int __2){
             if(!NativeActions.Active)return true;var session=NativeActions.Session;
             var selected=ModReflect.Get<List<GameItemElement>>(__instance,"selectedItems");var ids=new List<int>();var moves=new List<Placement>();
-            foreach(var item in selected){int id=session.World.Id(item);if(id<=0)return false;if(session.IsHost){if(!session.Leases.Available(0,id,Time.realtimeSinceStartup))return false;continue;}
+            foreach(var item in selected){int id=session.World.Id(item);if(id<=0)return false;if(session.IsHost){if(ProbablyMultiplayerCompat.TradeLocked||ProbablyMultiplayerCompat.Protected(item)||!session.Leases.Available(0,id,Time.realtimeSinceStartup))return false;continue;}
                 GridShape shape=(GridShape)ModReflect.CallStatic(typeof(ItemMultiSelectHandler),"TranslatedShape",new object[]{item,__1,__2});long version;session.World.Versions.TryGetValue(id,out version);ids.Add(id);moves.Add(new Placement{item=id,count=item.unitCount,x=shape.minX,y=shape.minY,rotation=shape.orientation,flip=shape.flipped,version=version,inventory=session.World.Address(__0)});
             }
             if(session.IsHost)return true;if(ids.Count>128){RemoteActions.Notice("~SMC246~");return false;}if(LocalControl.UserAction)session.Submit(new Request{kind=RequestKind.Move,items=ids.ToArray(),moves=moves.ToArray()});return false;

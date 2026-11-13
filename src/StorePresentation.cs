@@ -41,7 +41,7 @@ namespace ShopTogether {
         /// <summary>Friend: customers still waiting today (the queue itself only exists on the host).</summary>
         internal static int ClientsLeft;
         internal void ApplyCustomer(StoreView view,WorldReplica world){
-            if(view==null)return;ClientsLeft=Math.Max(0,Math.Min(1000,view.clientsLeft));
+            if(view==null)return;ProbablyMultiplayerCompat.EnsurePortrait(view.sprite);ClientsLeft=Math.Max(0,Math.Min(1000,view.clientsLeft));
             bool changed=view.customer!=appliedCustomer;
             if(changed){
                 var old=CustomerInventory();if(old!=null)foreach(var item in GraphUtils.FindChildrenType<GameItem>(old,null,null))item.Destroy();

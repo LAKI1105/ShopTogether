@@ -18,7 +18,7 @@ namespace ShopTogether {
         public void OnEnable() {
             instance=new GameObject("ShopTogetherAuthority");UnityEngine.Object.DontDestroyOnLoad(instance);instance.AddComponent<Connection>();
         }
-        public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
+        public void OnDisable(){ProbablyMultiplayerCompat.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
         internal const string BuildVersion="1.3.26";
@@ -129,7 +129,7 @@ namespace ShopTogether {
             if(secret.Length<8||secret.Length>64){status="~SMC122~";ShowManualJoin();return;}
             try{BeginJoin(new[]{endpoint});}catch(Exception e){Stop();status=e.Message;ShowStatus();}}
         void Update(){
-            Diagnostics.Soft("other multiplayer",()=>OtherMultiplayer.Tick(this));
+            ProbablyMultiplayerCompat.Tick();
             if(!IsClient&&MainMenuUIController.Instance!=null&&EmporiumEntry.Instance==null){ReplicaSession.ClientStore=false;ReplicaSession.SceneReady=false;}
             if(MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null&&(!launcherShown||launcherState!=LauncherState())){launcherShown=true;DrawLauncher();}
             SteamInvite.Hook();
@@ -294,6 +294,7 @@ namespace ShopTogether {
             if(request.items.Length>128){reply(new LeaseReply{sequence=request.sequence,items=new int[0],reason="~SMC246~"});return;}
             if(request.kind==RequestKind.Release){Leases.Release(owner,request.items);return;}
             foreach(int id in request.items)if(!World.Items.ContainsKey(id)){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC095~"});return;}
+            if(ProbablyMultiplayerCompat.BlockRequest(this,owner,request)){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC271~"});return;}
             if(request.kind==RequestKind.Claim){long token;bool ok=Leases.Claim(owner,request.items,now,out token);reply(new LeaseReply{sequence=request.sequence,items=request.items,owner=owner,token=token,granted=ok,reason=ok?null:"~SMC096~"});return;}
             // A game error while running a friend's action refuses that action; it must not cut the friend off.
             bool success=false;string failed="~SMC167~";try{success=NativeActions.Execute(this,owner,request);if(success)World.Committed(request);}catch(Exception failure){success=false;failed="~SMC085~";Debug.LogWarning("[ShopTogether] action by "+PlayerNames.Of(owner)+" failed on host ("+request.kind+"): "+failure);}finally{if(!success)reply(new LeaseReply{sequence=request.sequence,items=request.items,reason=failed});nextSync=0;}

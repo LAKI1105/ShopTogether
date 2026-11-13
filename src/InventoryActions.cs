@@ -4,7 +4,7 @@ using UnityEngine;
 namespace ShopTogether {
     internal static class InventoryActions {
         internal static bool Available(Connection session,int owner,GameGridInventory inventory){
-            if(inventory==null||!InventorySortHelper.MaySort(inventory)||!InventorySortHelper.CanSort(inventory))return false;
+            if(inventory==null||ProbablyMultiplayerCompat.InventoryProtected(inventory)||!InventorySortHelper.MaySort(inventory)||!InventorySortHelper.CanSort(inventory))return false;
             foreach(var item in GraphUtils.FindChildrenType<GameItem>(inventory,null,null))if(!session.Leases.Available(owner,session.World.Id(item),Time.realtimeSinceStartup))return false;
             var address=session.World.Address(inventory);return address!=null&&OutingKits.MayUse(owner,address.root)&&(address.container==0||session.Leases.Available(owner,address.container,Time.realtimeSinceStartup));
         }
