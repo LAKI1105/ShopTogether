@@ -17,7 +17,7 @@ namespace ShopTogether {
         internal long Version;internal StorePresentation Presentation=new StorePresentation();
         string lastStore,lastStation;float nextState;
         // Host: items to compare first (just changed), the round-robin position, and each item's last sent fingerprint.
-        readonly HashSet<int> dirty=new HashSet<int>();readonly List<int> order=new List<int>();int orderCursor;readonly Dictionary<int,long> fingerprints=new Dictionary<int,long>();
+        readonly HashSet<int> dirty=new HashSet<int>();readonly List<int> order=new List<int>();int orderCursor;readonly Dictionary<int,long> fingerprints=new Dictionary<int,long>();readonly Dictionary<int,long> stateHashes=new Dictionary<int,long>();
         internal void MarkDirty(GameItem item){int id;if(item==null)return;if(itemIds.TryGetValue(item,out id))dirty.Add(id);else structureDirty=true;}
         // Host side: walking the whole shop only when its shape may have changed. Inventory addresses are (container
         // item id, inventory number inside that container), so they do not shift when items move; a new walk is needed
@@ -41,7 +41,7 @@ namespace ShopTogether {
         static bool Placed(GameItem item,Func<bool> move,GameInventory target=null){var was=SandboxItem;bool permit=SandboxMovePermit;Sandbox++;SandboxItem=item;SandboxMovePermit=true;try{return move();}catch(Exception e){Diagnostics.Report("placing "+(item!=null?item.identifier:"?"),e);return item!=null&&(target!=null?item.parentInventory==target:item.parentInventory==null);}finally{Sandbox--;SandboxItem=was;SandboxMovePermit=permit;}}
         static bool Gone(GameItem item){var element=item as GameItemElement;return item==null||element!=null&&element.IsDestroyed();}
         static void Remove(GameItem item){if(Gone(item))return;var inv=item.parentInventory;if(inv!=null)Placed(item,()=>inv.Expel(item));item.Destroy();}
-        internal void Reset(){structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
+        internal void Reset(){stateHashes.Clear();structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
         internal int Id(GameItem item){int id;return item!=null&&itemIds.TryGetValue(item,out id)?id:0;}
         // A host may pick up an item in the same frame the game creates it. Register just that item's subtree
         // in its already-known inventory rather than waiting for the periodic full-world index.
@@ -176,6 +176,7 @@ namespace ShopTogether {
         }
         internal void Apply(WorldDelta delta) {
             if(delta==null||delta.items==null||delta.items.Length>200000||delta.version<=Version)throw new InvalidOperationException("~SMC074~");
+            if(replicaMode)Diagnostics.Soft("held item",()=>FriendGuards.BeforeApply(this,delta));
             Applying=true;
             try {
                 if(delta.store!=null){int slot=PlayerStore.Instance.saveSlotId;StoreState.Apply(PlayerStore.Instance,Convert.FromBase64String(delta.store));PlayerStore.Instance.saveSlotId=slot;StoreAppliedAt=delta.version;}
@@ -188,15 +189,25 @@ namespace ShopTogether {
                 var leaving=new List<GameItem>();
                 if(delta.full){foreach(var p in new List<KeyValuePair<int,GameItem>>(Items))if(!incoming.Contains(p.Key)){leaving.Add(p.Value);Items.Remove(p.Key);Versions.Remove(p.Key);itemIds.Remove(p.Value);}}
                 else if(delta.removed!=null)foreach(int id in delta.removed){GameItem item;if(Items.TryGetValue(id,out item)){leaving.Add(item);Items.Remove(id);Versions.Remove(id);itemIds.Remove(item);}}
-                foreach(var r in delta.items){GameItem item;if(Items.TryGetValue(r.id,out item)&&Gone(item)){Items.Remove(r.id);itemIds.Remove(item);item=null;}if(item==null){
+                // Items whose layout must be rebuilt from their state after this update (see ReplicaLoad).
+                var loads=new List<KeyValuePair<GameItem,ReplicaLoad.Before>>();var createdNow=new HashSet<GameItem>();
+                foreach(var r in delta.items){GameItem item;if(Items.TryGetValue(r.id,out item)&&Gone(item)){Items.Remove(r.id);itemIds.Remove(item);item=null;}
+                    bool created=item==null;var before=new ReplicaLoad.Before();
+                    if(created){
                         r.node.childItems=new List<long>();r.node.childItemInventoryNode=new List<int>();
                         item=SaveManager.DecodeNodes(new List<SaveItemNode>{r.node});if(item==null)throw new InvalidOperationException("~SMC119~"+r.node.identifier);Items[r.id]=item;itemIds[item]=r.id;
-                    }
+                    }else before=ReplicaLoad.Read(item);
                     if(item.identifier!=r.node.identifier)throw new InvalidOperationException("~SMC099~");
+                    long stateHash=0;try{stateHash=Fingerprint.Hash(JsonUtility.ToJson(r.node.itemState));}catch{}
+                    long seenHash;bool stateChanged=created||!stateHashes.TryGetValue(r.id,out seenHash)||seenHash!=stateHash;stateHashes[r.id]=stateHash;
+                    if(!created&&(item.spriteAtlasPath!=r.node.spriteAtlasPath||item.spritePath!=r.node.spritePath))item.SetSprite(r.node.spriteAtlasPath,r.node.spritePath);
+                    if(stateChanged){loads.Add(new KeyValuePair<GameItem,ReplicaLoad.Before>(item,before));if(created)createdNow.Add(item);}
                     item.state=r.node.itemState;item.shape=r.node.itemShape;item.modifiedShape=r.node.itemModifiedShape;
                     item.unitCount=r.node.unitCount;item.unitBaseValue=r.node.unitBaseValue;item.unitValue=r.node.unitValue;item.lateUnitValue=r.node.lateUnitValue;item.backupUnitValue=r.node.backupUnitValue;
                     item.name=r.node.name;item.shortDescription=r.node.shortDescription;item.flavorText=r.node.flavorText;
                     item.itemTypes=r.node.itemTypes;item.itemFeatures=new List<ItemFeature>(r.features??new ItemFeature[0]);Versions[r.id]=r.version;
+                    // A storage-bay expansion adds tab inventories, which this update may already place items into.
+                    if(!created&&stateChanged){var bay=item;Diagnostics.Soft("storage tabs "+item.identifier,()=>ReplicaLoad.Tabs(bay));}
                 }
                 // Newly created containers must be indexed before their children are attached.
                 var visited=new HashSet<GraphNodeStorage>();foreach(var root in Roots())Walk(root.Value,root.Key,0,new int[]{0},visited);
@@ -204,6 +215,7 @@ namespace ShopTogether {
                 if(delta.grids!=null)foreach(var g in delta.grids){GameInventory inv;if(g.width<1||g.height<1||g.width>512||g.height>512)throw new InvalidOperationException("~SMC112~");if(Inventories.TryGetValue(g.address.Key,out inv)){var grid=inv as GameGridInventory;if(grid!=null&&(grid.inventoryShape.width!=g.width||grid.inventoryShape.height!=g.height))grid.SetShape(g.width,g.height);}}
                 foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv))throw new InvalidOperationException("~SMC069~");if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~");}item.Validate();}
                 foreach(var item in leaving){if(Gone(item))continue;try{Remove(item);}catch(Exception e){Debug.LogWarning("[ShopTogether] remove: "+e.Message);}}
+                foreach(var load in loads){if(Gone(load.Key))continue;ReplicaLoad.Run(load.Key,createdNow.Contains(load.Key),load.Value);}
                 // Tags the game reads (custom names, conditions...) live in each item's derived state, which the game
                 // recomputes from its own and its children's state. Recompute it for every applied item and its containers.
                 var derived=new HashSet<GameItem>();foreach(var r in delta.items){GameItem item;if(!Items.TryGetValue(r.id,out item))continue;int limit=64;while(item!=null&&limit-->0&&derived.Add(item)){var inv=item.parentInventory;item=inv==null?null:inv.GetParentItem() as GameItem;}}

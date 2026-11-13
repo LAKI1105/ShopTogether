@@ -16,7 +16,8 @@ namespace ShopTogether {
         };
         // Other multiplayer mods are never part of the comparison (they must simply be off).
         static readonly HashSet<string> Ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-            "shop_together", "local.lan_shared_shop", "humangenome_accomplice", "shop_coop", "local.shop_coop"
+            "shop_together", "local.lan_shared_shop", "humangenome_accomplice", "shop_coop", "local.shop_coop",
+            OtherMultiplayer.ModId   // paused while the shop is shared, so it may differ
         };
 
         /// <summary>
@@ -97,6 +98,7 @@ namespace ShopTogether {
 
     internal static class ModRequirements {
         const int MaxEach = 40;
+        internal const string GameId = "probably_stolen_game";
         internal static ModEntry[] Local() {
             var list = new List<ModEntry>();
             foreach (var mod in ModLoader.Mods) {
@@ -105,6 +107,8 @@ namespace ShopTogether {
                 if (!ModParity.Compared(id) || ModParity.LooksOnly(mod)) continue;
                 list.Add(new ModEntry { id = id, version = mod.Manifest.ModVersion ?? "", name = mod.Manifest.Name ?? id, workshop = mod.Source == ModSource.Workshop && mod.WorkshopId != 0 ? mod.WorkshopId.ToString(System.Globalization.CultureInfo.InvariantCulture) : "" });
             }
+            // The game itself must be the same build too: item art, item rules and saved fields change between builds.
+            list.Add(new ModEntry { id = GameId, version = Application.version ?? "", name = "~SMC270~", workshop = "" });
             list.Sort((a, b) => string.CompareOrdinal(a.id, b.id));
             return list.ToArray();
         }

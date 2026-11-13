@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.24";
+        internal const string BuildVersion="1.3.26";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -129,6 +129,7 @@ namespace ShopTogether {
             if(secret.Length<8||secret.Length>64){status="~SMC122~";ShowManualJoin();return;}
             try{BeginJoin(new[]{endpoint});}catch(Exception e){Stop();status=e.Message;ShowStatus();}}
         void Update(){
+            Diagnostics.Soft("other multiplayer",()=>OtherMultiplayer.Tick(this));
             if(!IsClient&&MainMenuUIController.Instance!=null&&EmporiumEntry.Instance==null){ReplicaSession.ClientStore=false;ReplicaSession.SceneReady=false;}
             if(MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null&&(!launcherShown||launcherState!=LauncherState())){launcherShown=true;DrawLauncher();}
             SteamInvite.Hook();
@@ -139,7 +140,7 @@ namespace ShopTogether {
             if(publicAddress!=null&&publicAddress.IsCompleted){string ip=publicAddress.Value;publicAddress.Dispose();publicAddress=null;IPAddress parsed;if(IsHost&&IPAddress.TryParse(ip,out parsed)&&InviteCode.IsPublic(parsed)){if(routerMapping!=null){routerMapping.Dispose();routerMapping=null;}RefreshInvites(IPAddress.Parse(LocalAddress()),new IPEndPoint(parsed,int.Parse(portText)));mappingStatus=new MappingStatus{Message="~SMC071~"};}else status="~SMC144~";if(hostReadyVisible)ShowHostReady();}
             if(IsHost&&routerMapping!=null&&mappingStatus!=routerMapping.Current){mappingStatus=routerMapping.Current;RefreshInvites(mappingStatus.Local??IPAddress.Parse(LocalAddress()),mappingStatus.External);if(hostReadyVisible)ShowHostReady();}
             try{
-                if(IsHost||IsClient){SteamRelay.Poll();Diagnostics.Soft("supplies",OutingSupplies.Tick);Diagnostics.Soft("dumping ground",DumpingGround.Tick);NativeActions.Sweep();Diagnostics.Soft("panels",()=>PanelRelay.Tick(this));Diagnostics.Soft("machine panels",()=>MachineDisplay.Tick(this));if(IsClient)Diagnostics.Flush(this);}
+                if(IsHost||IsClient){SteamRelay.Poll();Diagnostics.Soft("supplies",OutingSupplies.Tick);Diagnostics.Soft("dumping ground",DumpingGround.Tick);Diagnostics.Soft("click pause",FriendGuards.Tick);NativeActions.Sweep();Diagnostics.Soft("panels",()=>PanelRelay.Tick(this));Diagnostics.Soft("machine panels",()=>MachineDisplay.Tick(this));if(IsClient)Diagnostics.Flush(this);}
                 if(IsHost){
                     SteamRelay.SteamChannel arrival;while((arrival=SteamRelay.NextArrival())!=null){if(peers.Count>=MaxFriends){arrival.Dispose();continue;}peers.Add(new Peer{channel=arrival,id=++nextPlayer,deadline=Time.realtimeSinceStartup+20});Debug.Log("[ShopTogether] friend connecting through Steam");}
                     if(listener.Poll(0,SelectMode.SelectRead)){var incoming=listener.Accept();if(peers.Count>=MaxFriends||!admissions.Admit(((IPEndPoint)incoming.RemoteEndPoint).Address.ToString(),Time.realtimeSinceStartup))incoming.Close();else{var peer=new Peer{socket=incoming,id=++nextPlayer,deadline=Time.realtimeSinceStartup+15};peers.Add(peer);peer.channel=new SecureChannel(incoming,identity.Certificate,null);}}
@@ -190,6 +191,7 @@ namespace ShopTogether {
         internal void PlayEffect(IEnumerator effect){if(effect!=null)StartCoroutine(effect);}
         internal void BroadcastAchievement(string text){byte[] bytes=Encoding.UTF8.GetBytes(text);if(bytes.Length>512)return;foreach(var p in peers.ToArray())if(p.authenticated&&p.modsOk){try{p.Send(Achievements.Message,bytes);}catch{}}}
         internal void SendTo(int owner,byte type,byte[] data){foreach(var p in peers.ToArray())if(p.id==owner&&p.authenticated&&p.modsOk){try{p.Send(type,data);}catch{}}}
+        internal bool HasFriends{get{foreach(var p in peers)if(p.authenticated)return true;return false;}}
         internal bool HasPeer(int id){foreach(var p in peers)if(p.id==id&&p.authenticated)return true;return false;}
         internal string NameOf(int id){foreach(var p in peers)if(p.id==id)return string.IsNullOrEmpty(p.name)?"~SMC102~"+id:p.name;return "~SMC102~"+id;}
         internal string PeerIdentity(int owner){foreach(var p in peers)if(p.id==owner&&p.authenticated){var steam=p.channel as SteamRelay.SteamChannel;return steam!=null?"S"+steam.Remote.ToString(CultureInfo.InvariantCulture):NameIdentity(p.name);}return null;}
