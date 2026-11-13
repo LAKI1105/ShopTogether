@@ -7,5 +7,5 @@
   <Description>最多 8 人各自執行遊戲，共同經營房主的店。所有變動只在房主電腦發生並同步給朋友；朋友電腦不跑任何會造成分歧的遊戲邏輯，偶有偏差會自動比對並修正。加入時會檢查雙方的 mod 是否一致。外網朋友經由 Steam 連線，不需要設定路由器。</Description>
   <GameVersions><Version>0.46D</Version></GameVersions>
   <Assemblies><Assembly>ShopTogether.dll</Assembly></Assemblies>
-  <Capabilities><Capability>network</Capability><Capability>steam</Capability></Capabilities>
+  <Capabilities><Capability>network</Capability><Capability>steam</Capability><Capability>reflection-external</Capability></Capabilities>
 </Manifest>

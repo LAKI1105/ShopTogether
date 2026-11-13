@@ -169,6 +169,11 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(DumpingGround).GetMethod("FeedSerpico", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("ConfirmPanel", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("CancelPanel", BF)));
+            // Human visitor: only these bounded actions may be relayed to the host's active visit.
+            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorSay", BF)), 160);
+            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorOffer", BF)));
+            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorBuy", BF)));
+            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorWithdraw", BF)));
             // The shop phone: one phone, calls run on the host.
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("Pick", BF)));
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("HangUp", BF)));
@@ -240,7 +245,7 @@ namespace ShopTogether {
             Build();
             Entry e;
             if (call == null || call.key == null || !byKey.TryGetValue(call.key, out e)) return "~SMC030~";
-            if (ProbablyMultiplayerCompat.BlockRemote(session, owner)) return "~SMC271~";
+            if (e.Method.DeclaringType != typeof(VisitorShare) && ProbablyMultiplayerCompat.BlockRemote(session, owner)) return "~SMC271~";
             if (ProbablyMultiplayerCompat.VisitActive && (e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton))) return "~SMC271~";
             if (e.HostOnly != null) return e.HostOnly;
             if ((e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades)) && !CounterTrades.Allowed(owner)) return "~SMC217~";

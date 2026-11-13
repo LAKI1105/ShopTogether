@@ -1,7 +1,7 @@
 param(
-    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','probably_compat','probably_real')]
+    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','probably_compat','probably_real')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
-    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[switch]$WithProbablyMultiplayer
+    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[switch]$WithProbablyMultiplayer,[string]$SourceArchive
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'TestProfile.ps1')
@@ -36,7 +36,8 @@ function Start-TestGame([string]$role,[string]$part,[string[]]$extra){
     $profile=Join-Path $scratch ("profile-$role")
     if(-not(Test-Path -LiteralPath $profile)){
         New-IsolatedTestProfile $profile
-        if($WithProbablyMultiplayer){if(-not $approvedSave){throw 'Missing isolated visitor approval'};Copy-Item -LiteralPath $approvedSave -Destination (Join-Path $profile 'SaveFile.es3') -Force}
+        if(-not $approvedSave){throw 'Missing isolated mod approval'}
+        Copy-Item -LiteralPath $approvedSave -Destination (Join-Path $profile 'SaveFile.es3') -Force
     }
     $env:SHOPTOGETHER_TEST_PERSISTENT_PATH=$profile
     $arguments=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$log+'"'),'--smc-role',$role)+$(if($part -ne 'core'){@('--smc-suite',$part)}else{@()})+$extra
@@ -52,6 +53,7 @@ function Stop-TestProcesses($processes){
 }
 $started=@()
 $privateDesktop=$null
+$testHostReports=[Collections.Generic.List[string]]::new()
 try{
     if($WithProbablyMultiplayer){
         $visitSource=Join-Path (Split-Path $workshop -Parent) '3828909239'
@@ -62,19 +64,19 @@ try{
         }
         $env:SHOPTOGETHER_VISIT_FOLDER=$visitCopy
     }
-    & (Join-Path $PSScriptRoot 'PrepareIsolatedGame.ps1') -GamePath $game -Target $isolated -AllowApprovedTestTrust:$WithProbablyMultiplayer
+    & (Join-Path $PSScriptRoot 'PrepareIsolatedGame.ps1') -GamePath $game -Target $isolated -AllowApprovedTestTrust
     Add-Type -Path (Join-Path $PSScriptRoot 'PrivateDesktop.cs')
     $privateDesktop=[ShopTogetherTestDesktop]::new()
     $env:SteamAppId='4348910';$env:SteamGameId='4348910'
     Write-Output 'PRIVATE_DESKTOP_READY'
-    if($WithProbablyMultiplayer){
         $approvalFolder=Join-Path $scratch 'ApprovalWorkshop'
         New-Item -ItemType Directory -Path $approvalFolder | Out-Null
         & (Join-Path $project 'Build.ps1') -OutputPath (Join-Path $approvalFolder 'ShopTogether.dll') -GamePath $game
         Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $approvalFolder
+        if($SourceArchive){Copy-Item -LiteralPath $SourceArchive -Destination (Join-Path $approvalFolder 'ShopTogether-source.zip')}
         $profile=Join-Path $scratch 'profile-approval';New-IsolatedTestProfile $profile
         $env:SHOPTOGETHER_TEST_ROOT=$scratch;$env:SHOPTOGETHER_TEST_PERSISTENT_PATH=$profile
-        $env:SHOPTOGETHER_TEST_ONLY_APPROVE='1';$env:SHOPTOGETHER_PROBE_FOLDER=$approvalFolder
+        $env:SHOPTOGETHER_TEST_ONLY_APPROVE='1';$env:SHOPTOGETHER_TEST_WITH_VISITOR=if($WithProbablyMultiplayer){'1'}else{'0'};$env:SHOPTOGETHER_PROBE_FOLDER=$approvalFolder
         $approvalLog=Join-Path $scratch 'approval.log'
         $approvalArgs=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$approvalLog+'"'))
         $approvalProcess=$privateDesktop.Start((Join-Path $isolated 'Probably Stolen.exe'),($approvalArgs -join ' '),$isolated);$started=@($approvalProcess)
@@ -85,11 +87,11 @@ try{
         $approvedSave=Join-Path $profile 'SaveFile.es3'
         if(-not(Test-Path -LiteralPath $approvedSave)){throw 'The isolated approved profile was not saved'}
         $env:SHOPTOGETHER_TEST_ONLY_APPROVE=$null
-        Write-Output 'ISOLATED_VISITOR_APPROVED_BY_GAME_SCANNER'
-    }
+        Write-Output 'ISOLATED_MODS_APPROVED_BY_GAME_SCANNER'
     $probeGame=if($WithProbablyMultiplayer){$isolated}else{$game}
     & (Join-Path $project 'Build.ps1') -Probe -VisitorProbe:$WithProbablyMultiplayer -OutputPath (Join-Path $probeFolder 'ShopTogether.dll') -GamePath $probeGame
     Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $probeFolder
+    if($SourceArchive){Copy-Item -LiteralPath $SourceArchive -Destination (Join-Path $probeFolder 'ShopTogether-source.zip')}
     $env:SHOPTOGETHER_PROBE_FOLDER=$probeFolder
     foreach($part in $Suite){
         $started=@();$hostText='';$clientText=''
@@ -120,13 +122,15 @@ try{
         }finally{
             foreach($role in @('host','client')){
                 Write-Output "Native ${part} ${role}:";$text=Read-TestLog (Join-Path $scratch "smc-$role.log")
+                if($role -eq 'host'){foreach($line in ($text -split '\r?\n')){if($line -match '(?i)friend .*reported:'){$testHostReports.Add($line)}}}
                 if($part -eq 'hint1322' -and $env:SMC_HINT_EVIDENCE_DIR){$picture=[regex]::Match($text,'\[SMC-HINT-IMAGE\] ([A-Za-z0-9+/=]+)');if($picture.Success){[IO.File]::WriteAllBytes((Join-Path $env:SMC_HINT_EVIDENCE_DIR "$role.png"),[Convert]::FromBase64String($picture.Groups[1].Value));Write-Output "HINT_IMAGE_SAVED $role"}}
-                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF)|Init failed: 多人|Trust check failed:|\[ModLoader\].*(shop_together|lemocuber_probablymultiplayer)|(?i)friend .*reported:.*(fountain click|click pause|drag end|layout|load)'}
+                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF)|Init failed: 多人|Trust check failed:|\[ModLoader\].*(shop_together|lemocuber_probablymultiplayer)|(?i)friend .*reported:'}
                 $text -split '\r?\n' | Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4 | ForEach-Object ToString
             }
             Stop-TestProcesses $started;$started=@()
         }
     }
+    if($testHostReports.Count -eq 0){Write-Output 'HOST_DIAGNOSTICS: none'}else{Write-Output 'HOST_DIAGNOSTICS:';$testHostReports | Select-Object -Unique}
 }catch{
     $approvalLog=Join-Path $scratch 'approval.log'
     if(Test-Path -LiteralPath $approvalLog){(Read-TestLog $approvalLog) -split '\r?\n' | Where-Object {$_ -match '\[PM-TEST (APPROVED|APPROVAL-FAILED)\]'} | Select-Object -First 5}

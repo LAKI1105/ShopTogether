@@ -23,6 +23,7 @@ namespace ShopTogether {
         public string[] lines; public bool[] buttons, enabled;
         public int[] kitOwners, kitLeft, joined; public string[] kitPlaces, outTonight;   // friends out on their own, or with the host   // friends out on their own
         public PhoneView phone;                               // the shop phone
+        public VisitorView visitor;                           // the host's human visitor
         public bool body, survived; public int shots;   // the counter shotgun: body on the floor, shots fired
     }
 
@@ -74,6 +75,7 @@ namespace ShopTogether {
                 ShotgunView.Capture(state);
                 OutingKits.Capture(state);
                 PhoneShare.Capture(state);
+                VisitorShare.Capture(state);
             } catch (Exception e) { Debug.LogWarning("[ShopTogether] phase capture: " + e.Message); }
             return state;
         }
@@ -87,12 +89,13 @@ namespace ShopTogether {
             try { FriendView.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] follow host: " + e.Message); }
             try { OutingKits.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] own outing: " + e.Message); }
             try { PhoneShare.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] phone: " + e.Message); }
+            try { VisitorShare.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] visitor: " + e.Message); }
             try { ShotgunView.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] shotgun view: " + e.Message); }
             Last = state;
             return wasAway && !Away;
         }
 
-        internal static void Reset() { Away = false; Text = ""; Last = null; FriendView.Reset(); ShotgunView.Reset(); OutingKits.ResetView(); PhoneShare.Reset(); }
+        internal static void Reset() { Away = false; Text = ""; Last = null; FriendView.Reset(); ShotgunView.Reset(); OutingKits.ResetView(); PhoneShare.Reset(); VisitorShare.Reset(); }
     }
 
     /// <summary>A location panel built from code (also by other mods) is sent as its visible text and buttons.</summary>

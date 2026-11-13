@@ -54,6 +54,8 @@ namespace ShopTogether {
    var newspaper=PanelFixture("newspaper","PANEL_NEWSPAPER");
    var xray=PanelFixture("xray_scanner","PANEL_XRAY");
    var crate=PreBuiltItemHelper.LootCrateMedical();crate.name="PANEL_XCRATE";GeneralHelper.SetItemOwned(crate,true);
+   if(e.vendingMachineElement.childItem==null)VendingMachineHelper.UnlockVendingMachine(0);
+   if(e.vendingFountainElement.childItem==null)VendingFountainHelper.UnlockVendingFountain();
    var inside=crate.contentWindow.child as GameGridInventory;foreach(var item in new List<GameItem>(inside.childItems))item.Destroy();
    var hiddenTicket=ModHelper.SpawnItem("scratcher");hiddenTicket.modifiedShape=new GridShapeBuilder(hiddenTicket.modifiedShape).SetPosition(0,0).Build();Require(inside.UncheckedAccept(hiddenTicket),"unopened ticket placed inside crate");
    var hiddenTool=ModHelper.SpawnItem("screwdriver");hiddenTool.modifiedShape=new GridShapeBuilder(hiddenTool.modifiedShape).SetPosition(3,0).Build();Require(inside.UncheckedAccept(hiddenTool),"tool placed inside crate");
@@ -135,7 +137,12 @@ namespace ShopTogether {
    foreach(var item in results){int n;if(expected.TryGetValue(item.identifier,out n))expected[item.identifier]=n-1;}
    bool same=contents.Count>0&&results.Count==contents.Count;foreach(var pair in expected)if(pair.Value!=0)same=false;
    Require(same,"X-ray result shows every crate item");Signal("XRAY_OPEN");
-   wait=Wait(()=>Received("XRAY_DONE"),"host remained interactive after guest X-ray",90);while(wait.MoveNext())yield return wait.Current;EmporiumEntry.Instance.HideResponseWindow();Require(EmporiumEntry.Instance.responseInventoryClosable.childItems.Count==0,"temporary X-ray display is cleared when closed");Signal("PANELS1311_DONE");
+   wait=Wait(()=>Received("XRAY_DONE"),"host remained interactive after guest X-ray",90);while(wait.MoveNext())yield return wait.Current;
+   Interactable.isPaused=true;TooltipContainer.isPaused=true;FriendGuards.Tick();Require(Interactable.isPaused&&TooltipContainer.isPaused,"visible crate choice keeps world clicks paused");
+   EmporiumEntry.Instance.HideResponseWindow();Require(EmporiumEntry.Instance.responseInventoryClosable.childItems.Count==0,"temporary X-ray display is cleared when closed");FriendGuards.Tick();Require(!Interactable.isPaused&&!TooltipContainer.isPaused,"closing crate preview restores world clicks");
+   var e=EmporiumEntry.Instance;wait=Wait(()=>e.vendingMachineElement.childItem!=null&&e.vendingFountainElement.childItem!=null,"vending fixtures available after crate preview",90);while(wait.MoveNext())yield return wait.Current;
+   NativeClick(0,()=>StoreVendingMachine.Instance.OnClick());Require(e.vendingMachineElement.childItem.contentWindow.IsVisible(),"guest opens vending after crate preview");e.vendingMachineElement.childItem.contentWindow.Hide();
+   NativeClick(0,()=>StoreVendingFountain.Instance.OnClick());Require(e.vendingFountainElement.childItem.contentWindow.IsVisible(),"guest opens water fountain after crate preview");e.vendingFountainElement.childItem.contentWindow.Hide();Signal("PANELS1311_DONE");
   }
  }
 }

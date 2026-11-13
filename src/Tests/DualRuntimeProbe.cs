@@ -16,6 +16,21 @@ namespace ShopTogether {
         internal RouterMapping ProbeRouter {get{return routerMapping;}}
         internal string ProbeOpen(){QuickHost();if(string.IsNullOrEmpty(localInvite))throw new InvalidOperationException(status);if(listener==null||!IPAddress.IsLoopback(((IPEndPoint)listener.LocalEndPoint).Address))throw new InvalidOperationException("Test host must listen only on loopback");Debug.Log("[SMC PASS] test host listens only on loopback");CustomUIManager.Instance.CloseWindow(WindowId);hostReadyVisible=false;return localInvite;}
         internal void ProbeJoin(string code){inviteText=code;JoinInvite();CustomUIManager.Instance.CloseWindow(WindowId);}
+        internal byte[] ProbeRejectDifferentGame(){
+            var entries=ModRequirements.Local();bool found=false;foreach(var entry in entries)if(entry.id==ModRequirements.GameId){entry.version=entry.version+"-different";found=true;}
+            if(!found)throw new InvalidOperationException("The game version was not sent with the mod list");
+            var peer=new Peer{authenticated=true,matched=true,id=99};Receive(peer,true,30,Encode(new ModList{mods=ModParity.Local(),entries=entries,name="version-test"}));
+            if(!peer.closing||peer.modsOk||peer.outgoing.Count!=1)throw new InvalidOperationException("Host did not reject different game version");
+            var packet=peer.outgoing.Dequeue();if(packet.Length<=5||packet[4]!=31)throw new InvalidOperationException("Host did not send version mismatch report");
+            var data=new byte[packet.Length-5];Buffer.BlockCopy(packet,5,data,0,data.Length);return data;
+        }
+        internal void ProbeShowDifferentGame(byte[] data){
+            var peer=new Peer{authenticated=true,matched=true};bool refused=false;try{Receive(peer,false,31,data);}catch(Exception e){refused=e.Message=="~SMC067~";}
+            if(!refused||modReport==null)throw new InvalidOperationException("Guest did not receive game version refusal");
+            ShowModReport();var window=CustomUIManager.Instance.GetWindow(WindowId);bool shown=false;
+            if(window!=null&&window.ContentRoot!=null)foreach(var label in window.ContentRoot.GetComponentsInChildren<TMPro.TextMeshProUGUI>(true))if(label.text!=null&&label.text.Contains(Loc.Text("~SMC270~")))shown=true;
+            CustomUIManager.Instance.CloseWindow(WindowId);modReport=null;if(!shown)throw new InvalidOperationException("Game version mismatch is missing from the visible report");
+        }
         internal string ProbeMapping {get{return mappingStatus==null?"pending":mappingStatus.Message;}}
         internal bool ProbePending(int id){return requested.Contains(id);}
         sealed class ProbeRateChannel : IChannel {

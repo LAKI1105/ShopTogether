@@ -31,7 +31,11 @@ namespace ShopTogether {
             if (!touched && delta.removed != null) touched = Array.IndexOf(delta.removed, id) >= 0;
             if (!touched && delta.items != null) {
                 var here = world.Address(held.parentInventory);
-                foreach (var r in delta.items) if (r != null && r.id == id) { touched = r.parent == null || here == null || r.parent.Key != here.Key || r.node == null || r.node.unitCount != held.unitCount; break; }
+                foreach (var r in delta.items) if (r != null && r.id == id) {
+                    long version;
+                    touched = !world.Versions.TryGetValue(id,out version) || r.version>version || r.parent == null || here == null || r.parent.Key != here.Key || r.node == null || r.node.unitCount != held.unitCount;
+                    break;
+                }
             }
             if (!touched) return;
             ItemMouseDragHandler.current.Cancel();

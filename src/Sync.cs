@@ -14,10 +14,10 @@ namespace ShopTogether {
         static readonly HashSet<string> PresentationOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
             "seacucu.zh-tw", "hd_character_portraits", "Alley42"
         };
-        // Other multiplayer mods are never part of the comparison (they must simply be off).
+        // Other incompatible multiplayer mods are excluded. The visitor mod is compared normally:
+        // its portrait and compatibility bridge must exist at the same version on both machines.
         static readonly HashSet<string> Ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-            "shop_together", "local.lan_shared_shop", "humangenome_accomplice", "shop_coop", "local.shop_coop",
-            OtherMultiplayer.ModId   // paused while the shop is shared, so it may differ
+            "shop_together", "local.lan_shared_shop", "humangenome_accomplice", "shop_coop", "local.shop_coop"
         };
 
         /// <summary>

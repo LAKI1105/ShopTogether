@@ -12,6 +12,10 @@ A community co-op mod for **Probably Stolen**. Run the game on each computer and
 4. 外出拾荒使用自己的外出欄。Dr. Jackson 與其他模組地點須等房主先抵達，再選同一地點跟隨。
 5. 多人成就開關由每台電腦自行設定。關閉只影響自己的多人期間成就解鎖與進度。
 
+如果大家都啟用相同版本的「深空串門」2.6.1，朋友也能在自己的畫面與房主店裡的真人訪客交談、選擇交易物品、報價和購買。訪客連線與交易仍由房主處理；交易結算時，庫存會暫時鎖定以保護物品。
+
+串門相容功能需要遊戲的「反射」權限，讓本模組讀取串門的訪客與交易狀態；更新後請在各自的遊戲內檢視並核准新增權限。連線請求限於模組列出的操作，沒有提供遠端檔案或執行指令的功能。
+
 正常回店時，只帶回背包和口袋裡的物品；留在地上的物品不會帶回。朋友斷線或房間結束時，地上的物品也會回收。房主在 Dr. Jackson 時，朋友帶回的物品會放到店裡的倉庫。
 
 ## How it works
@@ -20,11 +24,15 @@ The host runs gameplay simulation and owns the save. Guests render replicated ga
 
 Compatibility with arbitrary third-party mods is not guaranteed. A mod with a new interface or custom state may need an adapter. Matching enabled mods and versions is recommended.
 
+When everyone has Probably Multiplayer 2.6.1 enabled, guests can use their own screen to chat, select items, quote and buy from the host's human visitor. The host owns the visitor connection and the transaction; inventory is briefly locked during the visitor mod's transaction settlement. Other versions of that mod are not supported by this adapter.
+
 During multiplayer, both the host and guests use temporary empty outing backpacks; the original bags and their contents stay in the shop. Dr. Jackson and third-party destinations require following a host who has already arrived. Custom third-party windows such as BartenderMod and MercDispatch are not synchronized; lamp changes remain local. The host can hear a guest's phone call even while its panel is hidden. If the shop is full, put away leftover outing items before the host quits: those temporary inventories are not saved.
 
 On a normal return, items in the backpack and pockets come home; items left on the ground do not. A guest's ground items are also recovered on disconnect or session shutdown. If the host is at Dr. Jackson, the returning guest's items go to shop storage.
 
 Direct connections use pinned TLS. Steam transport uses Steam networking identities. Incoming messages have direction, size and rate checks; actions are limited to registered game operations and valid accessible items. This does not expose a shell or general file access. The mod and game still run with your account's local permissions; these checks are not a security audit or a guarantee against every bug.
+
+The optional visitor adapter declares the game's `reflection-external` capability to access the other mod's internal visit and trade state. Each player must review and approve newly requested permissions in the game. The adapter accepts only bounded chat and trade requests and does not provide a remote file or command interface.
 
 ## Build
 

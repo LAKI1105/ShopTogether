@@ -190,7 +190,7 @@ namespace ShopTogether {
                 if(delta.full){foreach(var p in new List<KeyValuePair<int,GameItem>>(Items))if(!incoming.Contains(p.Key)){leaving.Add(p.Value);Items.Remove(p.Key);Versions.Remove(p.Key);itemIds.Remove(p.Value);}}
                 else if(delta.removed!=null)foreach(int id in delta.removed){GameItem item;if(Items.TryGetValue(id,out item)){leaving.Add(item);Items.Remove(id);Versions.Remove(id);itemIds.Remove(item);}}
                 // Items whose layout must be rebuilt from their state after this update (see ReplicaLoad).
-                var loads=new List<KeyValuePair<GameItem,ReplicaLoad.Before>>();var createdNow=new HashSet<GameItem>();
+                var loads=new List<KeyValuePair<GameItem,ReplicaLoad.Before>>();var createdNow=new HashSet<GameItem>();var appliedHashes=new Dictionary<int,long>();
                 foreach(var r in delta.items){GameItem item;if(Items.TryGetValue(r.id,out item)&&Gone(item)){Items.Remove(r.id);itemIds.Remove(item);item=null;}
                     bool created=item==null;var before=new ReplicaLoad.Before();
                     if(created){
@@ -198,31 +198,46 @@ namespace ShopTogether {
                         item=SaveManager.DecodeNodes(new List<SaveItemNode>{r.node});if(item==null)throw new InvalidOperationException("~SMC119~"+r.node.identifier);Items[r.id]=item;itemIds[item]=r.id;
                     }else before=ReplicaLoad.Read(item);
                     if(item.identifier!=r.node.identifier)throw new InvalidOperationException("~SMC099~");
-                    long stateHash=0;try{stateHash=Fingerprint.Hash(JsonUtility.ToJson(r.node.itemState));}catch{}
-                    long seenHash;bool stateChanged=created||!stateHashes.TryGetValue(r.id,out seenHash)||seenHash!=stateHash;stateHashes[r.id]=stateHash;
+                    // TagSystem holds its tags in a Dictionary property, which Unity's JsonUtility serializes as {}.
+                    // Hash the actual tag dictionary; an unreadable state must be treated as changed, never as a match.
+                    long stateHash=0;bool hashOk=false;try{stateHash=Fingerprint.Hash(WireJson.ToJson(r.node.itemState.dict));hashOk=true;}catch{}
+                    long seenHash;bool stateChanged=created||!hashOk||!stateHashes.TryGetValue(r.id,out seenHash)||seenHash!=stateHash;if(hashOk)appliedHashes[r.id]=stateHash;
                     if(!created&&(item.spriteAtlasPath!=r.node.spriteAtlasPath||item.spritePath!=r.node.spritePath))item.SetSprite(r.node.spriteAtlasPath,r.node.spritePath);
                     if(stateChanged){loads.Add(new KeyValuePair<GameItem,ReplicaLoad.Before>(item,before));if(created)createdNow.Add(item);}
                     item.state=r.node.itemState;item.shape=r.node.itemShape;item.modifiedShape=r.node.itemModifiedShape;
                     item.unitCount=r.node.unitCount;item.unitBaseValue=r.node.unitBaseValue;item.unitValue=r.node.unitValue;item.lateUnitValue=r.node.lateUnitValue;item.backupUnitValue=r.node.backupUnitValue;
                     item.name=r.node.name;item.shortDescription=r.node.shortDescription;item.flavorText=r.node.flavorText;
                     item.itemTypes=r.node.itemTypes;item.itemFeatures=new List<ItemFeature>(r.features??new ItemFeature[0]);Versions[r.id]=r.version;
-                    // A storage-bay expansion adds tab inventories, which this update may already place items into.
-                    if(!created&&stateChanged){var bay=item;Diagnostics.Soft("storage tabs "+item.identifier,()=>ReplicaLoad.Tabs(bay));}
+                    // GetTagReadonly/IsTag read modifiedState, not state. Refresh it from the host's just-applied
+                    // state before constructing storage tabs; otherwise the new tab addresses do not exist yet.
+                    // This is also needed for an already-expanded bay newly created by a full snapshot.
+                    if((created||stateChanged)&&item.state!=null&&item.state.IsTag("STORAGE_EXPANSION_TABS_INT")){
+                        var bay=item;Diagnostics.Soft("storage tabs "+item.identifier,()=>{bay.modifiedState=bay.ComputeModifiedShapeState(null,null,null,null,null).Item4;ReplicaLoad.Tabs(bay);});
+                    }
                 }
                 // Newly created containers must be indexed before their children are attached.
                 var visited=new HashSet<GraphNodeStorage>();foreach(var root in Roots())Walk(root.Value,root.Key,0,new int[]{0},visited);
                 foreach(var r in delta.items){GameItem item=Items[r.id];Walk(item,r.parent.root,r.id,new int[]{0},visited);}
                 if(delta.grids!=null)foreach(var g in delta.grids){GameInventory inv;if(g.width<1||g.height<1||g.width>512||g.height>512)throw new InvalidOperationException("~SMC112~");if(Inventories.TryGetValue(g.address.Key,out inv)){var grid=inv as GameGridInventory;if(grid!=null&&(grid.inventoryShape.width!=g.width||grid.inventoryShape.height!=g.height))grid.SetShape(g.width,g.height);}}
-                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv))throw new InvalidOperationException("~SMC069~");if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~");}item.Validate();}
+                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv)){
+                    Diagnostics.Report("layout",new InvalidOperationException("missing inventory "+r.parent.Key+" for "+item.identifier));throw new InvalidOperationException("~SMC069~");}if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~");}item.Validate();}
                 foreach(var item in leaving){if(Gone(item))continue;try{Remove(item);}catch(Exception e){Debug.LogWarning("[ShopTogether] remove: "+e.Message);}}
-                foreach(var load in loads){if(Gone(load.Key))continue;ReplicaLoad.Run(load.Key,createdNow.Contains(load.Key),load.Value);}
                 // Tags the game reads (custom names, conditions...) live in each item's derived state, which the game
                 // recomputes from its own and its children's state. Recompute it for every applied item and its containers.
                 var derived=new HashSet<GameItem>();foreach(var r in delta.items){GameItem item;if(!Items.TryGetValue(r.id,out item))continue;int limit=64;while(item!=null&&limit-->0&&derived.Add(item)){var inv=item.parentInventory;item=inv==null?null:inv.GetParentItem() as GameItem;}}
                 foreach(var item in derived){try{item.modifiedState=item.ComputeModifiedShapeState(null,null,null,null,null).Item4;}catch(Exception e){Debug.LogWarning("[ShopTogether] derived state: "+e.Message);}}
+                // Load hooks read modifiedState. Run them only after both the host state and child placements
+                // have been reflected there, otherwise they rebuild the old controls and inventory sizes.
+                foreach(var load in loads){if(Gone(load.Key))continue;ReplicaLoad.Run(load.Key,createdNow.Contains(load.Key),load.Value);}
+                foreach(var item in derived){try{item.modifiedState=item.ComputeModifiedShapeState(null,null,null,null,null).Item4;}catch(Exception e){Debug.LogWarning("[ShopTogether] derived state: "+e.Message);}}
                 if(delta.leases!=null){RemoteLeases.Clear();foreach(var l in delta.leases)if(l!=null)RemoteLeases[l.item]=l.owner;}
                 Version=delta.version;Index();Presentation.ApplyDialogue(delta.presentation,this);
                 ReplicaVisuals.Refresh(delta.store!=null||delta.full);
+                // A failed apply is retried as a full snapshot. Commit these only after the entire update succeeds,
+                // so a partially applied update cannot make the retry skip its layout refresh.
+                if(delta.full){foreach(int id in new List<int>(stateHashes.Keys))if(!incoming.Contains(id))stateHashes.Remove(id);}
+                else if(delta.removed!=null){foreach(int id in delta.removed)stateHashes.Remove(id);}
+                foreach(var pair in appliedHashes)stateHashes[pair.Key]=pair.Value;
             } finally {Applying=false;}
         }
     }

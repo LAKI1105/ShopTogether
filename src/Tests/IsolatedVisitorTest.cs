@@ -1,12 +1,13 @@
 // Test driver in the disposable game's Managed folder, never part of either published mod.
 // Exercises real visitor-mod code with an in-memory visit and never sends a public trade.
 using System;
+using System.Collections;
 using System.Reflection;
 using Newtonsoft.Json;
 
 public static class IsolatedVisitorTest {
     static Type runtime, visit, transfer, sessionType, tradeType;
-    static object session, wire, trade;
+    static object session, wire, trade, hostWire;
     static Type TypeOf(string name) {
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             if (assembly.GetName().Name == "ProbablyMultiplayer" && assembly.GetName().Version.ToString(3) == "2.6.1")
@@ -28,6 +29,8 @@ public static class IsolatedVisitorTest {
             if (mod != null && mod.IsEnabled && mod.Manifest != null && mod.Manifest.ID == "lemocuber_probablymultiplayer" && mod.Manifest.ModVersion == "2.6.1") return true;
         return false;
     }
+    public static void SeedStaleSession(){var rt=TypeOf("MultiplayerRuntime");var st=TypeOf("VisitSession");Field(rt,"Session").SetValue(null,Activator.CreateInstance(st,true));}
+    public static bool HasSession(){return Field(TypeOf("MultiplayerRuntime"),"Session").GetValue(null)!=null;}
     public static GameItem Begin() {
         runtime = TypeOf("MultiplayerRuntime"); visit = TypeOf("NativeVisit"); transfer = TypeOf("ItemTransfer"); sessionType = TypeOf("VisitSession"); tradeType = TypeOf("Trade");
         if (runtime == null || visit == null || transfer == null || sessionType == null || tradeType == null) throw new InvalidOperationException("Visitor 2.6.1 interaction methods are missing");
@@ -54,6 +57,22 @@ public static class IsolatedVisitorTest {
             if (error.InnerException is InvalidOperationException && error.InnerException.Message.StartsWith("Another player is moving", StringComparison.Ordinal)) return true;
             throw;
         }
+    }
+    public static void Arrive() { Field(visit, "Arrived").SetValue(null, true); }
+    public static void IncomingChat(string text) {
+        var nativeChat=TypeOf("NativeChat");Method(nativeChat,"Receive").Invoke(null,new object[]{"isolated-visitor","Visitor",text,null,false});
+    }
+    public static void HostOffer(GameItem item) {
+        item.GetUniqueID();hostWire=Method(transfer,"Capture").Invoke(null,new object[]{item,null});
+        var offers=(IDictionary)sessionType.GetProperty("Offers").GetValue(session,null);((IList)offers["isolated-host"]).Add(hostWire);
+    }
+    public static void TradeScenario(bool hostIsBuyer,int revision) {
+        sessionType.GetProperty("BuyerId").SetValue(session,hostIsBuyer?"isolated-host":"isolated-visitor",null);
+        sessionType.GetProperty("Revision").SetValue(session,revision,null);
+        var selected=(IList)sessionType.GetProperty("Selected").GetValue(session,null);selected.Clear();
+        var selectedWire=hostIsBuyer?wire:hostWire;selected.Add((string)selectedWire.GetType().GetProperty("Id").GetValue(selectedWire,null));
+        object quote=null;if(hostIsBuyer){var type=TypeOf("Quote");quote=Activator.CreateInstance(type,true);type.GetProperty("SellerId").SetValue(quote,"isolated-visitor",null);type.GetProperty("Price").SetValue(quote,125,null);type.GetProperty("Revision").SetValue(quote,revision,null);}
+        sessionType.GetProperty("Quote").SetValue(session,quote,null);
     }
     public static void Prepare() { Method(transfer, "Prepare").Invoke(null, new[] { trade }); }
     public static void Commit() {

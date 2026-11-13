@@ -302,7 +302,23 @@ namespace ShopTogether {
             new [] { "房主更新了店面，你拿著的東西已放回原位", "房主更新了店面，你拿着的东西已放回原位", "The host updated the shop; what you were holding went back to its place", "ホストが店を更新しました。持っていた物は元の場所に戻りました", "El anfitrión actualizó la tienda; lo que sostenías volvió a su sitio", "호스트가 가게를 갱신했습니다. 들고 있던 물건은 제자리로 돌아갔습니다", "L’hôte a mis à jour la boutique ; ce que vous teniez est revenu à sa place", "Хост обновил магазин; то, что вы держали, вернулось на место" },
             new [] { "深空當鋪（遊戲本體）", "深空当铺（游戏本体）", "Probably Stolen (the game itself)", "Probably Stolen（ゲーム本体）", "Probably Stolen (el juego)", "Probably Stolen (게임 본체)", "Probably Stolen (le jeu lui-même)", "Probably Stolen (сама игра)" },
             new [] { "真人訪客的交易暫時無法操作，請稍候", "真人访客的交易暂时无法操作，请稍候", "The visitor's trade is temporarily unavailable. Please wait.", "訪問者との取引は一時的に利用できません。お待ちください。", "La transacción con el visitante no está disponible. Espera un momento.", "방문객 거래를 일시적으로 이용할 수 없습니다. 잠시 기다려 주세요.", "La transaction avec le visiteur est temporairement indisponible. Veuillez patienter.", "Сделка с посетителем временно недоступна. Подождите." },
-            new [] { "訪客的交易商品暫時無法一起搬動", "访客的交易商品暂时无法一起搬动", "Visitor trade items cannot be moved as a group.", "訪問者との取引品はまとめて移動できません。", "Los artículos del visitante no se pueden mover en grupo.", "방문객 거래 물품은 함께 옮길 수 없습니다.", "Les objets de la transaction ne peuvent pas être déplacés en groupe.", "Товары посетителя нельзя перемещать группой." }
+            new [] { "訪客的交易商品暫時無法一起搬動", "访客的交易商品暂时无法一起搬动", "Visitor trade items cannot be moved as a group.", "訪問者との取引品はまとめて移動できません。", "Los artículos del visitante no se pueden mover en grupo.", "방문객 거래 물품은 함께 옮길 수 없습니다.", "Les objets de la transaction ne peuvent pas être déplacés en groupe.", "Товары посетителя нельзя перемещать группой." },
+            new [] { "訪客交談與交易", "访客交谈与交易", "Visitor chat and trade", "訪問者との会話と取引", "Chat y comercio con visitantes", "방문객 대화 및 거래", "Discussion et échange avec le visiteur", "Общение и торговля с посетителем" },
+            new [] { "把想交易的物品移到櫃檯，再提出價格或購買。", "把想交易的物品移到柜台，再提出价格或购买。", "Move items to the counter, then offer a price or buy.", "品物をカウンターに移し、価格を提示するか購入してください。", "Mueve objetos al mostrador y ofrece un precio o compra.", "거래할 물건을 카운터에 옮긴 후 가격을 제안하거나 구매하세요.", "Placez les objets sur le comptoir, puis proposez un prix ou achetez.", "Переместите товары на прилавок, затем предложите цену или купите." },
+            new [] { "輸入訊息", "输入消息", "Write a message", "メッセージを入力", "Escribe un mensaje", "메시지 입력", "Écrire un message", "Введите сообщение" },
+            new [] { "傳送", "发送", "Send", "送信", "Enviar", "보내기", "Envoyer", "Отправить" },
+            new [] { "輸入價格", "输入价格", "Enter a price", "価格を入力", "Introduce un precio", "가격 입력", "Saisir un prix", "Введите цену" },
+            new [] { "提出價格", "提出价格", "Offer price", "価格を提示", "Ofrecer precio", "가격 제안", "Proposer un prix", "Предложить цену" },
+            new [] { "購買", "购买", "Buy", "購入", "Comprar", "구매", "Acheter", "Купить" },
+            new [] { "撤回價格", "撤回价格", "Withdraw offer", "価格を取り下げる", "Retirar oferta", "제안 철회", "Retirer l'offre", "Отозвать цену" },
+            new [] { "訪客已離開，或交易狀態已改變", "访客已离开，或交易状态已改变", "The visitor left or the trade changed.", "訪問者が去ったか、取引状況が変わりました。", "El visitante se fue o cambió la transacción.", "방문객이 떠났거나 거래 상태가 변경되었습니다.", "Le visiteur est parti ou l'échange a changé.", "Посетитель ушёл или сделка изменилась." },
+            new [] { "請輸入有效價格", "请输入有效价格", "Enter a valid price", "有効な価格を入力してください", "Introduce un precio válido", "올바른 가격을 입력하세요", "Saisissez un prix valide", "Введите допустимую цену" },
+            new [] { "尚未選擇交易物品", "尚未选择交易物品", "No items selected", "取引品が選択されていません", "No hay objetos seleccionados", "선택한 거래 물품 없음", "Aucun objet sélectionné", "Товары не выбраны" },
+            new [] { "等待交易對方", "等待交易对方", "Waiting for the other trader", "相手を待っています", "Esperando al otro comerciante", "상대방을 기다리는 중", "En attente de l'autre personne", "Ожидание второй стороны" },
+            new [] { "交易金額：", "交易金额：", "Trade price: ", "取引価格：", "Precio: ", "거래 가격: ", "Prix : ", "Цена: " },
+            new [] { "交易物品：", "交易物品：", "Items: ", "取引品：", "Objetos: ", "거래 물품: ", "Objets : ", "Товары: " },
+            new [] { "店鋪", "店铺", "Shop", "店舗", "Tienda", "가게", "Boutique", "Магазин" },
+            new [] { "訪客", "访客", "Visitor", "訪問者", "Visitante", "방문객", "Visiteur", "Посетитель" }
         };
     }
 }
