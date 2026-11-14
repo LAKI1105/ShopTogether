@@ -176,6 +176,9 @@ namespace ShopTogether {
 
         /// <summary>Exactly the fields WorldReplica.Apply writes, so host and friend compute the same value.</summary>
         internal static long Item(WorldReplica world, int id, GameItem item) {
+            return Hash(Describe(world,id,item));
+        }
+        internal static string Describe(WorldReplica world,int id,GameItem item) {
             var node = new SaveItemNode {
                 identifier = item.identifier, unitCount = item.unitCount, uuid = id,
                 itemState = item.state, itemShape = new GridShapeBuilder(item.shape), itemModifiedShape = new GridShapeBuilder(item.modifiedShape),
@@ -186,11 +189,11 @@ namespace ShopTogether {
             };
             var sb = new StringBuilder();
             var parent = world.Address(item.parentInventory);
-            sb.Append(parent == null ? "-" : parent.Key).Append('|').Append(JsonUtility.ToJson(node));
+            sb.Append(parent == null ? "-" : parent.Key).Append('|').Append(WireJson.ToJson(node));
             if (item.itemFeatures != null)
                 foreach (var f in item.itemFeatures)
                     sb.Append('|').Append(f == null ? "null" : Convert.ToBase64String(ES3.Serialize(f, new ES3Settings(false) { prettyPrint = false })));
-            return Hash(sb.ToString());
+            return sb.ToString();
         }
     }
 

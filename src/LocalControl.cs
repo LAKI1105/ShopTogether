@@ -48,6 +48,19 @@ namespace ShopTogether {
         }
         static Exception Finalizer(Exception __exception,int __state){if(__state>0)LocalControl.depth--;if(__state==2&&MachineSettings.Input>0)MachineSettings.Input--;return __exception;}
     }
+    // The game reads a few keys and clicks itself every frame (the bell key, the trash key, pin mode, a hopper's
+    // "add items" pick). What those do is the player's own input too, like a button press.
+    [HarmonyPatch]
+    internal static class PolledInputScope {
+        static IEnumerable<MethodBase> TargetMethods(){
+            var bell=AccessTools.Method(typeof(StoreBell),"HandleHotkey");if(bell!=null)yield return bell;
+            var trash=AccessTools.Method(typeof(StoreUIManager),"TryTrashHoveredItem");if(trash!=null)yield return trash;
+            var pin=AccessTools.Method(typeof(ItemPinHelper),"HandleInput");if(pin!=null)yield return pin;
+            var hopper=AccessTools.Method(typeof(HopperHelper),"HandleInput");if(hopper!=null)yield return hopper;
+        }
+        static void Prefix(ref bool __state){__state=LocalControl.Focused;if(__state){LocalControl.depth++;MachineSettings.Input++;}}
+        static Exception Finalizer(Exception __exception,bool __state){if(__state){LocalControl.depth--;if(MachineSettings.Input>0)MachineSettings.Input--;}return __exception;}
+    }
     // All store decisions run on the host. Explicit request adapters may run before this final barrier.
     [HarmonyPatch]
     internal static class ReplicaStoreBarrier {

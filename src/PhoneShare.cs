@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -49,7 +49,7 @@ namespace ShopTogether {
         }
         static bool User() { return users.Contains(RemoteActions.CurrentOwner); }
 
-        internal static void Pick() { users.Add(RemoteActions.CurrentOwner); Ready(); }
+        internal static void Pick() { if (PhoneUIManager.Instance == null || PhoneUIManager.Instance.phonePanel == null) { AuthorityIntent.Refuse("~SMC338~"); return; } users.Add(RemoteActions.CurrentOwner); Ready(); }
         internal static void HangUp() {
             users.Remove(RemoteActions.CurrentOwner);
             var phone = PhoneUIManager.Instance;
@@ -60,20 +60,32 @@ namespace ShopTogether {
         }
         internal static void Key(int number) {
             var phone = PhoneUIManager.Instance;
-            if (phone == null || !User() || number < -1 || number > 9) return;
+            if (phone == null || !User()) { AuthorityIntent.Refuse("~SMC329~"); return; }
+            if (number < -1 || number > 9) { AuthorityIntent.Refuse("~SMC171~"); return; }
+            if (number >= 0 && ModReflect.Get<bool>(phone, "isTalking")) { AuthorityIntent.Refuse("~SMC330~"); return; }
             Ready(); phone.PressNumber(number);
         }
         internal static void Dial(long number) {
             var phone = PhoneUIManager.Instance;
-            if (phone == null || !User() || !StorePhoneClient.IsNumberExist(number)) return;
+            if (phone == null || !User()) { AuthorityIntent.Refuse("~SMC329~"); return; }
+            if (!StorePhoneClient.IsNumberExist(number)) { AuthorityIntent.Refuse("~SMC331~"); return; }
             Ready(); phone.AutoCall(number);
         }
-        internal static void Advance() { if (User() && DialoguePhoneUIManager.Instance != null) DialoguePhoneUIManager.Instance.OnAdvancePressed(); }
+        internal static void Advance(int sig) {
+            var talk = DialoguePhoneUIManager.Instance;
+            if (!User()) { AuthorityIntent.Refuse("~SMC329~"); return; }
+            if (talk == null || talk.currentDialog == null || talk.IsChoice()) { AuthorityIntent.Refuse("~SMC336~"); return; }
+            var current = new PhaseState(); Capture(current);
+            if (current.phone == null || sig != current.phone.sig) { AuthorityIntent.Refuse("~SMC332~"); return; }
+            talk.OnAdvancePressed();
+        }
         internal static void Choose(int index, int sig) {
             var talk = DialoguePhoneUIManager.Instance;
-            if (!User() || talk == null || talk.currentDialog == null || sig != lastSig || !ChoicesShown(talk)
-                || talk.currentDialog.choices == null || index < 0 || index >= talk.currentDialog.choices.Count
-                || !talk.currentDialog.IsChoiceEnabledAt(index)) return;
+            if (!User()) { AuthorityIntent.Refuse("~SMC329~"); return; }
+            var current = new PhaseState(); Capture(current);
+            if (talk == null || talk.currentDialog == null || current.phone == null || sig != current.phone.sig || !ChoicesShown(talk)
+                || talk.currentDialog.choices == null || index < 0 || index >= talk.currentDialog.choices.Count) { AuthorityIntent.Refuse("~SMC332~"); return; }
+            if (!talk.currentDialog.IsChoiceEnabledAt(index)) { AuthorityIntent.Refuse("~SMC333~"); return; }
             talk.SelectChoice(index);
         }
 
@@ -104,7 +116,7 @@ namespace ShopTogether {
                     }
                 }
             }
-            v.sig = Fingerprint.Hash(v.line + "\n" + v.player + "\n" + (v.choices != null ? string.Join("\n", v.choices) : "")).GetHashCode();
+            v.sig = Fingerprint.Hash(v.number + "\n" + v.name + "\n" + v.line + "\n" + v.player + "\n" + (talk.currentDialog != null ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(talk.currentDialog).ToString() : "") + "\n" + (v.choices != null ? string.Join("\n", v.choices) : "") + "\n" + (v.enabled != null ? string.Join(",", Array.ConvertAll(v.enabled, x => x ? "1" : "0")) : "")).GetHashCode();
             lastSig = v.sig;
             state.phone = v;
         }
@@ -144,7 +156,7 @@ namespace ShopTogether {
                 if (v.choices != null && v.enabled != null && v.choices.Length > 0) {
                     var asked = new Dialogue().SetText(v.player ? "PLAYER" : "", v.line);
                     asked.choices = new List<ValueTuple<GameItem, Dialogue, Action>>();
-                    for (int i = 0; i < v.choices.Length && i < v.enabled.Length; i++) { var c = new Dialogue().SetText("PLAYER", v.choices[i] ?? ""); c.forceDisabled = !v.enabled[i]; asked.choices.Add(new ValueTuple<GameItem, Dialogue, Action>(null, c, null)); }
+                    for (int i = 0; i < v.choices.Length && i < v.enabled.Length; i++) { var c = new Dialogue().SetText("PLAYER", v.choices[i] ?? ""); c.forceDisabled = false; asked.choices.Add(new ValueTuple<GameItem, Dialogue, Action>(null, c, null)); }
                     talk.currentDialog = asked;
                     talk.DisplayChoice();
                 } else talk.currentDialog = line;
@@ -189,7 +201,7 @@ namespace ShopTogether {
         [HarmonyPatch(typeof(DialoguePhoneUIManager), "OnAdvancePressed")]
         internal static class PhoneAdvance {
             [HarmonyPriority(Priority.First)]
-            static bool Prefix() { if (!Friend) return true; if (Act) Send("Advance"); return false; }
+            static bool Prefix() { if (!Friend) return true; if (Act) Send("Advance", shownSig); return false; }
         }
         [HarmonyPatch(typeof(DialoguePhoneUIManager), "SelectChoice")]
         internal static class PhoneChoice {

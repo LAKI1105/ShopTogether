@@ -18,32 +18,42 @@ namespace ShopTogether {
     /// the friend's tablet reads them instead of its empty copy of the customer.
     /// </summary>
     internal static class CustomerDeals {
-        const int MaxJudged = 256;
+        const int MaxJudged = 1024;
         internal static StoreClient Customer;
         static readonly HashSet<int> judged = new HashSet<int>(), buying = new HashSet<int>(), shallow = new HashSet<int>();
         internal static BarterOffer Barter; internal static bool BarterAcceptable;
         static string appliedGun;
 
-        internal static void Reset() { Customer = null; judged.Clear(); buying.Clear(); shallow.Clear(); Barter = null; BarterAcceptable = false; appliedGun = null; }
+        struct Judgement { internal long version; internal bool full, shallow; }
+        static readonly Dictionary<int, Judgement> cache = new Dictionary<int, Judgement>(); static StoreClient cachedFor; static float cacheUntil;
+        internal static void Reset() { cache.Clear(); cachedFor = null; Customer = null; judged.Clear(); buying.Clear(); shallow.Clear(); Barter = null; BarterAcceptable = false; appliedGun = null; }
 
         // ---------------- host ----------------
         internal static void Capture(StoreClient customer, WorldReplica world, StoreView view) {
             var entry = EmporiumEntry.Instance; var store = PlayerStore.Instance;
             if (customer == null || entry == null || store == null) return;
+            // Everything on the counters first, then what is inside containers: a full crate must not use up the
+            // budget before the items next to it are judged (an unjudged item reads "not interested" on a friend).
             var items = new List<GameItem>(); var seen = new HashSet<GameItem>();
-            Action<GameItem> add = null;
-            add = item => {
-                if (item == null || items.Count >= MaxJudged || !seen.Add(item)) return;
-                items.Add(item);
-                if (item.contentWindow != null) foreach (var child in GraphUtils.FindAllChildrenType<GameItem>(item)) { if (items.Count >= MaxJudged) break; if (seen.Add(child)) items.Add(child); }
-            };
-            add(store.currentNegociatedItem);
-            foreach (var item in entry.GetBackInvItems().ToArray()) add(item);
+            var top = new List<GameItem> { store.currentNegociatedItem }; top.AddRange(entry.GetBackInvItems());
+            foreach (var item in top) if (item != null && items.Count < MaxJudged && seen.Add(item)) items.Add(item);
+            foreach (var item in top) {
+                if (item == null || item.contentWindow == null || items.Count >= MaxJudged) continue;
+                foreach (var child in GraphUtils.FindAllChildrenType<GameItem>(item)) { if (items.Count >= MaxJudged) break; if (seen.Add(child)) items.Add(child); }
+            }
             var judgedIds = new List<int>(); var buyingIds = new List<int>(); var shallowIds = new List<int>();
+            if (customer != cachedFor) { cache.Clear(); cachedFor = customer; }
+            if (cache.Count > 4 * MaxJudged || Time.realtimeSinceStartup >= cacheUntil) { cache.Clear(); cacheUntil = Time.realtimeSinceStartup + 2f; }   // some customers' rules also look at the shop
             foreach (var item in items) {
                 int id = world.Id(item); if (id <= 0) continue;
                 bool full, contentsIgnored;
-                try { full = customer.IsClientBuyingThisItem(item, false); contentsIgnored = customer.IsClientBuyingThisItem(item, true); } catch { continue; }
+                // An item's answer only changes with the item (its version) or the customer, so ask the game once per change.
+                long version; world.Versions.TryGetValue(id, out version); Judgement known;
+                if (cache.TryGetValue(id, out known) && known.version == version && version != 0) { full = known.full; contentsIgnored = known.shallow; }
+                else {
+                    try { full = customer.IsClientBuyingThisItem(item, false); contentsIgnored = customer.IsClientBuyingThisItem(item, true); } catch { continue; }
+                    cache[id] = new Judgement { version = version, full = full, shallow = contentsIgnored };
+                }
                 judgedIds.Add(id); if (full) buyingIds.Add(id); if (contentsIgnored) shallowIds.Add(id);
             }
             view.judged = judgedIds.ToArray(); view.buying = buyingIds.ToArray(); view.buyingShallow = shallowIds.ToArray();

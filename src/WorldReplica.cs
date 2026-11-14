@@ -5,8 +5,10 @@ using UnityEngine;
 namespace ShopTogether {
     [Serializable] internal sealed class ItemRecord { public int id; public long version; public InventoryAddress parent; public SaveItemNode node; public ItemFeature[] features; }
     [Serializable] internal sealed class GridRecord { public InventoryAddress address; public int width,height; }
-    [Serializable] internal sealed class WorldDelta { public long version;public bool full;public int player;public ItemRecord[] items;public int[] removed;public GridRecord[] grids;public string store,station;public LeaseState[] leases;public StoreView presentation; }
+    [Serializable] internal sealed class WorldDelta { public long version;public bool full;public int player;public ItemRecord[] items;public int[] removed;public GridRecord[] grids;public string store,station;public LeaseState[] leases;public StoreView presentation;public MachineReadout[] readouts;public LampReadout[] lamps;public OverflowPageState[] overflow;public CassetteState cassette; }
     internal sealed class WorldReplica {
+        internal readonly HostReadouts Readouts = new HostReadouts();
+        readonly CassetteReplica cassette = new CassetteReplica();
         internal readonly Dictionary<int,GameItem> Items=new Dictionary<int,GameItem>();
         internal readonly Dictionary<string,GameInventory> Inventories=new Dictionary<string,GameInventory>();
         readonly Dictionary<GameInventory,InventoryAddress> addresses=new Dictionary<GameInventory,InventoryAddress>();
@@ -88,6 +90,7 @@ namespace ShopTogether {
             var e=EmporiumEntry.Instance;if(e==null)yield break;
             GameInventory[] roots={e.invElement,e.backInvinvElement,e.frontInvinvElement,e.showcaseElement,e.soldElement,e.hiddenElement,e.hirelingInv,e.vendingMachineElement,e.vendingFountainElement,e.cassettePlayerElement,e.docInvElement,e.trashInvElement,e.faucetElement,e.drainInvElement,StorePresentation.CustomerInventory()};
             for(int i=0;i<roots.Length;i++)if(roots[i]!=null)yield return new KeyValuePair<int,GameInventory>(i+1,roots[i]);
+            foreach(var extra in OverflowReplica.Roots())yield return extra;
             foreach(var extra in OutingKits.Roots())yield return extra;   // outing grounds and pockets (host and friends)
         }
         internal void Index() {
@@ -118,6 +121,7 @@ namespace ShopTogether {
 #if LAN_PROBE
             var captureTimer=System.Diagnostics.Stopwatch.StartNew();
 #endif
+            CompanyIntent.Flush();
             Refresh(full);long version=++Version;var changed=new List<ItemRecord>();var removed=new List<int>();
             // A big store has thousands of items: a normal update compares new and just-changed items first, then
             // as many others as fit in a few milliseconds, continuing where the last update stopped.
@@ -146,7 +150,7 @@ namespace ShopTogether {
             // Store and station data: twice a second is plenty for counters, cash and services.
             string store=lastStore,station=lastStation;
             if(full||store==null||station==null||UnityEngine.Time.realtimeSinceStartup>=nextState){nextState=UnityEngine.Time.realtimeSinceStartup+.5f;store=Convert.ToBase64String(StoreState.Serialize(PlayerStore.Instance));station=Convert.ToBase64String(StoreState.SerializeStation(StoreStation.Instance));}
-            var result=new WorldDelta{version=version,full=full,player=player,items=changed.ToArray(),removed=removed.ToArray(),grids=grids.ToArray(),leases=leases.Snapshot(now),presentation=Presentation.Capture(this),store=full||store!=lastStore?store:null,station=full||station!=lastStation?station:null};
+            var result=new WorldDelta{version=version,full=full,player=player,items=changed.ToArray(),removed=removed.ToArray(),grids=grids.ToArray(),leases=leases.Snapshot(now),presentation=Presentation.Capture(this),readouts=Readouts.Capture(this,full),lamps=SceneObjects.Capture(),overflow=OverflowReplica.Capture(),cassette=CassetteReplica.Capture(),store=full||store!=lastStore?store:null,station=full||station!=lastStation?station:null};
             lastStore=store;lastStation=station;
 #if LAN_PROBE
             if(!full)RuntimeProbe.CaptureMilliseconds.Add(captureTimer.Elapsed.TotalMilliseconds);
@@ -206,6 +210,7 @@ namespace ShopTogether {
             try {
                 if(delta.store!=null){int slot=PlayerStore.Instance.saveSlotId;StoreState.Apply(PlayerStore.Instance,Convert.FromBase64String(delta.store));PlayerStore.Instance.saveSlotId=slot;StoreAppliedAt=delta.version;}
                 if(delta.station!=null){StoreState.ApplyStation(StoreStation.Instance,Convert.FromBase64String(delta.station));StationAppliedAt=delta.version;}
+                OverflowReplica.Prepare(delta.overflow);
                 Presentation.ApplyCustomer(delta.presentation,this);var incoming=new HashSet<int>();foreach(var r in delta.items){if(r.id<=0||r.node==null||!incoming.Add(r.id)||r.parent==null)throw new InvalidOperationException("~SMC100~");}
                 if(!replicaMode){if(!delta.full)throw new InvalidOperationException("~SMC118~");itemIds.Clear();BindInitial(delta);replicaMode=true;}
                 Index();
@@ -257,7 +262,10 @@ namespace ShopTogether {
                 // friend's mouse. A machine whose window is open right now is refreshed at once.
                 foreach(var load in loads){if(Gone(load.Key))continue;QueueLoad(load.Key,createdNow.Contains(load.Key),load.Value);}
                 if(delta.leases!=null){RemoteLeases.Clear();foreach(var l in delta.leases)if(l!=null)RemoteLeases[l.item]=l.owner;}
-                Version=delta.version;Index();Presentation.ApplyDialogue(delta.presentation,this);
+                OverflowReplica.Finish();Version=delta.version;Index();Presentation.ApplyDialogue(delta.presentation,this);
+                Readouts.Receive(delta.readouts, delta.full, delta.removed);
+                SceneObjects.Apply(delta.lamps);
+                cassette.Apply(delta.cassette);
                 ReplicaVisuals.Refresh(delta.store!=null||delta.full);
                 // A failed apply is retried as a full snapshot. Commit these only after the entire update succeeds,
                 // so a partially applied update cannot make the retry skip its layout refresh.

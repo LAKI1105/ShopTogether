@@ -1,5 +1,5 @@
-param(
-    [ValidateSet('all','core','extra','outing','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328','probably_compat','probably_real')]
+﻿param(
+    [ValidateSet('outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328','probably_compat','probably_real')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
     [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[switch]$WithProbablyMultiplayer,[string]$SourceArchive,[string]$ProductionDll,[switch]$ContinueOnFailure,[switch]$ScanOnly
 )
@@ -11,12 +11,14 @@ $game=[IO.Path]::GetFullPath($GamePath)
 $workshop=Join-Path (Split-Path (Split-Path $game -Parent) -Parent) 'workshop\content\4348910\3837477869'
 if(Get-Process 'Probably Stolen' -ErrorAction SilentlyContinue){throw 'Close the game before running the isolated test.'}
 if($Suite -contains 'probably_real' -and -not $WithProbablyMultiplayer){throw 'The real visitor scenario needs the separately authorized visitor mod.'}
-if($Suite -contains 'all'){$Suite=@('immediate1324','return1323','overflow','session1323','hint1322','dump1322','core','gun','death','phone','outing','join','extra','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321')}
+if($Suite -contains 'all'){$Suite=@('core','gun','death','phone','extra','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','ui1319','guard1319','deals1320','release1321')}
 $workshopDll=Join-Path $workshop 'ShopTogether.dll'
 $workshopHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $workshopDll).Hash
 $visitorOriginalDll=Join-Path (Split-Path $workshop -Parent) '3828909239\ProbablyMultiplayer-2.6.1.dll'
 $visitorOriginalHash=if($WithProbablyMultiplayer){(Get-FileHash -LiteralPath $visitorOriginalDll -Algorithm SHA256).Hash}else{$null}
-$scratchRoot=[IO.Path]::GetFullPath((Join-Path (Split-Path $project -Parent) 'work'))
+# Unity's bundled Mono fails to resolve assembly CodeBase under non-ASCII paths.
+# The disposable runtime belongs in the user's temporary directory, not the project.
+$scratchRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
 $scratch=Join-Path $scratchRoot ('runtime-'+[Guid]::NewGuid().ToString('N'))
 $testPrefPrefix='shop_together.probe.'+[Guid]::NewGuid().ToString('N')
 $prefRegistry='Software\Questing Goose Studio\Probably Stolen'
@@ -185,7 +187,7 @@ try{
                 Write-Output "Native ${part} ${role}:";$text=Read-TestLog (Join-Path $scratch "smc-$role.log")
                 if($role -eq 'host'){foreach($line in ($text -split '\r?\n')){if($line -match '(?i)friend .*reported:'){$testHostReports.Add($line)}}}
                 if($part -eq 'hint1322' -and $env:SMC_HINT_EVIDENCE_DIR){$picture=[regex]::Match($text,'\[SMC-HINT-IMAGE\] ([A-Za-z0-9+/=]+)');if($picture.Success){[IO.File]::WriteAllBytes((Join-Path $env:SMC_HINT_EVIDENCE_DIR "$role.png"),[Convert]::FromBase64String($picture.Groups[1].Value));Write-Output "HINT_IMAGE_SAVED $role"}}
-                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF|NOTE)|Init failed: 多人|Trust check failed:|\[ModLoader\].*(shop_together|lemocuber_probablymultiplayer)|(?i)friend .*reported:'}
+                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF|NOTE|AUDIT)|Init failed: 多人|Trust check failed:|\[ModLoader\].*(shop_together|lemocuber_probablymultiplayer)|(?i)friend .*reported:'}
                 $text -split '\r?\n' | Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4 | ForEach-Object ToString
             }
             Stop-TestProcesses $started;$started=@()

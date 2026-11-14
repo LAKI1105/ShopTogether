@@ -36,7 +36,8 @@ namespace ShopTogether {
         /// <summary>Host side: a friend raised the gun. The customer reacts as when the host draws it.</summary>
         internal static void Raise() {
             var ui = StoreUIManager.Instance; var gun = UnityEngine.Object.FindObjectOfType<Shotgun>(); var session = Connection.Current;
-            if (ui == null || gun == null || session == null || ui.isShot || !gun.CanPickup()) return;
+            if (ui == null || gun == null || session == null || ui.isShot) { RemoteActions.PendingNote="~SMC303~"; return; }
+            if (!gun.CanPickup()) { RemoteActions.PendingNote = "~SMC303~"; return; }
             bool first = !AnyoneAiming(ui);
             aimers.Add(RemoteActions.CurrentOwner);
             if (!first) return;
@@ -63,7 +64,7 @@ namespace ShopTogether {
         /// <summary>Host side: an aiming friend pulled the trigger.</summary>
         internal static void Fire() {
             var ui = StoreUIManager.Instance;
-            if (ui == null || !aimers.Contains(RemoteActions.CurrentOwner) || !ui.CanShoot() || Customer() == null) return;
+            if (ui == null || !aimers.Contains(RemoteActions.CurrentOwner) || !ui.CanShoot() || Customer() == null) { RemoteActions.PendingNote="~SMC303~"; return; }
             aimers.Clear();
             // The game's own shot. If the host is not aiming, the host's screen is left alone: the customer is hit and
             // falls in the shop view, and the game's "lower the gun" step at the end only closes the deal window.
@@ -100,7 +101,9 @@ namespace ShopTogether {
             var ui = StoreUIManager.Instance;
             if (ui == null || animating) return;
             if (aiming) { LowerHere(ui, true); return; }
-            if (gun == null || !gun.CanPickup() || HostPhase.Away) return;
+            if (gun == null) return;
+            if (HostPhase.Away) { RemoteActions.Notice(string.IsNullOrEmpty(HostPhase.Text) ? "~SMC079~" : HostPhase.Text); return; }
+            if (!gun.CanPickup()) { RemoteActions.Notice("~SMC303~"); return; }
             aiming = true; shown = true;
             ui.StartBlackscreenSequence(true, delegate {
                 if (!aiming) return;

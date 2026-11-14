@@ -162,7 +162,9 @@ namespace ShopTogether {
         }
         internal static bool BlockRequest(Connection session, int owner, Request request) {
             if (owner <= 0 || !Enabled()) return false;
-            if (BlockRemote(session, owner)) return true;
+            // Without a working bridge (another Probably Multiplayer version) or during its trade, only what can take
+            // part in its trades is held back: the counters and customer deals. Shelves, machines and the rest stay usable.
+            if (BlockRemote(session, owner) && TouchesCounter(session, request)) return true;
             if (VisitActive && request.kind == RequestKind.ShopAction) return true;
             if (request.items != null) foreach (int id in request.items) { GameItem item; if (session.World.Items.TryGetValue(id, out item) && Protected(item) && !AllowedPreviewRequest(session,request,item)) return true; }
             if (request.target > 0) { GameItem target; if (session.World.Items.TryGetValue(request.target, out target) && Protected(target)) return true; }
@@ -175,6 +177,16 @@ namespace ShopTogether {
             }
             return false;
         }
+        static bool TouchesCounter(Connection session, Request request) {
+            if (request.kind == RequestKind.ShopAction) return true;
+            Func<InventoryAddress, bool> counter = a => a != null && (a.root == 2 || a.root == 3 || a.root == OutingKits.CounterRoot || a.root == 15);
+            Func<int, bool> onCounter = id => { GameItem item; return id > 0 && session.World.Items.TryGetValue(id, out item) && item != null && counter(session.World.Address(item.parentInventory)); };
+            if (request.items != null) foreach (int id in request.items) if (onCounter(id)) return true;
+            if (onCounter(request.target) || counter(request.inventory)) return true;
+            if (request.moves != null) foreach (var move in request.moves) { if (move == null || onCounter(move.item) || onCounter(move.target) || counter(move.inventory)) return true; }
+            return false;
+        }
+
         internal static void EnsurePortrait(string sprite) {
             if (!ReplicaSession.ClientStore || sprite != Portrait || !bound) return;
             if (SpriteDict.Instance != null && SpriteDict.Instance.spriteDictionary.ContainsKey(Portrait)) return;

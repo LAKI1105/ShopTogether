@@ -48,6 +48,20 @@ namespace ShopTogether {
             var session = Connection.Current; if (session != null && session.IsClient && waiting.Count < 16) waiting.Enqueue(IssueReport.Sanitize(text));
         }
 
+        /// <summary>
+        /// Something worth knowing that the mod already handled (not a problem for the player): goes to this log and,
+        /// from a friend, to the host's log, but not into the player's problem report.
+        /// </summary>
+        internal static void Note(string where, string text) {
+            string key = "note|" + where + "|" + text;
+            int count; seen.TryGetValue(key, out count); seen[key] = count + 1;
+            if (seen.Count > 128) seen.Clear();
+            if (count > 0) return;
+            Debug.Log("[ShopTogether] " + where + ": " + text);
+            var session = Connection.Current; if (session != null && session.IsClient && waiting.Count < 16) waiting.Enqueue(IssueReport.Sanitize(NotePrefix + where + ": " + text));
+        }
+        const string NotePrefix = "note ";
+
         /// <summary>One report a second; everything still waiting (up to a few) when the session is ending.</summary>
         internal static void Flush(Connection connection, bool ending = false) {
             if (waiting.Count == 0 || (!ending && Time.realtimeSinceStartup < nextSend)) return;
@@ -66,7 +80,7 @@ namespace ShopTogether {
             var text = new StringBuilder();
             foreach (char c in Encoding.UTF8.GetString(data)) text.Append(char.IsControl(c) ? ' ' : c);
             Debug.LogWarning("[ShopTogether] friend " + name + " reported: " + text);
-            IssueReport.Add("friend: " + text);
+            if (!text.ToString().StartsWith(NotePrefix, StringComparison.Ordinal)) IssueReport.Add("friend: " + text);
         }
 
         internal static void Reset() { waiting.Clear(); seen.Clear(); nextSend = 0; }

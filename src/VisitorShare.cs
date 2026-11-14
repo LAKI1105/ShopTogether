@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
@@ -99,11 +99,13 @@ namespace ShopTogether {
             string[] messages=view.messages??new string[0],items=view.items??new string[0];
             Text("messages",string.Join("\n",messages));Text("items",items.Length==0?"~SMC283~":"~SMC286~"+string.Join("、",items));
             Text("status",view.canBuy||view.canWithdraw?"~SMC285~"+view.price.ToString(CultureInfo.InvariantCulture):"~SMC284~");
-            Enabled("offer",view.canOffer);Enabled("buy",view.canBuy);Enabled("withdraw",view.canWithdraw);
+            // Host eligibility is rechecked when the request arrives; stale hints never suppress it.
+            Enabled("offer",true);Enabled("buy",true);Enabled("withdraw",true);
         }
         static bool Authorized(long stamp,out object s){
-            s=null;var c=Connection.Current;int owner=RemoteActions.CurrentOwner;var kit=OutingKits.Of(owner);
-            if(c==null||!c.IsHost||!c.Ready||owner<=0||!c.HasPeer(owner)||(kit!=null&&kit.location!=null)||OutingKits.IsJoined(owner))return false;
+            s=null;var c=Connection.Current;int owner=RemoteActions.CurrentOwner;var map=MapUIManager.Instance;
+            // While everyone is out with the host, nobody stands at the shop counter.
+            if(c==null||!c.IsHost||!c.Ready||owner<=0||!c.HasPeer(owner)||(map!=null&&map.Current!=null))return false;
             try{s=Current();return s!=null&&stamp!=0&&stamp==Stamp(s);}catch{return false;}
         }
         static void Refused(){RemoteActions.PendingNote="~SMC281~";}
@@ -114,8 +116,8 @@ namespace ShopTogether {
         static void Send(object packet){sendMethod.Invoke(null,new[]{packet});}
         internal static void VisitorSay(long stamp,string text){
             object s;if(!Authorized(stamp,out s)){Refused();return;}int owner=RemoteActions.CurrentOwner;float last;
-            if(chatSent.TryGetValue(owner,out last)&&Time.realtimeSinceStartup-last<.75f)return;
-            text=Clean(text,160);if(text.Length==0)return;string name=Clean(Loc.Text(PlayerNames.Of(owner)),30);string message="["+name+"] "+text;
+            if(chatSent.TryGetValue(owner,out last)&&Time.realtimeSinceStartup-last<.75f){RemoteActions.PendingNote="~SMC355~";return;}
+            text=Clean(text,160);if(text.Length==0){RemoteActions.PendingNote="~SMC354~";return;}string name=Clean(Loc.Text(PlayerNames.Of(owner)),30);string message="["+name+"] "+text;
             string request=Guid.NewGuid().ToString("N"),self=playerField.GetValue(null) as string ?? "";
             Send(new{type="chat",requestId=request,text=message});receiveMethod.Invoke(null,new object[]{self,name,message,request,true});chatSent[owner]=Time.realtimeSinceStartup;
         }

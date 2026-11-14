@@ -1,36 +1,20 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
 namespace ShopTogether {
-    /// <summary>
-    /// Machine windows on a friend's screen. The game refreshes some machine panels (heating plate temperature and
-    /// mode, chem finisher target and status, fridge, auto-butcher buttons) from the item's once-a-second function,
-    /// which only runs on the host. For machine windows a friend has open, that function runs here once a second
-    /// to refresh the panel only: every tag write it attempts is skipped (inventory, spawn and item-data writes are
-    /// already blocked on a friend's copy), so heating, cooling and reactions still happen once, on the host.
-    /// </summary>
+    // Guests render the host's captured widget values; no gameplay callback runs here.
     internal static class MachineDisplay {
         internal static bool Running;
         static float next;
-        static readonly List<GameItem> open = new List<GameItem>();
-
         internal static void Tick(Connection s) {
             if (s == null || !s.IsClient || !ReplicaSession.ClientStore || Time.realtimeSinceStartup < next) return;
-            next = Time.realtimeSinceStartup + 1f;
-            open.Clear();
-            foreach (var item in s.World.Items.Values)
-                if (item != null && item.onOneSecondItemFunc != null && item.contentWindow != null && item.contentWindow.IsVisible()) open.Add(item);
-            if (open.Count == 0) return;
+            next = Time.realtimeSinceStartup + .1f;
             Running = true;
-            try {
-                foreach (var item in open) {
-                    try { item.onOneSecondItemFunc(item, item.parentInventory, null); }
-                    catch (Exception e) { Debug.LogWarning("[ShopTogether] machine panel refresh: " + e.Message); }
-                }
-            } finally { Running = false; open.Clear(); }
+            try { s.World.Readouts.ApplyOpen(s.World); HopperReadout.Tick(); ScannerIntent.RefreshOpen(s.World); }
+            finally { Running = false; }
         }
     }
 

@@ -1,0 +1,46 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
+using HarmonyLib;
+using UnityEngine;
+
+namespace ShopTogether {
+    internal static class BarIntent {
+        static Harmony patches;static Type session,story,goods;
+        internal static void Bind(){
+            if(patches!=null)return;session=AccessTools.TypeByName("BartenderMod.BarSession");if(session==null)return;
+            story=AccessTools.TypeByName("BartenderMod.BarStory");goods=AccessTools.TypeByName("BartenderMod.BarStoryGoods");patches=new Harmony("shop_together.bar-intent");
+            patches.Patch(AccessTools.Method(session,"Notice"),prefix:new HarmonyMethod(typeof(BarIntent),"Notice"));
+            patches.Patch(AccessTools.Method(story,"Choose"),prefix:new HarmonyMethod(typeof(BarIntent),"Choose"));
+            foreach(var nested in AccessTools.TypeByName("BartenderMod.BarCustomers").GetNestedTypes(BindingFlags.Public|BindingFlags.NonPublic))
+                foreach(var method in nested.GetMethods(BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.DeclaredOnly))
+                    if(method.ReturnType==typeof(void)&&method.Name.Contains("<Offer>b__"))patches.Patch(method,prefix:new HarmonyMethod(typeof(BarIntent),"OfferCallback"));
+        }
+        static void Notice(string text){if(RemoteActions.CurrentOwner>0)RemoteActions.PendingNote=text;}
+        internal static bool Free(GameItem item){
+            var s=Connection.Current;if(s==null||!s.IsHost||!s.Ready)return true;
+            if(item==null||item.parentInventory==null||s.World.Id(item)<=0){RemoteActions.PendingNote="~SMC326~";return false;}
+            bool free=AuthorityIntent.FreeTree(s,Math.Max(0,RemoteActions.CurrentOwner),item);if(!free&&RemoteActions.CurrentOwner<0)RemoteActions.Notice("~SMC096~");return free;
+        }
+        static bool OfferCallback(object __instance){var found=new HashSet<GameItem>();Collect(__instance,0,new HashSet<object>(),found);foreach(var item in found)if(!Free(item))return false;return true;}
+        static bool Choose(object order,int branch){
+            var connection=Connection.Current;if(connection==null||!connection.IsHost||!connection.Ready)return true;
+            var person=AccessTools.Field(order.GetType(),"Person").GetValue(order);string id=(string)AccessTools.Field(person.GetType(),"Id").GetValue(person);
+            var items=AccessTools.Method(session,"Items").Invoke(null,null);
+            if(id=="geqiu"){foreach(GameItem item in (IEnumerable)items)if(item.identifier=="bartender_action.prop.toolbox")return Free(item);}
+            if(id=="marco"&&branch==1){var args=new object[]{items,null};if((bool)AccessTools.Method(goods,"TrySelectMarco").Invoke(null,args))foreach(GameItem item in (GameItem[])args[1])if(!Free(item))return false;}
+            return true;
+        }
+        internal static IEnumerable<GameItem> CapturedItems(Delegate callback){
+            var seen=new HashSet<object>();var found=new HashSet<GameItem>();Collect(callback.Target,0,seen,found);return found;
+        }
+        static void Collect(object value,int depth,HashSet<object> seen,HashSet<GameItem> found){
+            if(value==null||depth>4||!seen.Add(value))return;
+            var item=value as GameItem;if(item!=null){found.Add(item);return;}
+            Type t=value.GetType();if(t.Namespace!="BartenderMod"||value is UnityEngine.Object)return;
+            foreach(var field in t.GetFields(BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic))Collect(field.GetValue(value),depth+1,seen,found);
+        }
+        internal static void Shutdown(){if(patches!=null)patches.UnpatchAll("shop_together.bar-intent");patches=null;session=null;}
+    }
+}

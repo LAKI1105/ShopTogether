@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
@@ -81,19 +81,20 @@ namespace ShopTogether {
                 AccessTools.Method(typeof(HopperHelper), "OpenOutletWindow", new[] { typeof(GameItem) }),
                 AccessTools.Method(typeof(MachineStorageCoordinator), "OpenWindow", new[] { typeof(GameItem) }),
                 AccessTools.Method(typeof(MindReprogrammerHelper), "OpenWindow", new[] { typeof(GameItem) }),
+                AccessTools.Method(typeof(PaperUI), "Show"),
             };
         }
 
         // Host: a friend's action tried to open a panel. Keep it off the host's screen and tell the friend.
         // Methods past the reading panels: 36/37 only keep the friend's action off the host's screen,
-        // 38-42 (notices and sounds) reach the friend and still play on the host.
+        // 38 (the friend's own messages) reaches only the friend; 39-42 (reputation, sounds) also play on the host.
         const int Scratcher = 32, Confirm = 34, Crate = 35, HideResponse = 36, CloseConfirm = 37, NoticeFirst = 38, NoticeLast = 42, BudgetConfirm = 43, Wild = 44;
         internal static bool BuildingCratePreview;
         internal static bool IsCratePreview(GameInventory inventory, GameItem item) {
             var s = Connection.Current; var e = EmporiumEntry.Instance;
             return s != null && s.IsClient && e != null && inventory != null && inventory == e.responseInventoryClosable && item != null && s.World.Id(item) == 0;
         }
-        sealed class Pending { internal Action yes; internal float until; internal int token, itemId; internal GameItem item; internal GameInventory inventory; internal bool activation; }
+        sealed class Pending { internal Action yes; internal float until; internal int token, itemId; internal GameItem item; internal GameInventory inventory; internal bool activation; internal string stamp; }
         static readonly Dictionary<int, Pending> confirms = new Dictionary<int, Pending>();
         static int nextConfirm;
         internal static bool HasPending(int owner) { return confirms.ContainsKey(owner); }
@@ -101,16 +102,17 @@ namespace ShopTogether {
         /// <summary>Friend pressed "yes" on a confirmation their own action asked for: run what the host kept for them.</summary>
         internal static void ConfirmPanel(int token) {
             int owner = RemoteActions.CurrentOwner; Pending p;
-            if (owner <= 0 || !confirms.TryGetValue(owner, out p) || p.token != token) return;
+            if (owner <= 0 || !confirms.TryGetValue(owner, out p) || p.token != token) { RemoteActions.PendingNote = "~SMC326~"; return; }
             confirms.Remove(owner);
-            if (p.yes == null || Time.realtimeSinceStartup > p.until) return;
+            if (p.yes == null || Time.realtimeSinceStartup > p.until) { RemoteActions.PendingNote = "~SMC326~"; return; }
             if (p.item != null) {
                 var s = Connection.Current; GameItem current;
                 if (s == null || !s.World.Items.TryGetValue(p.itemId, out current) || current != p.item || current.parentInventory != p.inventory ||
-                    !s.Leases.Available(owner, p.itemId, Time.realtimeSinceStartup) ||
+                    !AuthorityIntent.FreeTree(s, owner, current) ||
                     (p.activation && (!current.MayActivateSlotItem() || !current.CanActivateSlotItem()))) {
                     RemoteActions.PendingNote = "~SMC096~"; return;
                 }
+                if (p.stamp != AuthorityIntent.TreeStamp(s, current)) { RemoteActions.PendingNote = "~SMC326~"; return; }
                 var at = s.World.Address(current.parentInventory); if (at != null && !OutingKits.MayUse(owner, at.root)) { RemoteActions.PendingNote = "~SMC217~"; return; }
             }
             p.yes();
@@ -122,8 +124,6 @@ namespace ShopTogether {
             for (int i = 0; i < Methods.Length; i++) if (Methods[i] != null && method != null && Methods[i].DeclaringType == method.DeclaringType && Methods[i].Name == method.Name) { index = i; break; }
             if (s == null || index < 0 || args == null) return true;
             bool notice = index >= NoticeFirst && index <= NoticeLast;
-            // A friend outside the shop already gets the messages and sounds of their outing another way.
-            if (notice && OutingKits.Capturing) return true;
             if (index == HideResponse || index == CloseConfirm) return false;
             // Parts of the action that change the world still happen here, on the host.
             if (index == Scratcher && args.Length > 0 && args[0] is GameItem) ScratcherHelper.TryRerollForBetterLuck((GameItem)args[0]);
@@ -135,7 +135,7 @@ namespace ShopTogether {
                 if (++nextConfirm <= 0) nextConfirm = 1; confirmToken = nextConfirm;
                 confirms[Owner] = new Pending { yes = args[3] as Action, until = Time.realtimeSinceStartup + 300f, token = confirmToken,
                     item = SourceItem, itemId = SourceItem != null ? s.World.Id(SourceItem) : 0,
-                    inventory = SourceItem != null ? SourceItem.parentInventory : null, activation = SourceIsActivation };
+                    inventory = SourceItem != null ? SourceItem.parentInventory : null, activation = SourceIsActivation, stamp = AuthorityIntent.TreeStamp(s, SourceItem) };
             }
             var items = new List<int>(); var texts = new List<string>(); var numbers = new List<int>();
             // Wild's network: opening it counts as browsing on the host; the window itself opens for the friend.
@@ -158,14 +158,17 @@ namespace ShopTogether {
             if (index == Confirm) numbers.Add(confirmToken);
             var call = new PanelCall { m = index, items = items.ToArray(), texts = texts.ToArray(), numbers = numbers.ToArray() };
             byte[] bytes = Encoding.UTF8.GetBytes(WireJson.ToJson(call));
-            if (bytes.Length <= 16384) { s.SendTo(Owner, Message, bytes); NotifiedDuringAction = true; }
+            if (bytes.Length <= 16384) { s.SendTo(Owner, Message, bytes); if (index < 39 || index > 42) NotifiedDuringAction = true; }
+            // A message about this player's own action (sale income, a refusal…) is theirs alone once it reached them;
+            // reputation changes and sounds belong to the whole shop and still play here.
+            if (index == NoticeFirst && bytes.Length <= 16384) return false;
             return notice;
         }
 
         // Friend: wait until the host's change has arrived (a used strip shows its result), then open the panel.
         internal static void FromHost(byte[] data) {
             var call = WireJson.FromJson<PanelCall>(Encoding.UTF8.GetString(data));
-            if (call == null || call.m < 0 || call.m >= Methods.Length || waiting.Count >= 16) return;
+            if (call == null || call.m < 0 || call.m > 56 || waiting.Count >= 16) return;
             var s = Connection.Current; if (s == null) return;
             if (waiting.Count == 0) { seen = s.World.Version; due = Time.realtimeSinceStartup + 1f; }
             waiting.Add(call);
@@ -178,7 +181,7 @@ namespace ShopTogether {
             foreach (var call in calls) { try { Open(s, call); } catch (Exception e) { Debug.LogWarning("[ShopTogether] panel: " + e.Message); } }
         }
 
-        internal static void Reset() { waiting.Clear(); confirms.Clear(); CounterTrades.Reset(); CustomerDeals.Reset(); ScratchInteraction.Reset(); Owner = 0; SourceItem = null; SourceIsActivation = false; nextConfirm = 0; }
+        internal static void Reset() { waiting.Clear(); confirms.Clear(); CounterTrades.Reset(); CustomerDeals.Reset(); ScratchInteraction.Reset(); CustomPanelRelay.Reset(); CargoIntent.Reset(); Owner = 0; SourceItem = null; SourceIsActivation = false; nextConfirm = 0; }
 
         static GameItem Item(Connection s, PanelCall c, int i) {
             if (c.items == null || i >= c.items.Length || c.items[i] <= 0) return null;
@@ -205,7 +208,7 @@ namespace ShopTogether {
                 case 33: { var g = GenericConfirmationUIManager.Instance; if (g != null) g.OpenPanelSingleButton(Text(c, 0), Text(c, 1), delegate { g.ClosePanel(); }); break; }
                 case 34: {
                     var g = GenericConfirmationUIManager.Instance; if (g == null) break; int token = Number(c, 0);
-                    g.OpenPanel(Text(c, 0), Text(c, 1), Text(c, 2),
+                    g.OpenPanel(Loc.Text(Text(c, 0)), Loc.Text(Text(c, 1)), Loc.Text(Text(c, 2)),
                         delegate { g.ClosePanel(); var e = RemoteActions.Adapter("ConfirmPanel", 1); if (e != null) RemoteActions.Forward(e, null, new object[] { token }); },
                         delegate { g.ClosePanel(); var e = RemoteActions.Adapter("CancelPanel", 1); if (e != null) RemoteActions.Forward(e, null, new object[] { token }); });
                     break; }
@@ -222,6 +225,10 @@ namespace ShopTogether {
                 case 48: if (a != null) HopperHelper.OpenOutletWindow(a); break;
                 case 49: if (a != null) MachineStorageCoordinator.OpenWindow(a); break;
                 case 50: if (a != null) MindReprogrammerHelper.OpenWindow(a); break;
+                case 51: ModHelper.OpenPaper(Text(c,0)); break;
+                case 52: case 53: CompanyIntent.Show(c.m,Text(c,0),a); break;
+                case 54: CustomPanelRelay.Open(Text(c,0)); break;
+                case 55: case 56: CargoIntent.Show(c.m,Text(c,0)); break;
                 case 43: {
                     var ui = NegociationUIManager.Instance; if (ui == null) break;
                     ui.OpenConfirmPanel(); var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");
@@ -274,11 +281,25 @@ namespace ShopTogether {
 
     [HarmonyPatch]
     internal static class PanelCapture {
-        static IEnumerable<MethodBase> TargetMethods() { foreach (var m in PanelRelay.Methods) if (m != null) yield return m; }
+        static IEnumerable<MethodBase> TargetMethods() { foreach (var m in PanelRelay.Methods) if (m != null && m.DeclaringType != typeof(PaperUI)) yield return m; }
         [HarmonyPriority(Priority.First)]
         static bool Prefix(MethodBase __originalMethod, object[] __args) {
             if (!PanelRelay.Capturing) return true;
             return PanelRelay.Capture(__originalMethod, __args);
+        }
+    }
+    // Intercept the presentation surface, not the protected book registration/loader.
+    [HarmonyPatch(typeof(PaperUI), "Show")]
+    internal static class PaperPanelCapture {
+        static bool Prefix(PaperUI __instance, ref PaperUI __result) {
+            if (!PanelRelay.Capturing) return true;
+            bool visible = __instance.IsVisible;
+            if (!__instance.IsAlive) AccessTools.Method(typeof(PaperUI),"Build").Invoke(__instance,null);
+            if (!visible && __instance.Root != null) __instance.Root.SetActive(false);
+            var call = new PanelCall { m = 51, texts = new[] { __instance.Id } };
+            var bytes = Encoding.UTF8.GetBytes(WireJson.ToJson(call));
+            if (bytes.Length <= 16384) { Connection.Current.SendTo(PanelRelay.Owner,PanelRelay.Message,bytes); PanelRelay.NotifiedDuringAction = true; }
+            __result = __instance; return false;
         }
     }
 

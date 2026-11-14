@@ -70,8 +70,16 @@ namespace ShopTogether {
                 bool fountain = pressFountain; int frame = pressFrame; pressFrame = -1;
                 if (deliveredFrame < frame || deliveredFountain != fountain) {
                     string blocker; bool covered = Blocker(fountain, out blocker);
-                    Diagnostics.Report(fountain ? "fountain click" : "vending click", new InvalidOperationException("press not delivered; paused=" + Interactable.isPaused + " top=" + blocker));
-                    if (!covered && !Interactable.isPaused) OpenVending(fountain);
+                    string where = fountain ? "fountain click" : "vending click";
+                    string detail = "press not delivered; paused=" + Interactable.isPaused + " top=" + blocker;
+                    if (covered || Interactable.isPaused) Diagnostics.Note(where, detail + " (meant for what is in front)");
+                    else {
+                        OpenVending(fountain);
+                        // Opened by the mod: handled, so it stays out of the player's problem report. What the game's
+                        // click handling saw goes to the log, to find out why its own click never arrives on friends.
+                        if (VendingWindow(fountain) != null && VendingWindow(fountain).IsVisible()) Diagnostics.Note(where, detail + "; opened by the mod; " + Probe(fountain));
+                        else Diagnostics.Report(where, new InvalidOperationException(detail + "; window did not open; " + Probe(fountain)));
+                    }
                 }
             }
             if (!Input.GetMouseButtonDown(0) || !LocalControl.Focused || Dragged() != null) return;
@@ -116,6 +124,34 @@ namespace ShopTogether {
             float alpha = graphic.color.a; try { alpha *= graphic.canvasRenderer.GetInheritedAlpha(); } catch { }
             return alpha > 0.05f;
         }
+        static PixelWindow VendingWindow(bool fountain) {
+            var e = EmporiumEntry.Instance; var slot = e == null ? null : fountain ? e.vendingFountainElement : e.vendingMachineElement;
+            return slot != null && slot.childItem != null ? slot.childItem.contentWindow : null;
+        }
+
+        /// <summary>The machine's colliders and the scene's click raycasters, for the log.</summary>
+        static string Probe(bool fountain) {
+            var b = new System.Text.StringBuilder();
+            try {
+                var machine = fountain ? (StoreVendingFountain.Instance != null ? StoreVendingFountain.Instance.gameObject : null) : (StoreVendingMachine.Instance != null ? StoreVendingMachine.Instance.gameObject : null);
+                if (machine == null) return "no machine";
+                b.Append("layer=").Append(machine.layer).Append(" z=").Append(machine.transform.position.z.ToString("0.##"));
+                int colliders = 0;
+                foreach (var c in machine.GetComponentsInChildren<Component>(true)) {
+                    if (c == null || c.GetType().Name.IndexOf("Collider", StringComparison.Ordinal) < 0) continue;
+                    colliders++; var behaviour = c as Behaviour;
+                    b.Append(" ").Append(c.GetType().Name).Append(behaviour == null || behaviour.enabled ? "+" : "-").Append(c.gameObject.activeInHierarchy ? "" : "(inactive)").Append(" L").Append(c.gameObject.layer);
+                }
+                if (colliders == 0) b.Append(" no collider");
+                foreach (var r in UnityEngine.Object.FindObjectsOfType<UnityEngine.EventSystems.BaseRaycaster>()) {
+                    var physics = r as UnityEngine.EventSystems.PhysicsRaycaster;
+                    if (physics == null) continue;   // the UI raycasters are not the question here
+                    b.Append(" rc:").Append(r.GetType().Name).Append(r.isActiveAndEnabled ? "+" : "-").Append(" mask=").Append(physics.eventMask.value).Append(" cam=").Append(r.eventCamera != null ? r.eventCamera.name : "none");
+                }
+            } catch (Exception e) { b.Append(" probe failed: ").Append(e.Message); }
+            return b.ToString();
+        }
+
         static string Path(GameObject o) {
             if (o == null) return "?";
             string path = o.name; var t = o.transform.parent;

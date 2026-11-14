@@ -53,10 +53,10 @@ namespace ShopTogether {
         /// <summary>Host side: a friend saved their list. The friend is identified by the connection, never by what they send.</summary>
         internal static void Save(GameItem item, string json) {
             var session = Connection.Current;
-            if (item == null || session == null || !session.IsHost || !item.IsTag("STORAGE_COORDINATOR_TAG")) return;
+            if (item == null || session == null || !session.IsHost || !item.IsTag("STORAGE_COORDINATOR_TAG")) { AuthorityIntent.Refuse("~SMC305~"); return; }
             string tag = TagFor(session.PeerIdentity(RemoteActions.CurrentOwner));
             string clean = Clean(json);
-            if (tag == null || clean == null) return;
+            if (tag == null || clean == null) { AuthorityIntent.Refuse("~SMC305~"); return; }
             item.ModifyTag(tag, s => s.Enable().SetString(clean));
         }
 
@@ -80,8 +80,7 @@ namespace ShopTogether {
             string tag = CoordinatorPresets.TagFor(Connection.Current.MyIdentity);
             string json = CoordinatorPresets.Clean(JsonUtility.ToJson(new CoordinatorPresets.Box { presets = presets ?? new List<MachineStorageCoordinator.Preset>() }));
             if (tag == null || json == null) { RemoteActions.Notice("~SMC200~"); return false; }
-            // Shown right away here; the host stores the same text and the next sync confirms it.
-            item.ModifyTag(tag, s => s.Enable().SetString(json));
+            // The editor keeps its draft; only the host writes the saved item state.
             RemoteActions.Forward(RemoteActions.Adapter("Save", 2), null, new object[] { item, json });
             return false;
         }

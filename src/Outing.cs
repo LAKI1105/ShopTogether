@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
@@ -21,10 +21,10 @@ namespace ShopTogether {
         public string location; public bool native, bag;
         public string title, panelSig;
         public string[] lines; public bool[] buttons, enabled;
-        public int[] kitOwners, kitLeft, joined; public string[] kitPlaces, outTonight;   // friends out on their own, or with the host   // friends out on their own
         public PhoneView phone;                               // the shop phone
         public VisitorView visitor;                           // the host's human visitor
         public bool body, survived; public int shots;   // the counter shotgun: body on the floor, shots fired
+        public string ending; public int morning;       // the game's ending, and how many morning reports the host has seen
     }
 
     internal static class HostPhase {
@@ -73,7 +73,7 @@ namespace ShopTogether {
                     if (!state.native) OutingPanel.Capture(state, location);
                 }
                 ShotgunView.Capture(state);
-                OutingKits.Capture(state);
+                SharedScreens.Capture(state);
                 PhoneShare.Capture(state);
                 VisitorShare.Capture(state);
             } catch (Exception e) { Debug.LogWarning("[ShopTogether] phase capture: " + e.Message); }
@@ -87,15 +87,75 @@ namespace ShopTogether {
             Away = state.away;
             Text = string.IsNullOrEmpty(state.reason) ? "" : (state.reason.Length > 120 ? state.reason.Substring(0, 120) : state.reason);
             try { FriendView.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] follow host: " + e.Message); }
-            try { OutingKits.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] own outing: " + e.Message); }
+            try { OutingKits.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] outing view: " + e.Message); }
             try { PhoneShare.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] phone: " + e.Message); }
             try { VisitorShare.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] visitor: " + e.Message); }
             try { ShotgunView.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] shotgun view: " + e.Message); }
+            try { SharedScreens.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] shared screens: " + e.Message); }
             Last = state;
             return wasAway && !Away;
         }
 
-        internal static void Reset() { Away = false; Text = ""; Last = null; FriendView.Reset(); ShotgunView.Reset(); OutingKits.ResetView(); PhoneShare.Reset(); VisitorShare.Reset(); }
+        internal static void Reset() { Away = false; Text = ""; Last = null; FriendView.Reset(); ShotgunView.Reset(); SharedScreens.Reset(); OutingKits.ResetView(); PhoneShare.Reset(); VisitorShare.Reset(); }
+    }
+
+    /// <summary>
+    /// Screens the host's game shows to the whole shop: the ending of the run, and the morning report after a night.
+    /// Friends see the same screen; its buttons only close it on their own screen (leaving to the menu leaves the room).
+    /// </summary>
+    internal static class SharedScreens {
+        static int endings, mornings;           // host: how many times each was shown
+        static string ending = "";
+        static bool primed; static string seenEnding; static int seenMorning;
+
+        internal static void Capture(PhaseState state) { state.ending = endings > 0 ? endings + ":" + ending : ""; state.morning = mornings; }
+        internal static void Reset() { endings = 0; mornings = 0; ending = ""; primed = false; seenEnding = null; seenMorning = 0; }
+
+        [HarmonyPatch(typeof(PlayerStore), "ExecuteGameOver")]
+        internal static class HostEnding { static void Postfix(string ending) { if (!ReplicaSession.ClientStore) { endings++; SharedScreens.ending = ending ?? ""; } } }
+        [HarmonyPatch(typeof(StartOfDayUIManager), "OpenUI")]
+        internal static class HostMorning { static void Postfix() { if (!ReplicaSession.ClientStore) mornings++; } }
+
+        /// <summary>Friend side. What was already on screen when this player joined is not shown again.</summary>
+        internal static void Follow(PhaseState state) {
+            if (state == null || !ReplicaSession.SceneReady) return;
+            if (!primed) { primed = true; seenEnding = state.ending ?? ""; seenMorning = state.morning; return; }
+            if ((state.ending ?? "") != seenEnding) {
+                seenEnding = state.ending ?? "";
+                int cut = seenEnding.IndexOf(':');
+                if (cut > 0) ShowEnding(seenEnding.Substring(cut + 1));
+            }
+            if (state.morning != seenMorning) {
+                seenMorning = state.morning;
+                ShowMorningReport();
+            }
+        }
+
+        // Only the report is shown here: the game's function also fixes up the shop's state, which stays the host's.
+        static void ShowMorningReport() {
+            var ui = StartOfDayUIManager.Instance; var store = PlayerStore.Instance;
+            if (ui == null || store == null) return;
+            var state = store.storeState; int lockFlag = store.lockShutterButtonFlag;
+            try { ui.ShowMorningReport(); } finally { store.storeState = state; store.lockShutterButtonFlag = lockFlag; }
+        }
+
+        // The same texts the game's ExecuteGameOver picks for each ending, in this player's language.
+        static void ShowEnding(string id) {
+            var ui = GameOverUIManager.Instance;
+            if (ui == null) return;
+            string reason = id, desc = id; bool keepPlaying = false;
+            switch (id) {
+                case "buyout": reason = "buyout"; desc = "buyout"; keepPlaying = true; break;
+                case "buyout_mortgage": reason = "buyout"; desc = "buyout_mortgage"; keepPlaying = true; break;
+                case "lou_bombed": reason = "bombed"; desc = "lou_bombed"; break;
+                case "lou_bombed_debt": reason = "bombed"; desc = "lou_debt"; break;
+                case "rent": case "arrest": case "execution": case "repo": case "mob": case "sec": case "hitman": case "sentinel":
+                case "bombed": case "cartel_retired": case "vendor_permit": case "aug": case "reactor": break;
+                default: reason = "rent"; desc = "rent"; break;
+            }
+            ui.SetEnding(id);
+            ui.DisplayUI(LocHelper.GetLocalizedMechanic("mech_end_" + reason + "_reason"), LocHelper.GetLocalizedMechanic("mech_end_" + desc + "_desc"), keepPlaying);
+        }
     }
 
     /// <summary>A location panel built from code (also by other mods) is sent as its visible text and buttons.</summary>
@@ -146,12 +206,13 @@ namespace ShopTogether {
         internal static void Press(string signature, int index) {
             var location = MapUIManager.Instance != null ? MapUIManager.Instance.Current : null;
             var root = Root();
-            if (location == null || root == null) return;
+            if (location == null || root == null) { RemoteActions.PendingNote = "~SMC247~"; return; }
             var lines = new List<string>(); var isButton = new List<bool>(); var enabled = new List<bool>(); var buttons = new List<Button>();
             Read(root, lines, isButton, enabled, buttons);
-            if (Signature(location.Id, lines, isButton) != signature || index < 0 || index >= buttons.Count) return;
+            // The panel changed since the friend saw it (another click came first): say so; their screen updates.
+            if (Signature(location.Id, lines, isButton) != signature || index < 0 || index >= buttons.Count) { RemoteActions.PendingNote = "~SMC247~"; return; }
             var button = buttons[index];
-            if (button != null && button.interactable && button.gameObject.activeInHierarchy) button.onClick.Invoke();
+            if (button != null && button.interactable && button.gameObject.activeInHierarchy) button.onClick.Invoke(); else RemoteActions.PendingNote = "~SMC247~";
         }
     }
 
@@ -166,34 +227,33 @@ namespace ShopTogether {
             map.Travel(location);
         }
 
-        internal static void Press(string signature, int index) { if (OutingKits.IsJoined(RemoteActions.CurrentOwner)) OutingPanel.Press(signature, index); }
+        internal static void Press(string signature, int index) { OutingPanel.Press(signature, index); }
 
         /// <summary>Same as ticking a night service in the end-of-day panel.</summary>
         internal static void ToggleService(string id, bool on) {
-            if (PlayerStore.Instance == null || id == null) return;
+            if (PlayerStore.Instance == null || id == null) { RemoteActions.PendingNote = "~SMC247~"; return; }
             foreach (var service in PlayerStore.Instance.storeService) {
                 if (service == null || service.id != id) continue;
-                if (!service.unlocked || service.isMandatory || service.IsOnCooldown()) { RemoteActions.PendingNote = "~SMC247~"; return; }
+                if (!service.unlocked) { RemoteActions.PendingNote = "~SMC247~"; return; }
+                if (service.isMandatory) { RemoteActions.PendingNote = "~SMC322~"; return; }
+                if (service.IsOnCooldown()) { RemoteActions.PendingNote = "~SMC323~"; return; }
                 service.isUsing = on;
                 var panel = EndOfDayUIManager.Instance;
                 if (panel != null && panel.IsOpen) panel.InitUI();
                 return;
             }
+            RemoteActions.PendingNote = "~SMC247~";
         }
 
         /// <summary>Same as ticking the issues in the inspection panel and pressing confront.</summary>
         internal static void Confront(GameItem item, int issues) {
-            var ui = InspectionUIManager.Instance;
-            if (ui == null || item == null || (issues & 31) == 0) return;
-            ui.OnInspectItem(item);
-            ui.toggle1.isOn = (issues & 1) != 0; ui.toggle2.isOn = (issues & 2) != 0; ui.toggle3.isOn = (issues & 4) != 0;
-            ui.toggle4.isOn = (issues & 8) != 0; ui.toggle5.isOn = (issues & 16) != 0;
-            ui.OnConfront();
+            int kind = item != null && item.IsTag("CIGARETTE_TAG") ? ShopActions.CigaretteConfront : item != null && item.IsTag("FOOD_STAMP_TAG") ? ShopActions.StampConfront : ShopActions.InjectorConfront;
+            ShopActions.Inspect(item, kind, issues);
         }
 
         /// <summary>Same as the confront button of the water strip or scanner.</summary>
         internal static void ConfrontWater(GameItem item) {
-            if (item == null || DialogUIManager.Instance == null) return;
+            if (item == null || DialogUIManager.Instance == null) { RemoteActions.PendingNote = "~SMC095~"; return; }
             var feature = WaterFeatureHelper.GetWaterFeature(item);
             if (feature == null || !feature.CanExposeFeature() || InspectionUIManager.IsConfrontLocked() || GeneralHelper.IsItemOwned(item) || feature.IsExposed() || feature.IsFeatureMatch()) { RemoteActions.PendingNote = "~SMC247~"; return; }
             if (DialogUIManager.Instance.StartDialogue(feature.GetExposeDialog())) InspectableHelper.OnConfrontSuccess(item); else RemoteActions.PendingNote = "~SMC247~";
@@ -218,9 +278,7 @@ namespace ShopTogether {
         }
         internal static string Sleep() {
             if (Store == null || EndOfDayUIManager.Instance == null || Away || Store.storeState == PlayerStore.StoreState.OPEN) return "~SMC076~";
-            if (HostVoidBackpackBack.HasLeftovers) return "~SMC225~";
-            if (OutingKits.AnyOut) return "~SMC211~" + OutingKits.OutNames(Connection.Current) + "~SMC212~";
-            int cost = 0;
+            long cost = 0;
             foreach (var service in Store.storeService) if (service != null && service.unlocked && service.isUsing) cost += service.cost;
             if (cost > 0 && cost > Store.playerCash) return "~SMC176~";
             return null;
@@ -259,10 +317,8 @@ namespace ShopTogether {
             });
             shownDay = s.day;
 
-            // Friends no longer follow the host out: they go out on their own (OutingKits). The host-only places
-            // (Dr. Jackson, other mods' locations) are not shown on a friend's screen.
-            // In the shop: the same shutter and counter as the host.
-            if (s.location == null && OutingKits.Here == null && OutingKits.Joined == null && !s.onMap && !TransitUI.IsOpen) Visual(() => {
+            // Out at night the screen goes along with the host (OutingKits). In the shop: the same shutter and counter as the host.
+            if (s.location == null && OutingKits.Joined == null && !s.onMap && !TransitUI.IsOpen) Visual(() => {
                 var shutter = StoreShutterButton.Instance;
                 if (shutter != null) {
                     if (HostPhase.ShutterClosed() != s.shutterClosed) shutter.ToggleShutterDoor();
@@ -285,52 +341,6 @@ namespace ShopTogether {
 
     // ---------------- friend-side interception of the day flow ----------------
 
-    [HarmonyPatch(typeof(MapUIManager), "Travel")]
-    internal static class FriendTravel {
-        [HarmonyPriority(Priority.First)]
-        static bool Prefix(AfterhourLocation location) {
-            if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
-            // Every refusal says why: a click that silently does nothing looks like a broken door.
-            if (location == null) return false;
-            if (!ReplicaSession.IsReplica) { RemoteActions.Notice("~SMC242~"); return false; }
-            if (OutingKits.Here != null || OutingKits.Joined != null) { RemoteActions.Notice("~SMC241~"); return false; }
-            if (!OutingKits.FriendMayGo(location.Id)) {
-                // Dr. Jackson and other mods' places: only together with the host, while the host is there.
-                if (EmporiumEntry.Instance != null) EmporiumEntry.Instance.selectedBackpack = null;   // coming along shares the host's ground
-                var host = HostPhase.Last;
-                if (host != null && !host.away && host.location == location.Id) RemoteActions.Forward(RemoteActions.Adapter("Join", 0), null, new object[0]);
-                else RemoteActions.Notice("~SMC216~");
-                return false;
-            }
-            var e = EmporiumEntry.Instance;
-            GameItem pack = e != null ? e.selectedBackpack : null;
-            if (e != null) e.selectedBackpack = null;
-            RemoteActions.Forward(RemoteActions.Adapter("Go", 2), null, new object[] { location.Id, pack });
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(MapUIManager), "Return")]
-    internal static class FriendReturn {
-        [HarmonyPriority(Priority.First)]
-        static bool Prefix(MapUIManager __instance) {
-            if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
-            if (OutingKits.Joined != null) { if (ReplicaSession.IsReplica && LocalControl.Focused) RemoteActions.Forward(RemoteActions.Adapter("Unjoin", 0), null, new object[0]); return false; }
-            var kit = OutingKits.Mine;
-            if (!ReplicaSession.IsReplica) { RemoteActions.Notice("~SMC242~"); return false; }
-            if (OutingKits.Here == null) { if (!OutingKits.LeaveStale() && LocalControl.UserAction) RemoteActions.Notice("~SMC247~"); return false; }   // clear a stale view, or explain why there is nowhere to return from
-            if (kit == null) { RemoteActions.Notice("~SMC242~"); return false; }
-            Action go = () => RemoteActions.Forward(RemoteActions.Adapter("Back", 0), null, new object[0]);
-            if (kit.ground.childItems.Count == 0 || GenericConfirmationUIManager.Instance == null) { go(); return false; }
-            string warning = null;
-            try { var location = AfterhourLocation.Get(OutingKits.Here); if (location != null) warning = location.GetLeaveWarning(); } catch { }
-            if (string.IsNullOrEmpty(warning)) warning = LocHelper.GetLocalizedMechanic("afterhour_items_lost_warning");
-            GenericConfirmationUIManager.Instance.OpenPanel(warning, LocHelper.GetLocalizedMechanic("afterhour_confirm_leave"), LocHelper.GetLocalizedMechanic("afterhour_confirm_cancel"),
-                delegate { GenericConfirmationUIManager.Instance.ClosePanel(); go(); }, delegate { GenericConfirmationUIManager.Instance.ClosePanel(); });
-            return false;
-        }
-    }
-
     [HarmonyPatch(typeof(EndOfDayUIManager), "OnToggled")]
     internal static class FriendService {
         [HarmonyPriority(Priority.First)]
@@ -348,7 +358,6 @@ namespace ShopTogether {
             if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
             if (!ReplicaSession.IsReplica || ___currentInspectingItem == null || !LocalControl.Focused) return false;
             int issues = (__instance.toggle1.isOn ? 1 : 0) | (__instance.toggle2.isOn ? 2 : 0) | (__instance.toggle3.isOn ? 4 : 0) | (__instance.toggle4.isOn ? 8 : 0) | (__instance.toggle5.isOn ? 16 : 0);
-            if (issues == 0) return false;
             RemoteActions.Forward(RemoteActions.Adapter("Confront", 2), null, new object[] { ___currentInspectingItem, issues });
             return false;
         }

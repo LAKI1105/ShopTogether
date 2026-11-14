@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -67,7 +67,15 @@ namespace ShopTogether {
     [HarmonyPatch]
     internal static class ReplicaDialogueInput {
         static IEnumerable<MethodBase> TargetMethods(){yield return AccessTools.Method(typeof(DialogUIManager),"OnAdvancePressed");yield return AccessTools.Method(typeof(DialogUIManager),"SelectChoice");}
-        [HarmonyPriority(Priority.First)] static bool Prefix(MethodBase __originalMethod,object[] __args){if(!ReplicaSession.ClientStore)return true;var session=Connection.Current;if(session!=null&&session.Ready&&LocalControl.Focused&&!WorldReplica.Applying)session.Send(new Request{kind=RequestKind.ShopAction,items=new int[0],operation=(int)(__originalMethod.Name=="SelectChoice"?ShopOperation.ChooseDialogue:ShopOperation.AdvanceDialogue),index=__args.Length==0?0:(int)__args[0],worldVersion=session.World.Presentation.DialogRevision});return false;}
+        [HarmonyPriority(Priority.First)] static bool Prefix(MethodBase __originalMethod,object[] __args){
+            var session=Connection.Current;
+            if(!ReplicaSession.ClientStore){
+                if(session!=null&&session.IsHost&&session.Ready&&LocalControl.UserAction&&!NativeActions.Executing&&RemoteActions.CurrentOwner<0&&!DialogueIntent.Available(session,0)){
+                    RemoteActions.Notice(RemoteActions.TakeNote());return false;
+                }
+                return true;
+            }
+            if(session!=null&&session.Ready&&LocalControl.Focused&&!WorldReplica.Applying)session.Send(new Request{kind=RequestKind.ShopAction,items=new int[0],operation=(int)(__originalMethod.Name=="SelectChoice"?ShopOperation.ChooseDialogue:ShopOperation.AdvanceDialogue),index=__args.Length==0?0:(int)__args[0],worldVersion=session.World.Presentation.DialogRevision});return false;}
     }
     [HarmonyPatch]
     internal static class ReplicaCustomerSimulation {

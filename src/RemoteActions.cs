@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
@@ -35,7 +35,30 @@ namespace ShopTogether {
         /// <summary>Host side: a message for the friend whose action just ran (sent with the result).</summary>
         internal static string PendingNote;
         internal static string TakeNote() { string n = PendingNote; PendingNote = null; if (n != null && n.Length > 120) n = n.Substring(0, 120); return n; }
-        static string AtCommissary() { return OutingKits.FriendAt(CurrentOwner, "commissary") ? null : "~SMC214~"; }
+        // Host: the same conditions the dismiss button and the alarm button check in the base game.
+        internal static string DismissGuard() {
+            var s = PlayerStore.Instance;
+            if (s == null || !s.IsClientPresent()) return "~SMC231~";
+            if (s.lockNextBellFlag > 0 || !(s.IsClientDimissable() || s.devMode)) return "~SMC302~";
+            return null;
+        }
+        // The bell sends the customer away, or calls the next one; when it would do nothing, say why.
+        static string BellGuard() {
+            var s = PlayerStore.Instance;
+            if (s == null || s.lockNextBellFlag > 0 || s.storeState != PlayerStore.StoreState.OPEN) return "~SMC125~";
+            if (s.IsClientPresent()) return s.IsClientDimissable() || s.devMode ? null : "~SMC302~";
+            return s.CanNextClient() ? null : "~SMC308~";
+        }
+        internal static string AlarmGuard() {
+            var s = PlayerStore.Instance;
+            if (s == null || !s.IsClientPresent()) return "~SMC231~";
+            if (StoreReputation.IsPerkUnlocked("SEC_ALARM_IGNORED")) return "~SMC125~";
+            if (s.isClientBeingArrested || s.isHandlingShootout || s.currentClientInstance.GetClientBlueprint().reported) return "~SMC337~";
+            var button = UnityEngine.Object.FindObjectOfType<StoreSecButton>();
+            if (button == null || !button.IsClientArrestable()) return "~SMC337~";
+            return null;
+        }
+        static string AtCommissary() { return OutingKits.HostAt("commissary") ? null : "~SMC214~"; }
         internal static string LastNote = "";
         internal static float NoteUntil;
 
@@ -68,7 +91,6 @@ namespace ShopTogether {
             // A friend's click that cannot be sent says so instead of doing nothing.
             if (!session.Ready) { Notice("~SMC242~"); return false; }
             if (e == null) { Refused++; Notice("~SMC128~"); return false; }
-            if (HostPhase.Away) { Notice(HostPhase.Text); return true; }
             var call = Encode(e, instance, args);
             if (call == null) { Refused++; Notice("~SMC128~"); return true; }
             session.SendRemote(call);
@@ -82,13 +104,11 @@ namespace ShopTogether {
             if (built) return; built = true;
 
             // --- machines, repairs and item tools: every argument is an item, an inventory or a plain value ---
-            Add(M(() => typeof(AnimalCage).GetMethod("Repair", BF)));
-            Add(M(() => typeof(ReactorHelper).GetMethod("RepairWithJunk", BF)));
-            Add(M(() => typeof(ReactorHelper).GetMethod("RepairWithScrap", BF)));
-            Add(M(() => typeof(ModuleHelper).GetMethod("RepairExtractor", BF)));
+            // Repairs are effects of the host-validated item Target action. Do not
+            // expose their lower-level helpers, which assume material/type checks ran.
             Add(M(() => typeof(MachineAutoButcher).GetMethod("ButcherContent", BF)));
-            Add(M(() => typeof(MachineAutoButcher).GetMethod("CopySettings", BF)));
-            Add(M(() => typeof(MachineAutoButcher).GetMethod("PasteSettings", BF)));
+            // The butcher's copy/paste: copying fills each player's own clipboard; pasting sends the copied
+            // settings (MachineButtonPress), so neither is forwarded as it is.
             Add(M(() => typeof(MachineAutoButcher).GetMethod("Run", BF)));
             Add(M(() => typeof(MachineCassettePlayer).GetMethod("OnNextButtonPressed", BF)));
             Add(M(() => typeof(MachineCassettePlayer).GetMethod("OnPlayButtonPressed", BF)));
@@ -101,30 +121,30 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(ScratchInteraction).GetMethod("Start", BF)));
             Add(M(() => typeof(StorageExpansionHelper).GetMethod("SetTabName", BF)));
             Add(M(() => typeof(VendingMachineHelper).GetMethod("TransferCashToPlayer", BF)));
-            Add(M(() => typeof(VendingMachineHelper).GetMethod("UnlockVendingMachine", BF)));
-            Add(M(() => typeof(VendingFountainHelper).GetMethod("UnlockVendingFountain", BF)));
+            // VendingMachineHelper.UnlockVendingMachine is a host dialogue/upgrade effect, not a standalone request.
+            // VendingFountainHelper.UnlockVendingFountain is a host dialogue/upgrade effect, not a standalone request.
 
             // --- store-level player actions: the target object is a singleton both machines have ---
-            Add(M(() => typeof(PlayerStore).GetMethod("TryPlayerDismissCurrentClient", BF)), Singleton(), k => PlayerStore.Instance);
-            Add(M(() => typeof(PlayerStore).GetMethod("ArrestCurrentClientForStolenGoods", BF)), Singleton(), k => PlayerStore.Instance);
-            Add(M(() => typeof(PlayerStore).GetMethod("TakeMortgage", BF)), Singleton(), k => PlayerStore.Instance);
-            Add(M(() => typeof(PlayerStore).GetMethod("PayWeeklyMortgage", BF)), Singleton(), k => PlayerStore.Instance);
-            Add(M(() => typeof(PlayerStore).GetMethod("BuyOutStore", BF)), Singleton(), k => PlayerStore.Instance);
-            // The commissary: a friend trades there on their own outing; what they buy lands on their own ground.
+            Add(M(() => typeof(PlayerStore).GetMethod("TryPlayerDismissCurrentClient", BF)), Singleton(), k => PlayerStore.Instance, null, DismissGuard);
+            // These are dialogue effects, not independent player intents. The host's
+            // current, enabled dialogue choice invokes them; exposing the raw methods
+            // would bypass mortgage eligibility and permit repeated deductions.
+            // The commissary: everyone is there with the host; what is bought lands on the host's outing ground.
             Add(M(() => typeof(CommissaryData).GetMethod("BuyItem", BF)), Singleton(), k => PlayerStore.Instance != null ? PlayerStore.Instance.commissaryData : null, null, AtCommissary);
             Add(M(() => typeof(CommissaryUIManager).GetMethod("OnRedeemAllButtonClick", BF)), Singleton(), k => CommissaryUIManager.Instance, null, AtCommissary);
             Add(M(() => typeof(CommissaryUIManager).GetMethod("OnRedeemAllLottery", BF)), Singleton(), k => CommissaryUIManager.Instance, null, AtCommissary);
             // NetworkUpgrade.Unlock is not forwarded on its own: the Wild network pays in its UI first (ShopActions.BuyWild).
-            Add(M(() => typeof(StoreBell).GetMethod("RingBell", BF)), Singleton(), k => UnityEngine.Object.FindObjectOfType<StoreBell>());
-            Add(M(() => typeof(StoreTransferButton).GetMethod("OnClick", BF)), Singleton(), k => UnityEngine.Object.FindObjectOfType<StoreTransferButton>());
+            Add(M(() => typeof(StoreBell).GetMethod("RingBell", BF)), Singleton(), k => UnityEngine.Object.FindObjectOfType<StoreBell>(), null, BellGuard);
+            AddAdapter(M(() => typeof(CounterTransferIntent).GetMethod("TransferCounter", BF)));
 
             // --- names a player types on an item, and the fake-condition labeler ---
             Add(M(() => typeof(GeneralHelper).GetMethod("SetCustomName", BF)));
             Add(M(() => typeof(GeneralHelper).GetMethod("RemoveCustomName", BF)));
-            Add(M(() => typeof(GeneralHelper).GetMethod("SetCustomNameModel", BF)));
+            // SetCustomNameModel has no player caller in this installed version.
             AddAdapter(M(() => typeof(LabelAdapters).GetMethod("SetLabel", BF)));
             AddAdapter(M(() => typeof(LabelAdapters).GetMethod("SetAppraisal", BF)));
             AddAdapter(M(() => typeof(RequestAdapters).GetMethod("Fill", BF)));
+            AddAdapter(M(() => typeof(ScannerIntent).GetMethod("RecordScan", BF)));
             Add(M(() => typeof(AppraisalServiceHelper).GetMethod("OnEstimate", BF)));
             AddAdapter(M(() => typeof(LabelAdapters).GetMethod("RepeatLabels", BF)), 2000);
 
@@ -138,12 +158,10 @@ namespace ShopTogether {
             Add(M(() => typeof(StoreShutterButton).GetMethod("OpenShutter", BF)), Singleton(), k => StoreShutterButton.Instance, null, DayGuards.Open);
             Add(M(() => typeof(StoreShutterButton).GetMethod("EndAndClose", BF)), Singleton(), k => StoreShutterButton.Instance, null, DayGuards.Close);
             Add(M(() => typeof(EndOfDayUIManager).GetMethod("OnEndDayButtonClick", BF)), Singleton(), k => EndOfDayUIManager.Instance, null, DayGuards.Sleep);
-            // Night outings: a friend goes out and comes back on their own (the host is never moved by a friend).
-            AddAdapter(M(() => typeof(OutingKits).GetMethod("Go", BF)));
-            AddAdapter(M(() => typeof(OutingKits).GetMethod("Back", BF)));
+            // Night outings: one outing for everyone. Anyone may start it or end it; it runs on the host and every screen goes along.
             AddAdapter(M(() => typeof(OutingKits).GetMethod("Scavenge", BF)));
-            AddAdapter(M(() => typeof(OutingKits).GetMethod("Join", BF)));
-            AddAdapter(M(() => typeof(OutingKits).GetMethod("Unjoin", BF)));
+            AddAdapter(M(() => typeof(OutingKits).GetMethod("GoOut", BF)));
+            AddAdapter(M(() => typeof(OutingKits).GetMethod("ReturnHome", BF)));
             AddAdapter(M(() => typeof(OutingAdapters).GetMethod("Press", BF)));
             AddAdapter(M(() => typeof(OutingAdapters).GetMethod("ToggleService", BF)));
             AddAdapter(M(() => typeof(OutingAdapters).GetMethod("Confront", BF)));
@@ -151,7 +169,16 @@ namespace ShopTogether {
 
             // --- settings on machine panels (butcher, heating plate, feed dispenser, marking pen) ---
             AddAdapter(M(() => typeof(MachineSettings).GetMethod("SetTag", BF)), 4000);
+            AddAdapter(M(() => typeof(MachineSettings).GetMethod("SetSettings", BF)), 16000);
+            AddAdapter(M(() => typeof(ControlIntent).GetMethod("SetControl", BF)));
+            AddAdapter(M(() => typeof(SceneObjects).GetMethod("LampClick", BF)));
+            AddAdapter(M(() => typeof(SceneObjects).GetMethod("DebugBellClick", BF)));
             AddAdapter(M(() => typeof(MachineButtonPress).GetMethod("PressButton", BF)));
+            AddAdapter(M(() => typeof(CompanyIntent).GetMethod("CompanyAction", BF)),16000);
+            AddAdapter(M(() => typeof(CustomPanelRelay).GetMethod("CustomPanelAction", BF)),1000);
+            AddAdapter(M(() => typeof(CargoIntent).GetMethod("CargoSave", BF)),16000);
+            AddAdapter(M(() => typeof(StoragePagesIntent).GetMethod("StoragePageAction", BF)));
+            AddAdapter(M(() => typeof(StoragePagesIntent).GetMethod("UndoPage", BF)));
 
             // --- found by the full audit ---
             AddAdapter(M(() => typeof(ShopActions).GetMethod("Inspect", BF)));
@@ -164,9 +191,11 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(ShopActions).GetMethod("UndoSort", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("SetAppraisalAllowed", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("ApplyPerk", BF)));
-            AddAdapter(M(() => typeof(OutingSupplies).GetMethod("UseBandage", BF)));
-            AddAdapter(M(() => typeof(DumpingGround).GetMethod("DumpWaste", BF)));
-            AddAdapter(M(() => typeof(DumpingGround).GetMethod("FeedSerpico", BF)));
+            AddAdapter(M(() => typeof(ShopActions).GetMethod("Weigh", BF)));
+            AddAdapter(M(() => typeof(ShopActions).GetMethod("CloseShop", BF)));
+            AddAdapter(M(() => typeof(ShopActions).GetMethod("ShutterIntent", BF)));
+            AddAdapter(M(() => typeof(ShopActions).GetMethod("Expose", BF)));
+            AddAdapter(M(() => typeof(ShopActions).GetMethod("BrowseUpgrades", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("ConfirmPanel", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("CancelPanel", BF)));
             // Human visitor: only these bounded actions may be relayed to the host's active visit.
@@ -182,10 +211,10 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("Advance", BF)));
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("Choose", BF)));
             // Item behaviours (organs and behaviours added by other mods) when one item is used on another.
-            Add(M(() => typeof(ItemBehaviourManager).GetMethod("Target", BF)), Singleton(), k => ItemBehaviourManager.current);
+            // Target is sent once through the unified GameItem intent, including behaviour callbacks.
             Add(M(() => typeof(ItemBehaviourManager).GetMethod("Use", BF)), Singleton(), k => ItemBehaviourManager.current);
             // The alarm button under the counter, and the hopper outlet's "transfer now".
-            Add(M(() => typeof(PlayerStore).GetMethod("OnCustomerReported", BF)), Singleton(), k => PlayerStore.Instance, null, () => PlayerStore.Instance != null && PlayerStore.Instance.IsClientPresent() ? null : "~SMC231~");
+            Add(M(() => typeof(PlayerStore).GetMethod("OnCustomerReported", BF)), Singleton(), k => PlayerStore.Instance, null, AlarmGuard);
             Add(M(() => typeof(HopperHelper).GetMethod("RunOutlet", BF)));
             AddAdapter(M(() => typeof(CoordinatorPresets).GetMethod("Save", BF)), CoordinatorPresets.MaxJson);
 
@@ -228,9 +257,10 @@ namespace ShopTogether {
             if (text == null) return;
             if (text.Length > 120) text = text.Substring(0, 120);
             float now = Time.realtimeSinceStartup;
-            if (text == lastNotice && now - lastNoticeAt < 1.5f) return;   // the same message again at once (a held button, every frame) is shown once
+            // Every response refreshes the action status, even when identical popup text is throttled.
+            LastNote = Loc.Text(text); NoteUntil = now + 4f;
+            if (text == lastNotice && now - lastNoticeAt < 1.5f) return;
             lastNotice = text; lastNoticeAt = now;
-            LastNote = Loc.Text(text); NoteUntil = Time.realtimeSinceStartup + 4f;
             try { if (StoreUIManager.Instance != null) StoreUIManager.Instance.Notify(Loc.Text(text)); } catch { }
         }
 
@@ -245,11 +275,14 @@ namespace ShopTogether {
             Build();
             Entry e;
             if (call == null || call.key == null || !byKey.TryGetValue(call.key, out e)) return "~SMC030~";
-            if (e.Method.DeclaringType != typeof(VisitorShare) && ProbablyMultiplayerCompat.BlockRemote(session, owner)) return "~SMC271~";
+            // Without a working Probably Multiplayer bridge, or during its trade, hold back what can take part in its
+            // trades (the counter, customers, the bell and shutter); machines, outings and the rest keep working.
+            bool tradeSide = e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton);
+            if (tradeSide && ProbablyMultiplayerCompat.BlockRemote(session, owner)) return "~SMC271~";
             if (ProbablyMultiplayerCompat.VisitActive && (e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton))) return "~SMC271~";
             if (e.HostOnly != null) return e.HostOnly;
             if ((e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades)) && !CounterTrades.Allowed(owner)) return "~SMC217~";
-            if (HostPhase.Busy(session.Ready) != null) return "~SMC080~";
+            string busy = HostPhase.Busy(session.Ready); if (busy != null) return busy;
             if (e.Guard != null) { string blocked; try { blocked = e.Guard(); } catch { blocked = "~SMC125~"; } if (blocked != null) return blocked; }
             int n = e.Parameters.Length;
             if (call.kinds == null || call.values == null || call.kinds.Length != n || call.values.Length != n) return "~SMC171~";
@@ -271,6 +304,7 @@ namespace ShopTogether {
                         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) || !session.World.Items.TryGetValue(id, out item) || item == null) return "~SMC095~";
                         if (ProbablyMultiplayerCompat.Protected(item)) return "~SMC271~";
                         if (!want.IsInstanceOfType(item)) return "~SMC171~";
+                        if (!DialogueIntent.CanTouch(session, item)) return "~SMC353~";
                         if (!session.Leases.Available(owner, id, now)) return "~SMC096~";
                         var at = session.World.Address(item.parentInventory); if(at != null && !OutingKits.MayUse(owner,at.root)) return "~SMC217~";
                         args[i] = item; break;
@@ -278,10 +312,11 @@ namespace ShopTogether {
                     case "inv": {
                         GameInventory inv;
                         if (value == null || !session.World.Inventories.TryGetValue(value, out inv) || inv == null || !want.IsInstanceOfType(inv)) return "~SMC111~";
+                        if (!DialogueIntent.CanTouchInventory(session, inv)) return "~SMC353~";
                         var at = session.World.Address(inv); if(at != null && !OutingKits.MayUse(owner,at.root)) return "~SMC217~";
                         args[i] = inv; break;
                     }
-                    case "b": if (want != typeof(bool)) return "~SMC171~"; args[i] = value == "1"; break;
+                    case "b": if (want != typeof(bool) || (value != "0" && value != "1")) return "~SMC171~"; args[i] = value == "1"; break;
                     case "i": { int v; if (want != typeof(int) || !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out v)) return "~SMC171~"; args[i] = v; break; }
                     case "l": { long v; if (want != typeof(long) || !long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out v)) return "~SMC171~"; args[i] = v; break; }
                     case "f": { float v; if (want != typeof(float) || !float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out v) || float.IsNaN(v) || float.IsInfinity(v)) return "~SMC171~"; args[i] = v; break; }
@@ -305,7 +340,16 @@ namespace ShopTogether {
                 if (ticket == null || !ticket.IsTag("SCRATCHER_TAG") || !GeneralHelper.IsItemOwned(ticket) || slot < 1 || slot > 3 || ticket.GetTagReadonly("SCRATCHER_STATE" + slot).GetInt() == 1) return "~SMC171~";
             }
             foreach (var arg in args) if (arg is GameItem) { PanelRelay.SourceItem = (GameItem)arg; break; }
-            try { e.Method.Invoke(target, args); }
+            if (e.Method.DeclaringType == typeof(CommissaryData) && e.Method.Name == "BuyItem") {
+                var data = target as CommissaryData; var product = data != null ? data.GetItemData(args[0] as string) : null;
+                if (product == null || product.StockCount <= 0) return "~SMC325~";
+                if (data.redeemedCredit < product.price) return "~SMC324~";
+            }
+            try {
+                object result = e.Method.Invoke(target, args);
+                if (result is bool && !(bool)result && PendingNote == null) return "~SMC321~";
+                if (e.Method.DeclaringType == typeof(HopperHelper) && e.Method.Name == "RunAndRecord" && result is int && (int)result == 0 && PendingNote == null) return "~SMC321~";
+            }
             catch (TargetInvocationException error) { Debug.LogWarning("[ShopTogether] remote " + e.Key + " failed on host: " + error.InnerException); return "~SMC085~"; }
             Forwarded++;
             return null;
@@ -317,7 +361,9 @@ namespace ShopTogether {
         static readonly Dictionary<int,float> requested = new Dictionary<int,float>();
         internal static void Reset() { requested.Clear(); }
         internal static void Start(GameItem item) {
-            if (item == null || item.parentInventory == null || !item.IsTag("SCRATCHER_TAG") || !item.IsTag("SCRATCHER_NEW_TAG") || !GeneralHelper.IsItemOwned(item)) return;
+            if (item == null || item.parentInventory == null) { AuthorityIntent.Refuse("~SMC095~"); return; }
+            if (!item.IsTag("SCRATCHER_TAG") || !GeneralHelper.IsItemOwned(item)) { AuthorityIntent.Refuse("~SMC347~"); return; }
+            if (!item.IsTag("SCRATCHER_NEW_TAG")) return;
             item.DisableTag("SCRATCHER_NEW_TAG"); item.unitValue = 0L; item.RemoveGameItemType("LOTTERY"); LotteryHelper.OnScratcherStarted();
         }
         internal static void Request() {
@@ -344,17 +390,19 @@ namespace ShopTogether {
             var session = Connection.Current;
             if (!ReplicaSession.ClientStore) {
                 // Host: its own clicks respect items a friend is currently working on.
-                if (session == null || !session.IsHost || !session.Ready || !LocalControl.UserAction) return true;
+                if (session == null || !session.IsHost || !session.Ready || !LocalControl.UserAction || RemoteActions.CurrentOwner > 0 || NativeActions.Executing) return true;
                 double now = Time.realtimeSinceStartup;
                 if (__instance is GameItem && !session.Leases.Available(0, session.World.Id((GameItem)__instance), now)) { RemoteActions.Notice("~SMC096~"); return false; }
                 if (__args != null) foreach (var a in __args) if (a is GameItem && !session.Leases.Available(0, session.World.Id((GameItem)a), now)) { RemoteActions.Notice("~SMC096~"); return false; }
+                var hostEntry = RemoteActions.Find(__originalMethod);
+                if (hostEntry != null && hostEntry.Guard != null) { string reason = hostEntry.Guard(); if (reason != null) { RemoteActions.Notice(reason); return false; } }
                 return true;
             }
             if (WorldReplica.Applying) return true;                                              // applying host data
             var e = RemoteActions.Find(__originalMethod);
             if (e == null) return true;
-            if (session == null || !session.Ready || !ReplicaSession.SceneReady) return false;
             if (!LocalControl.UserAction) return false;                                       // the replica never acts on its own
+            if (session == null || !session.Ready || !ReplicaSession.SceneReady) { RemoteActions.Notice("~SMC242~"); return false; }
             if (e.HostOnly != null && !HostPhase.Away) { RemoteActions.Refused++; RemoteActions.Notice(e.HostOnly); return false; }
             RemoteActions.Forward(e, __instance, __args ?? new object[0]);
             return false;
@@ -370,30 +418,38 @@ namespace ShopTogether {
         }
         /// <summary>Host side: same as choosing an entry in the labeler dropdown.</summary>
         internal static void SetLabel(GameItem item, string category, int index) {
+            if (item == null || !GeneralHelper.IsItemOwned(item)) { AuthorityIntent.Refuse("~SMC347~"); return; }
             var feature = Editable(item, category);
             List<ItemCondition> list;
-            if (feature == null || !ItemConditionList.conditionLookup.TryGetValue(category, out list) || index < 0 || index >= list.Count) return;
+            if (feature == null || !ItemConditionList.conditionLookup.TryGetValue(category, out list) || index < 0 || index >= list.Count) { AuthorityIntent.Refuse("~SMC305~"); return; }
             feature.fakeCondition = list[index];
             feature.SetExposed(false);
             WaterFeatureHelper.OnWaterLabelUpdated(feature, index);
         }
         /// <summary>Host side: the price typed in the appraisal-service field of the inspection panel.</summary>
         internal static void SetAppraisal(GameItem item, int value) {
-            if (item == null || value < 0 || value > 1000000000) return;
+            if (item == null || value < 0 || value > 1000000000) { AuthorityIntent.Refuse("~SMC305~"); return; }
             item.ModifyTag("APPRAISAL_DEFAULT_VALUE", state => state.Enable().SetInt(value));
         }
         /// <summary>Host side: same as the labeler's repeat button, with the friend's remembered labels ("category=identifier" lines).</summary>
         internal static void RepeatLabels(GameItem item, string packed) {
-            if (item == null || packed == null || packed.Length > 2000) return;
+            if (item != null && !GeneralHelper.IsItemOwned(item)) { AuthorityIntent.Refuse("~SMC347~"); return; }
+            if (item == null || packed == null || packed.Length > 2000) { AuthorityIntent.Refuse("~SMC305~"); return; }
+            var selected = new Dictionary<string,int>();
             foreach (var line in packed.Split('\n')) {
+                if (line.Length == 0) continue;
                 int cut = line.IndexOf('=');
-                if (cut <= 0) continue;
+                if (cut <= 0) { AuthorityIntent.Refuse("~SMC305~"); return; }
                 var feature = Editable(item, line.Substring(0, cut));
                 List<ItemCondition> list;
                 if (feature == null || !ItemConditionList.conditionLookup.TryGetValue(feature.category, out list)) continue;
                 string identifier = line.Substring(cut + 1);
-                foreach (var condition in list) if (condition.identifier == identifier) { feature.fakeCondition = condition; feature.SetExposed(false); break; }
+                int index = list.FindIndex(condition => condition.identifier == identifier);
+                if (index < 0) { AuthorityIntent.Refuse("~SMC305~"); return; }
+                selected[feature.category] = index;
             }
+            if (selected.Count == 0) { AuthorityIntent.Refuse("~SMC321~"); return; }
+            foreach (var pair in selected) SetLabel(item,pair.Key,pair.Value);
         }
     }
 
@@ -406,7 +462,14 @@ namespace ShopTogether {
     internal static class LabelerChoose {
         [HarmonyPriority(Priority.First)]
         static bool Prefix(LabelerElement __instance, ItemFeature ___thisFeature) {
-            if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
+            if (!ReplicaSession.ClientStore || WorldReplica.Applying) {
+                var s = Connection.Current; var item = LabelerState.Current;
+                if (!WorldReplica.Applying && s != null && s.IsHost && s.Ready && LocalControl.UserAction && item != null) {
+                    if (!GeneralHelper.IsItemOwned(item)) { RemoteActions.Notice("~SMC347~"); return false; }
+                    if (!AuthorityIntent.FreeTree(s, Math.Max(0, RemoteActions.CurrentOwner), item)) { RemoteActions.Notice("~SMC096~"); return false; }
+                }
+                return true;
+            }
             if (!ReplicaSession.IsReplica || ___thisFeature == null || LabelerState.Current == null || !LocalControl.Focused) return false;
             List<ItemCondition> list;
             int index = __instance.dropdown.value;
@@ -423,11 +486,16 @@ namespace ShopTogether {
         static IEnumerable<MethodBase> TargetMethods() {
             foreach (var name in new[] { "FinishEditingAppraisalField", "ChangeAppraisalServicePrice" }) { var m = AccessTools.Method(typeof(InspectionUIManager), name); if (m != null) yield return m; }
         }
-        static void Postfix(GameItem ___currentInspectingItem) {
-            if (!ReplicaSession.ClientStore || WorldReplica.Applying || !ReplicaSession.IsReplica || ___currentInspectingItem == null) return;
-            var tag = ___currentInspectingItem.state != null ? ___currentInspectingItem.GetTagReadonly("APPRAISAL_DEFAULT_VALUE") : null;
-            if (tag == null) return;
-            RemoteActions.Forward(RemoteActions.Adapter("SetAppraisal", 2), null, new object[] { ___currentInspectingItem, tag.GetInt() });
+        static bool Prefix(InspectionUIManager __instance, GameItem ___currentInspectingItem, MethodBase __originalMethod, object[] __args) {
+            if (!ReplicaSession.IsReplica) return true;
+            if (!LocalControl.Focused) return false;
+            long value;
+            if (!long.TryParse(__instance.apprisalServiceInputField.text,out value)) { RemoteActions.Notice("~SMC305~"); return false; }
+            if (__originalMethod.Name == "ChangeAppraisalServicePrice") value += (int)__args[0];
+            else { AccessTools.Field(typeof(InspectionUIManager),"isEditingAppraisalField").SetValue(__instance,false); StoreUIManager.Instance.StopTyping(); }
+            if (value < 0 || value > 1000000000) { RemoteActions.Notice("~SMC305~"); return false; }
+            RemoteActions.Forward(RemoteActions.Adapter("SetAppraisal", 2), null, new object[] { ___currentInspectingItem, (int)value });
+            return false;
         }
     }
 
@@ -439,9 +507,23 @@ namespace ShopTogether {
         internal static string Key(StoreRequest r) { return r == null ? "" : (r.id ?? "") + "|" + (r.title ?? "") + "|" + (r.requiredItem ?? "") + "|" + r.requiredItemCount + "|" + r.creditReward; }
         internal static void Fill(int index, string key) {
             var list = PlayerStore.Instance != null ? PlayerStore.Instance.storeRequests : null;
-            if (list == null || index < 0 || index >= list.Count || key == null || Key(list[index]) != key || !list[index].CanFillRequest()) return;
+            if (list == null || index < 0 || index >= list.Count || key == null || Key(list[index]) != key) { AuthorityIntent.Refuse("~SMC334~"); return; }
+            if(!CanFill(list[index]))return;
             list[index].FillRequest();
             if (PCUIManager.Instance != null) { PCUIManager.Instance.OnChange(); if (PCUIManager.Instance.storePC != null) PCUIManager.Instance.storePC.RefreshState(); }
+        }
+        internal static bool CanFill(StoreRequest request) {
+            if(request==null||PlayerStore.Instance==null||!PlayerStore.Instance.storeRequests.Contains(request))return AuthorityIntent.Refuse("~SMC334~");
+            if (!request.CanFillRequest()) return AuthorityIntent.Refuse("~SMC335~");
+            var session = Connection.Current;
+            int owner = RemoteActions.CurrentOwner > 0 ? RemoteActions.CurrentOwner : 0;
+            var owned = EmporiumEntry.Instance.GetAllOwnedItems(); int needed = request.requiredItemCount;
+            if(needed<=0)return AuthorityIntent.Refuse("~SMC335~");
+            for (int n = owned.Count - 1; n >= 0 && needed > 0; n--) if (request.CanThisItemFillRequest(owned[n])) {
+                if(!AuthorityIntent.FreeTree(session,owner,owned[n]))return false;
+                needed--;
+            }
+            return true;
         }
     }
 
@@ -449,12 +531,19 @@ namespace ShopTogether {
     internal static class FriendFillRequest {
         [HarmonyPriority(Priority.First)]
         static bool Prefix(StoreRequest __instance) {
-            if (!ReplicaSession.ClientStore || WorldReplica.Applying) return true;
+            if(WorldReplica.Applying)return true;
+            if(!ReplicaSession.ClientStore){
+                var session=Connection.Current;
+                if(session==null||!session.IsHost||!session.Ready||RemoteActions.CurrentOwner>=0)return true;
+                string previous=RemoteActions.PendingNote;
+                try{if(RequestAdapters.CanFill(__instance))return true;RemoteActions.Notice(RemoteActions.PendingNote??"~SMC335~");return false;}
+                finally{RemoteActions.PendingNote=previous;}
+            }
             var list = PlayerStore.Instance != null ? PlayerStore.Instance.storeRequests : null;
             // The list on this machine is refreshed from the host, so find the request by its content, not by object.
             int index = -1; string key = RequestAdapters.Key(__instance);
             if (list != null) for (int i = 0; i < list.Count; i++) if (RequestAdapters.Key(list[i]) == key) { index = i; break; }
-            if (ReplicaSession.IsReplica && index >= 0 && LocalControl.Focused) RemoteActions.Forward(RemoteActions.Adapter("Fill", 2), null, new object[] { index, key });
+            if (ReplicaSession.IsReplica && LocalControl.Focused) RemoteActions.Forward(RemoteActions.Adapter("Fill", 2), null, new object[] { index, key });
             return false;
         }
     }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -32,35 +32,37 @@ namespace ShopTogether {
             return true;
         }
         static void ConfirmSale(Connection session, int owner, NegociationUIManager ui) {
-            PendingSale p; if (!pending.TryGetValue(owner, out p)) return; pending.Remove(owner);
+            // The friend confirms what they were shown; if the deal changed meanwhile they are told to look again.
+            PendingSale p; if (!pending.TryGetValue(owner, out p)) { RemoteActions.PendingNote = "~SMC301~"; return; } pending.Remove(owner);
             var customer = Customer(); var items = Sellable(customer);
             if (customer != p.customer || customer == null || customer.isBusinessComplete || NegociationUIManager.IsTradeLocked() ||
                 Time.realtimeSinceStartup > p.until || customer.GetBudget() != p.budget || ui.GetMultiSellValue() != p.total ||
-                items == null || items.Count != p.items.Count) return;
+                items == null || items.Count != p.items.Count) { RemoteActions.PendingNote = "~SMC301~"; return; }
             for (int i = 0; i < items.Count; i++) {
                 int id = session.World.Id(items[i]);
-                if (items[i] != p.items[i] || items[i].GetNegociatedValue() != p.values[i] || id <= 0 ||
-                    !session.Leases.Available(owner, id, Time.realtimeSinceStartup)) return;
+                if (items[i] != p.items[i] || items[i].GetNegociatedValue() != p.values[i] || id <= 0) { RemoteActions.PendingNote = "~SMC301~"; return; }
+                if (!session.Leases.Available(owner, id, Time.realtimeSinceStartup)) { RemoteActions.PendingNote = "~SMC290~"; return; }
             }
             ui.SellMultiple(items, true);
         }
-        internal static bool Allowed(int owner) {
-            var map = MapUIManager.Instance;
-            return owner <= 0 || map == null || map.Current == null ||
-                OutingKits.FriendMayGo(map.Current.Id) || OutingKits.IsJoined(owner);
-        }
+        // Everyone is where the host is (in the shop, or along at Dr. Jackson's counter), so the counter is everyone's.
+        internal static bool Allowed(int owner) { return true; }
 
         // The local tablet selects an item locally. Send that item with the actual trade action,
         // then let the host's native trade checks decide the price, money and outcome.
         internal static void CounterAction(int action, GameItem item) {
             var session = Connection.Current;
             var ui = NegociationUIManager.Instance;
-            if (session == null || ui == null || action < 0 || action > 4) return;
+            if (session == null || ui == null || action < 0 || action > 4) { RemoteActions.PendingNote = "~SMC305~"; return; }
             int owner = RemoteActions.CurrentOwner;
             // Every refusal is told to the friend who pressed the button; a silent no-op looks like "friends cannot trade".
-            if (!Allowed(owner)) { Refuse(action, "~SMC289~", "outing"); return; }
-            if (!NativeActions.ShopAvailable(session, owner)) { Refuse(action, "~SMC290~", "counter item held by someone else"); return; }
             if (action == 4) { pending.Remove(owner); return; }
+            if (!Allowed(owner)) { Refuse(action, "~SMC289~", "outing"); return; }
+            // Only what this trade uses: the one item for a single offer, the whole counter for buying or selling
+            // everything (the final "sell all" confirmation checks its own items).
+            bool free = action == 0 ? item == null || session.Leases.Available(owner, session.World.Id(item), Time.realtimeSinceStartup)
+                      : action == 3 || NativeActions.CounterAvailable(session, owner);
+            if (!free) { Refuse(action, "~SMC290~", "counter item held by someone else"); return; }
             if (!CustomerReady(action)) return;
             if (item != null) {
                 var at = session.World.Address(item.parentInventory);
@@ -102,7 +104,7 @@ namespace ShopTogether {
             var session = Connection.Current; int owner = RemoteActions.CurrentOwner;
             if (session == null || NegociationUIManager.Instance == null) return;
             if (!Allowed(owner)) { Refuse(0, "~SMC289~", "outing"); return; }
-            if (!NativeActions.ShopAvailable(session, owner)) { Refuse(0, "~SMC290~", "counter item held by someone else"); return; }
+            if (!NativeActions.CounterAvailable(session, owner)) { Refuse(0, "~SMC290~", "counter item held by someone else"); return; }
             if (!CustomerReady(0)) return;
             var before = Snapshot();
             NegociationUIManager.Instance.OnOfferAcceptClick();
@@ -119,12 +121,19 @@ namespace ShopTogether {
                 "; cash=" + (PlayerStore.Instance != null ? PlayerStore.Instance.playerCash : -1)));
         }
 
+        // The game waits for the introduction only for barter offers and information dealers; ordinary buyers and sellers
+        // are never "introduced", and requiring it refused every ordinary sale from friends.
+        internal static bool StillTalking(StoreClient c) {
+            if (c.clientIntent == StoreClient.ClientIntent.UNDEFINED) return true;
+            return !c.isIntroduced && (c.clientIntent == StoreClient.ClientIntent.BARTER || c.clientIntent == StoreClient.ClientIntent.INFORMATION_DEALER);
+        }
+
         static bool CustomerReady(int action) {
             var store = PlayerStore.Instance; var customer = Customer();
             if (store == null || store.currentClientInstance == null) { Refuse(action, "~SMC292~", "no customer at the counter"); return false; }
             if (NegociationUIManager.IsTradeLocked()) { Refuse(action, "~SMC293~", "trade locked (arrest or shootout)"); return false; }
             if (customer == null || customer.isBusinessComplete) { Refuse(action, "~SMC294~", "customer finished"); return false; }
-            if (!customer.isIntroduced || customer.clientIntent == StoreClient.ClientIntent.UNDEFINED) { Refuse(action, "~SMC295~", "customer still talking"); return false; }
+            if (StillTalking(customer)) { Refuse(action, "~SMC295~", "customer still talking"); return false; }
             return true;
         }
 
@@ -144,7 +153,7 @@ namespace ShopTogether {
             if (NegociationUIManager.IsTradeLocked()) { reason = "trade locked (arrest or shootout)"; return "~SMC293~"; }
             var c = Customer();
             if (c == null || c.isBusinessComplete) { reason = "customer finished"; return "~SMC294~"; }
-            if (!c.isIntroduced || c.clientIntent == StoreClient.ClientIntent.UNDEFINED) { reason = "customer still talking"; return "~SMC295~"; }
+            if (StillTalking(c)) { reason = "customer still talking"; return "~SMC295~"; }
             if (action == 1) {
                 long sum = 0; var e = EmporiumEntry.Instance;
                 if (e != null && e.backInvinvElement != null) foreach (var x in e.backInvinvElement.childItems) if (x != null && !GeneralHelper.IsItemOwned(x)) sum += x.GetNegociatedValue();
@@ -186,14 +195,6 @@ namespace ShopTogether {
             var button = ModReflect.Get<TabletButton>(ui, "primaryButton");
             if (button == null || button.button != __instance) return;
             var customer = store.currentClientInstance.GetClientBlueprint(); if (customer == null) return;
-            bool talking = !customer.isIntroduced || customer.clientIntent == StoreClient.ClientIntent.UNDEFINED;
-            bool poor = false;
-            if (customer.clientIntent == StoreClient.ClientIntent.SELL && EmporiumEntry.Instance != null && EmporiumEntry.Instance.backInvinvElement != null) {
-                long total=0; foreach (var item in EmporiumEntry.Instance.backInvinvElement.childItems)
-                    if (item != null && !GeneralHelper.IsItemOwned(item)) total += item.GetNegociatedValue();
-                poor = total > store.playerCash;
-            }
-            if (!talking && !poor) return;
             if (ShopActions.FriendAcceptsSpecialDeal()) RemoteActions.Forward(RemoteActions.Adapter("AcceptDeal",0),null,new object[0]);
             else RemoteActions.Forward(RemoteActions.Adapter("CounterAction",2),null,new object[]{customer.clientIntent==StoreClient.ClientIntent.SELL?1:2,null});
         }

@@ -1,4 +1,4 @@
-#if LAN_PROBE
+﻿#if LAN_PROBE
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -8,6 +8,17 @@ namespace ShopTogether {
  internal static partial class RuntimeProbe {
   static IEnumerator RunExtended(Connection root,bool host){
    string suite=Argument("--smc-suite");
+   if(suite=="outing138")return host?CompletionOutingsHost138(root):CompletionOutingsClient138(root);
+   if(suite=="completion138")return host?CompletionHost138(root):CompletionClient138(root);
+   if(suite=="authority137")return host?AuthorityHost137(root):AuthorityClient137(root);
+   if(suite=="audit135"||suite=="interact135")return host?AuditHost135(root):AuditClient135(root);
+   if(suite=="custom135")return host?CustomHost135(root):CustomClient135(root);
+   if(suite=="book136")return host?BookHost136(root):BookClient136(root);
+   if(suite=="equipment136")return host?EquipmentHost136(root):EquipmentClient136(root);
+   if(suite=="overflow136")return host?OverflowHost136(root):OverflowClient136(root);
+   if(suite=="cargo135")return host?CargoHost135(root):CargoClient135(root);
+   if(suite=="authority134")return host?AuthorityHost134(root):AuthorityClient134(root);
+   if(suite=="authority134recipe")return host?AuthorityRecipeHost134(root):AuthorityRecipeClient134(root);
    if(suite=="mouse1327")return host?MouseHost1327(root):MouseClient1327(root);
    if(suite=="trade1327")return host?TradeHost1327(root):TradeClient1327(root);
    if(suite=="stress1327")return host?StressHost1327(root):StressClient1327(root);
@@ -18,17 +29,10 @@ namespace ShopTogether {
    if(suite=="probably_real")return host?ProbablyRealHost(root):ProbablyRealGuest(root);
 #endif
    if(suite=="probably_compat")return host?ProbablyCompatHost(root):ProbablyCompatGuest(root);
-   if(suite=="immediate1324")return host?ImmediateHost1324(root):ImmediateGuest1324(root);
-   if(suite=="return1323")return host?ReturnHost1323(root):ReturnGuest1323(root);
-   if(suite=="session1323")return host?SessionHost1323(root):SessionGuest1323(root);
-   if(suite=="dump1322")return host?DumpHost1322(root):DumpGuest1322(root);
-   if(suite=="hint1322")return host?HintHost1322(root):HintGuest1322(root);
    if(suite=="release1321")return host?Release1321Host(root):Release1321Client(root);
-   if(suite=="boundary1320")return host?Boundary1320Host(root):Boundary1320Client(root);
    if(suite=="deals1320")return host?Deals1320Host(root):Deals1320Client(root);
    if(suite=="guard1319")return host?Guard1319Host(root):Guard1319Client(root);
    if(suite=="ui1319")return host?UI1319Host(root):UI1319Client(root);
-   if(suite=="throttled")return host?ThrottledOutingHost(root):ThrottledOutingClient(root);
    if(suite=="recovery")return host?Recovery1315Host(root):Recovery1315Client(root);
    if(suite=="lottery")return host?Lottery1313Host(root):Lottery1313Client(root);
    if(suite=="overnight")return host?Overnight1313Host(root):Overnight1313Client(root);
@@ -37,13 +41,10 @@ namespace ShopTogether {
    if(suite=="clock")return host?Clock1312Host(root):Clock1312Client(root);
    if(suite=="panels")return host?PanelsHost(root):PanelsClient(root);
    if(suite=="gun"||suite=="death")return host?GunHost(root):GunClient(root);
-   if(suite=="join")return host?JoinHostTest(root):JoinClientTest(root);
-   if(suite=="outing")return host?OutHost(root):OutClient(root);
    if(suite=="extra")return host?ExtraHost(root,Find(root,"SMC_CLIENT_ITEM")):ExtraClient(root);
    if(suite=="phone")return host?PhoneHost(root):PhoneClient(root);
    if(suite=="machines")return host?MachinesHost(root):MachinesClient(root);
    if(suite=="features")return host?FeaturesHost(root):FeaturesClient(root);
-   if(suite=="overflow")return host?OverflowHost(root):OverflowClient(root);
    throw new InvalidOperationException("Unknown suite: "+suite);
   }
   static int phoneChoices;
@@ -81,20 +82,7 @@ namespace ShopTogether {
    Require(phoneChoices==0,"phone dialogue result never runs locally on client");Require(PhoneUIManager.Instance.phonePanel.activeSelf,"client stays on shared phone");Signal("PHONE_SAME");
    wait=Wait(()=>Received("PHONE_DISCONNECT"),"host put down shared phone",40);while(wait.MoveNext())yield return wait.Current;root.Stop();wait=Wait(()=>Received("PHONE_DONE"),"phone verification finished",40);while(wait.MoveNext())yield return wait.Current;
   }
-  static IEnumerator OverflowHost(Connection root){
-   var store=PlayerStore.Instance;store.storeState=PlayerStore.StoreState.CLOSED;store.isAfterhoursIntroduced=true;store.healthData.woundState=0;store.healthData.isWoundedFresh=false;
-   Signal("OVERFLOW_GO");var wait=Wait(()=>OutingKits.AnyOut,"overflow client outside",40);while(wait.MoveNext())yield return wait.Current;Kit kit=null;foreach(var k in OutingKits.All)if(k.location!=null){kit=k;break;}
-   var loot=ModHelper.SpawnItem("magnifier");loot.name="SMC_OVERFLOW_LOOT";loot.mayStackItemFunc=(x,y)=>false;Require(GraphUtils.TryAcceptAll(kit.left,loot)==0&&loot.parentInventory==kit.left,"overflow carried loot placed");
-   var blocked=new Dictionary<GameInventory,Func<GameItem,GameInventory,bool>>();foreach(var r in WorldReplica.Roots())if(r.Key<40&&!blocked.ContainsKey(r.Value)){blocked[r.Value]=r.Value.mayInventoryAddItemFunc;r.Value.mayInventoryAddItemFunc=(a,b)=>false;}
-   try{Signal("OVERFLOW_RETURN");wait=Wait(()=>kit.location==null,"return with no shop capacity",40);while(wait.MoveNext())yield return wait.Current;Require(kit.HasLeftovers&&kit.owner>0&&loot.parentInventory==kit.left,"no-capacity return preserves carried loot and ownership");Require(OutingKits.AnyOut&&DayGuards.Sleep()!=null,"sleep blocked while connected friend has unstored outing items");Signal("OVERFLOW_HELD");wait=Wait(()=>Received("OVERFLOW_BLOCKED"),"another outing blocked until leftovers empty",40);while(wait.MoveNext())yield return wait.Current;}
-   finally{foreach(var r in blocked)r.Key.mayInventoryAddItemFunc=r.Value;}
-   Signal("OVERFLOW_MOVE");wait=Wait(()=>Received("OVERFLOW_DROPPED"),"client submitted manual drop",40);while(wait.MoveNext())yield return wait.Current;wait=Wait(()=>true&&loot.parentInventory==EmporiumEntry.Instance.backInvinvElement,"leftover dragged into shop and committed by host",40);while(wait.MoveNext())yield return wait.Current;Signal("OVERFLOW_DONE");
-  }
-  static IEnumerator OverflowClient(Connection root){
-   var wait=Wait(()=>Received("OVERFLOW_GO"),"overflow fixture ready",40);while(wait.MoveNext())yield return wait.Current;OutRequest("Go","commissary",null);wait=Wait(()=>OutingKits.Here=="commissary"&&Received("OVERFLOW_RETURN"),"own outing ready",40);while(wait.MoveNext())yield return wait.Current;OutRequest("Back");wait=Wait(()=>OutingKits.Here==null&&Received("OVERFLOW_HELD"),"leftovers retained after return",40);while(wait.MoveNext())yield return wait.Current;
-   Require(OutingKits.Mine!=null&&OutingKits.Mine.window.IsVisible(),"leftover window visible in shop");OutRequest("Go","commissary",null);yield return new WaitForSecondsRealtime(1);Require(OutingKits.Here==null,"cannot depart again with leftovers");Signal("OVERFLOW_BLOCKED");wait=Wait(()=>!StoreUIManager.Instance.blackscreen.gameObject.activeInHierarchy&&Received("OVERFLOW_MOVE"),"shop capacity restored",40);while(wait.MoveNext())yield return wait.Current;
-   var loot=Find(root,"SMC_OVERFLOW_LOOT");BeginDrag(loot);Require(ItemMouseDragHandler.current.IsDraggingItem,"leftover native drag started");wait=Wait(()=>root.LocalLeases.ContainsKey(root.World.Id(loot)),"leftover lease granted",30);while(wait.MoveNext())yield return wait.Current;Drop(EmporiumEntry.Instance.backInvinvElement,loot);Signal("OVERFLOW_DROPPED");wait=Wait(()=>Received("OVERFLOW_DONE"),"manual recovery completed",40);while(wait.MoveNext())yield return wait.Current;
-  }
+  static void OutRequest(string action,params object[] args){NativeClick(0,()=>RemoteActions.Forward(RemoteActions.Adapter(action,args.Length),null,args));}
  }
 }
 #endif
