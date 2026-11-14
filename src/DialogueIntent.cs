@@ -19,6 +19,11 @@ namespace ShopTogether {
         static bool Counter(InventoryAddress a) { return a != null && (a.root == 2 || a.root == 3 || a.root == OutingKits.CounterRoot); }
         internal static bool CanTouch(Connection s, GameItem item) { return item == null || !Committing || !Counter(s.World.Address(item.parentInventory)); }
         internal static bool CanTouchInventory(Connection s, GameInventory inventory) { return !Committing || !Counter(s.World.Address(inventory)); }
+        // Adapters that select their own items have no item IDs in the request.
+        // Recheck each selected item before any payment, destruction or transfer.
+        internal static bool MayChange(Connection s, GameItem item) {
+            return s == null || !s.IsHost || !s.Ready || CanTouch(s, item) || AuthorityIntent.Refuse("~SMC353~");
+        }
         internal static bool RequestAllowed(Connection s, Request request) {
             if (!Committing || request.kind == RequestKind.ShopAction) return true;
             if (request.items != null) foreach (int id in request.items) { GameItem item; if (s.World.Items.TryGetValue(id, out item) && !CanTouch(s, item)) return false; }

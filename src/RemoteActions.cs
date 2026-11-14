@@ -520,7 +520,7 @@ namespace ShopTogether {
             var owned = EmporiumEntry.Instance.GetAllOwnedItems(); int needed = request.requiredItemCount;
             if(needed<=0)return AuthorityIntent.Refuse("~SMC335~");
             for (int n = owned.Count - 1; n >= 0 && needed > 0; n--) if (request.CanThisItemFillRequest(owned[n])) {
-                if(!AuthorityIntent.FreeTree(session,owner,owned[n]))return false;
+                if(!DialogueIntent.MayChange(session,owned[n]) || !AuthorityIntent.FreeTree(session,owner,owned[n]))return false;
                 needed--;
             }
             return true;

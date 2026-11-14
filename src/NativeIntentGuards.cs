@@ -52,7 +52,7 @@ namespace ShopTogether {
                 string tag = name == "OnRedeemAllLottery" ? "LOTTERY_IS_WINNING_TAG" : "FOOD_STAMP_TAG";
                 var selected = e.GetAllOwnedItems().Where(x => x.IsTag(tag)).ToList();
                 if (selected.Count == 0) return "~SMC348~";
-                foreach (var selectedItem in selected) if (!AuthorityIntent.FreeTree(s, owner, selectedItem)) return "~SMC096~";
+                foreach (var selectedItem in selected) { if (!DialogueIntent.MayChange(s, selectedItem)) return "~SMC353~"; if (!AuthorityIntent.FreeTree(s, owner, selectedItem)) return "~SMC096~"; }
                 return null;
             }
             if (type == typeof(NegociationUIManager)) {
@@ -119,6 +119,7 @@ namespace ShopTogether {
             __3 = () => {
                 if (used || parent != item.parentInventory || stamp != AuthorityIntent.TreeStamp(session, item)) { RemoteActions.Notice("~SMC326~"); return; }
                 used = true;
+                if (!DialogueIntent.MayChange(session, item)) { RemoteActions.Notice("~SMC353~"); return; }
                 if (!AuthorityIntent.FreeTree(session, 0, item)) { RemoteActions.Notice("~SMC096~"); return; }
                 original();
             };

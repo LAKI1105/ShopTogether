@@ -163,6 +163,36 @@ namespace ShopTogether {
         }
     }
 
+    // The tablet uses SellMultiple/BuyMultipleItem directly, bypassing the
+    // older PlayerStore.*FromTable hooks. Check the entire selected batch before
+    // the native loop can charge money or remove its first item.
+    [HarmonyPatch]
+    internal static class HostCounterCommitGuard {
+        static IEnumerable<MethodBase> TargetMethods() {
+            yield return AccessTools.Method(typeof(NegociationUIManager), "SellMultiple");
+            yield return AccessTools.Method(typeof(NegociationUIManager), "BuyMultipleItem");
+            yield return AccessTools.Method(typeof(PlayerStore), "SellItem");
+            yield return AccessTools.Method(typeof(PlayerStore), "BuyItem");
+        }
+        static bool Prefix(object __0) {
+            var s = Connection.Current;
+            if (s == null || !s.IsHost || !s.Ready || WorldReplica.Applying) return true;
+            // Native scripted effects retain their flow; UI and relayed commits
+            // both pass here while their requesting player is still known.
+            if (RemoteActions.CurrentOwner < 0 && !LocalControl.UserAction && !NativeActions.Executing) return true;
+            int owner = Math.Max(0, RemoteActions.CurrentOwner);
+            var one = __0 as GameItem;
+            var items = one != null ? new[] { one } : __0 as IEnumerable<GameItem>;
+            if (items == null) return true;
+            foreach (var item in items) {
+                if (DialogueIntent.MayChange(s, item) && AuthorityIntent.FreeTree(s, owner, item)) continue;
+                if (RemoteActions.CurrentOwner < 0) RemoteActions.Notice(RemoteActions.PendingNote ?? "~SMC096~");
+                return false;
+            }
+            return true;
+        }
+    }
+
     [HarmonyPatch]
     internal static class ClientCounterTrade {
         static readonly string[] Actions = { "OnOfferAcceptClick", "OnBuyAllClick", "OnSellAllClick", "OnConfirmPanelYes", "OnConfirmPanelNo" };

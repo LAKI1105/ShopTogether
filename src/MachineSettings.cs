@@ -280,6 +280,7 @@ namespace ShopTogether {
             var callback = callbackField.GetValue(buttons[index]) as Action;
             if (callback == null) { RemoteActions.PendingNote = "~SMC247~"; return; }
             var session = Connection.Current;
+            if (!DialogueIntent.MayChange(session, item)) return;
             string before = EffectStamp(session, item);
             PanelRelay.NotifiedDuringAction = false;
             var previousSource = PanelRelay.SourceItem; PanelRelay.SourceItem = item;

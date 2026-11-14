@@ -113,6 +113,7 @@ namespace ShopTogether {
                     RemoteActions.PendingNote = "~SMC096~"; return;
                 }
                 if (p.stamp != AuthorityIntent.TreeStamp(s, current)) { RemoteActions.PendingNote = "~SMC326~"; return; }
+                if (!DialogueIntent.MayChange(s, current)) return;
                 var at = s.World.Address(current.parentInventory); if (at != null && !OutingKits.MayUse(owner, at.root)) { RemoteActions.PendingNote = "~SMC217~"; return; }
             }
             p.yes();

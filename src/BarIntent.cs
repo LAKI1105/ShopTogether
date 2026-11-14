@@ -21,7 +21,7 @@ namespace ShopTogether {
         internal static bool Free(GameItem item){
             var s=Connection.Current;if(s==null||!s.IsHost||!s.Ready)return true;
             if(item==null||item.parentInventory==null||s.World.Id(item)<=0){RemoteActions.PendingNote="~SMC326~";return false;}
-            bool free=AuthorityIntent.FreeTree(s,Math.Max(0,RemoteActions.CurrentOwner),item);if(!free&&RemoteActions.CurrentOwner<0)RemoteActions.Notice("~SMC096~");return free;
+            bool free=DialogueIntent.MayChange(s,item)&&AuthorityIntent.FreeTree(s,Math.Max(0,RemoteActions.CurrentOwner),item);if(!free&&RemoteActions.CurrentOwner<0)RemoteActions.Notice(RemoteActions.PendingNote??"~SMC096~");return free;
         }
         static bool OfferCallback(object __instance){var found=new HashSet<GameItem>();Collect(__instance,0,new HashSet<object>(),found);foreach(var item in found)if(!Free(item))return false;return true;}
         static bool Choose(object order,int branch){

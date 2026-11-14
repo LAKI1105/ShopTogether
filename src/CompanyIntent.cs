@@ -198,7 +198,7 @@ namespace ShopTogether {
             if(candidates!=null){
                 int limit=method.Name=="RequestSwap"?6:method.Name=="RequestRefurbish"?3:int.MaxValue;
                 foreach(GameItem item in ((IEnumerable)Call(T("Services"),candidates)).Cast<GameItem>().Take(limit))
-                    if(!AuthorityIntent.FreeTree(Connection.Current,Math.Max(0,RemoteActions.CurrentOwner),item))return;
+                    if(!DialogueIntent.MayChange(Connection.Current,item) || !AuthorityIntent.FreeTree(Connection.Current,Math.Max(0,RemoteActions.CurrentOwner),item))return;
             }
             string result=(string)method.Invoke(null,args);Flush(true);RemoteActions.PendingNote=string.IsNullOrEmpty(result)?"~SMC341~":result;
         }

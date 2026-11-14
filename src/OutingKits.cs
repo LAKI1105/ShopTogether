@@ -117,6 +117,7 @@ namespace ShopTogether {
         internal static bool ReturnAvailable() {
             var map = MapUIManager.Instance; var session = Connection.Current;
             if (map == null || map.Current == null || map.IsInTransit) return AuthorityIntent.Refuse("~SMC124~");
+            if (DialogueIntent.Committing) return AuthorityIntent.Refuse("~SMC353~");
             foreach (var root in Roots()) foreach (var item in root.Value.childItems)
                 if (!AuthorityIntent.FreeTree(session, Math.Max(0, RemoteActions.CurrentOwner), item)) return false;
             if (map.Current.ShowsStoreCounters) {

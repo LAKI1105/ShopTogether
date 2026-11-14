@@ -1,5 +1,10 @@
 ﻿# 多人操作：可能很混亂 / Multiplayer Control: Probably Chaotic
 
+> 此分支為 **1.3.35-dev 原始碼修正草稿**，工作坊仍是 1.3.34。依要求只做程式碼審查，未編譯、未執行測試，也未發布新版 DLL。修正對話交付保護的旁路、自動屠宰誤用房主占用權，以及房主交易平板直接成交漏查占用。
+>
+> This branch contains source-only fixes for 1.3.35-dev. Workshop remains at 1.3.34. No build or tests were run for these changes; no new DLL has been published.
+
+
 A community co-op mod for **Probably Stolen**. Run the game on each computer and operate the same host-owned shop with separate cursors and interfaces. Up to eight players, including the host.
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)

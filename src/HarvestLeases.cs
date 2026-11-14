@@ -10,6 +10,7 @@ namespace ShopTogether {
     // selected creature before cuts are spawned or the original is killed.
     [HarmonyPatch]
     internal static class HarvestLeases {
+        internal static int AutomaticDepth;
         static IEnumerable<MethodBase> TargetMethods() {
             foreach(string name in new[]{"TryStoreAnimal","TryButcherAnimal","TryStoreFish","TryButcherFish"})
                 yield return AccessTools.Method(typeof(MachineAutoButcher),name);
@@ -29,15 +30,28 @@ namespace ShopTogether {
             if(ReplicaSession.ClientStore && !WorldReplica.Applying)return false;
             var s=Connection.Current;
             if(s==null || !s.IsHost || !s.Ready)return true;
-            int owner=System.Math.Max(0,RemoteActions.CurrentOwner);
+            // Background harvesting owns no player's lease. Manual host actions
+            // may use the host's own held item; scheduled harvesting may not.
+            int owner=AutomaticDepth>0?-1:RemoteActions.CurrentOwner>=0?RemoteActions.CurrentOwner:LocalControl.UserAction?0:-1;
             foreach(var item in new[]{creature,tray==null?null:tray.GetParentItem(),dispenser}) {
                 if(item==null)continue;
-                if(AuthorityIntent.FreeTree(s,owner,item))continue;
-                if(owner>0 || NativeActions.Executing)RemoteActions.PendingNote="~SMC339~";
-                else if(LocalControl.UserAction)RemoteActions.Notice("~SMC339~");
+                if(DialogueIntent.MayChange(s,item)&&AuthorityIntent.FreeTree(s,owner,item))continue;
+                string reason=RemoteActions.PendingNote=="~SMC353~"?"~SMC353~":"~SMC339~";
+                if(owner>=0 || NativeActions.Executing)RemoteActions.PendingNote=reason;
+                if(RemoteActions.CurrentOwner<0 && LocalControl.UserAction)RemoteActions.Notice(reason);
                 return false;
             }
             return true;
+        }
+    }
+    [HarmonyPatch(typeof(MachineAutoButcher), "Run")]
+    internal static class HarvestRunScope {
+        static void Prefix(bool manual, out bool __state) {
+            __state = !manual;
+            if (__state) HarvestLeases.AutomaticDepth++;
+        }
+        static void Finalizer(bool __state) {
+            if (__state) HarvestLeases.AutomaticDepth--;
         }
     }
     [HarmonyPatch]

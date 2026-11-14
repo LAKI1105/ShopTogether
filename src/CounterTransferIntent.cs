@@ -7,6 +7,7 @@ namespace ShopTogether {
         internal static void TransferCounter(bool frontVisible) {
             var s = Connection.Current; var e = EmporiumEntry.Instance;
             if (s == null || e == null) { AuthorityIntent.Refuse("~SMC242~"); return; }
+            if (DialogueIntent.Committing) { AuthorityIntent.Refuse("~SMC353~"); return; }
             string busy = HostPhase.Busy(s.Ready); if (busy != null) { AuthorityIntent.Refuse(busy); return; }
             var items = new List<GameItem>(); GameInventory destination = e.invElement;
             if (frontVisible && e.frontInvinvElement.childItems.Count != 0) {
