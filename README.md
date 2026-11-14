@@ -1,30 +1,29 @@
-﻿# 多人操作：可能很混亂 / Multiplayer Control: Probably Chaotic
-
-> 此分支為 **1.3.35-dev 原始碼修正草稿**，工作坊仍是 1.3.34。依要求只做程式碼審查，未編譯、未執行測試，也未發布新版 DLL。修正對話交付保護的旁路、自動屠宰誤用房主占用權，以及房主交易平板直接成交漏查占用。
->
-> This branch contains source-only fixes for 1.3.35-dev. Workshop remains at 1.3.34. No build or tests were run for these changes; no new DLL has been published.
+# 多人操作：可能很混亂 / Multiplayer Control: Probably Chaotic
 
 
 A community co-op mod for **Probably Stolen**. Run the game on each computer and operate the same host-owned shop with separate cursors and interfaces. Up to eight players, including the host.
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-目前工作坊版本：**1.3.34**。所有玩家請更新到同一版本後重新開啟遊戲。
+目前工作坊版本：**1.3.35**。所有玩家請更新到同一版本後重新開啟遊戲。
 
-## 1.3.34 有哪些改變？
+## 1.3.35 有哪些改變？
 
-- 朋友的共用操作交給房主依當下狀態判斷，成功後同步結果；不能執行時，操作者會收到原因，減少被朋友端舊資料誤擋。
-- 修正機器換日後的狀態文字與開啟中視窗更新；機台沒有產生結果時會回覆說明。
-- 清空機器、交貨或付款前重新檢查內容及占用，避免確認期間物品改變，或被別人拿走。容器裡的物品也會檢查。
-- 交易、公司訂貨與兌換使用房主的價格、庫存及資格，並加強避免重複扣款、領獎與消耗的處理。對話交付完成前，待交付物不能被拖走。
-- 垃圾場、兌換處與 Dr. Jackson 的外出及回店由全員同行，共用房主的拾荒次數、地上物品、口袋與背包。
-- 補齊倉庫分頁、整理、改名、擴容及臨時溢出頁同步；卡帶機播放、暫停、切歌與停止同步也已補強。
-- 化學品、酸鹼、水質、液體比例及植物／動物基因維持房主遊戲運算，再同步數值與結果；歸零或停用的狀態也會更新。
+- 單件與整批買賣都在成交前檢查實際商品及容器內容；有人拿著、或正在等待對話交付的物品不能被賣掉。
+- 修正朋友的部分買賣入口沒有帶上所選商品、可能沿用房主選取物的問題；朋友操作完也會還原房主的選取。
+- 房主與朋友的賣出確認都綁定當時的客人、商品、內容、價格與預算。有變動就要求重新確認，不會直接賣掉後來換上的貨。
+- 舊的整批買賣入口改走遊戲現行的平板交易流程，避免累加金額造成多扣或多加款；未參與交易的商品被別人拿著，也不再誤擋整筆交易。
+- 易物會檢查前後台商品；批發會檢查將搬移的前台商品與購買商品；槍匠交付會使用操作端的選取並檢查槍枝及零件占用。
+- 補上訂單、公司服務、兌換、調酒、機台與回店操作繞過待交付物保護的入口。
+- 自動屠宰不再把自己當成房主，不能處理房主正拿著的動物。
 
-Current Workshop release: **1.3.34**. All players should update to the same version and restart the game.
+Current Workshop release: **1.3.35**. All players must update to the same version and restart.
 
-Shared actions are checked against the host's current state, with synchronized results or a reason for refusal. This release improves overnight machine displays, stale confirmations, item conflicts, trades and redemptions, delayed dialogue deliveries, shared outings, storage pages and cassette playback. Chemistry, water quality, liquid proportions and plant/animal genetics remain calculated by the host's game; guests receive the values and results, including zeroed or disabled states.
+Trades check the actual selected goods and their contents before committing. Guest trades carry the guest's selection, and stale sale confirmations are rejected for both host and guests. Legacy batch trade calls use the current native tablet flow instead of cumulative charging. Barter, wholesale and gunsmith deliveries respect occupied goods. This also closes indirect consumption paths during pending dialogue deliveries and prevents automatic butchering from using the host's item ownership.
 
+本版以程式碼對照完成修正，僅執行正式 DLL 編譯；未執行遊戲或自動化測試。下方測試紀錄是先前版本的紀錄，不代表本版已經實機通過。
+
+This release was reviewed in source and compiled. No game or automated tests were run for 1.3.35; historical test results below do not validate this build.
 
 ## 使用方式
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -10,7 +10,7 @@ namespace ShopTogether {
     internal static class CounterTrades {
         sealed class PendingSale {
             internal StoreClient customer; internal int budget, total; internal float until;
-            internal List<GameItem> items; internal List<long> values;
+            internal List<GameItem> items; internal List<long> values; internal List<string> stamps;
         }
         static readonly Dictionary<int, PendingSale> pending = new Dictionary<int, PendingSale>();
         static readonly MethodInfo sellable = AccessTools.Method(typeof(NegociationUIManager), "GetSellableBackInvItems");
@@ -24,15 +24,16 @@ namespace ShopTogether {
         }
         internal static bool BeginConfirmation(int owner, NegociationUIManager ui, out int budget, out int total) {
             budget = total = 0; var customer = Customer(); var items = Sellable(customer);
-            if (owner <= 0 || customer == null || items == null || items.Count == 0 || customer.isBusinessComplete || NegociationUIManager.IsTradeLocked()) return false;
+            if (owner < 0 || customer == null || items == null || items.Count == 0 || customer.isBusinessComplete || NegociationUIManager.IsTradeLocked()) return false;
             budget = customer.GetBudget(); total = ui.GetMultiSellValue();
-            var values = new List<long>(); foreach (var item in items) values.Add(item.GetNegociatedValue());
+            var values = new List<long>(); var stamps = new List<string>();
+            foreach (var item in items) { values.Add(item.GetNegociatedValue()); stamps.Add(AuthorityIntent.TreeStamp(Connection.Current, item)); }
             pending[owner] = new PendingSale { customer = customer, budget = budget, total = total,
-                items = items, values = values, until = Time.realtimeSinceStartup + 300f };
+                items = new List<GameItem>(items), values = values, stamps = stamps, until = Time.realtimeSinceStartup + 300f };
             return true;
         }
-        static void ConfirmSale(Connection session, int owner, NegociationUIManager ui) {
-            // The friend confirms what they were shown; if the deal changed meanwhile they are told to look again.
+        internal static void ConfirmSale(Connection session, int owner, NegociationUIManager ui) {
+            // Each player confirms what they were shown; if the deal changed meanwhile they are told to look again.
             PendingSale p; if (!pending.TryGetValue(owner, out p)) { RemoteActions.PendingNote = "~SMC301~"; return; } pending.Remove(owner);
             var customer = Customer(); var items = Sellable(customer);
             if (customer != p.customer || customer == null || customer.isBusinessComplete || NegociationUIManager.IsTradeLocked() ||
@@ -40,7 +41,7 @@ namespace ShopTogether {
                 items == null || items.Count != p.items.Count) { RemoteActions.PendingNote = "~SMC301~"; return; }
             for (int i = 0; i < items.Count; i++) {
                 int id = session.World.Id(items[i]);
-                if (items[i] != p.items[i] || items[i].GetNegociatedValue() != p.values[i] || id <= 0) { RemoteActions.PendingNote = "~SMC301~"; return; }
+                if (items[i] != p.items[i] || items[i].GetNegociatedValue() != p.values[i] || AuthorityIntent.TreeStamp(session, items[i]) != p.stamps[i] || id <= 0) { RemoteActions.PendingNote = "~SMC301~"; return; }
                 if (!session.Leases.Available(owner, id, Time.realtimeSinceStartup)) { RemoteActions.PendingNote = "~SMC290~"; return; }
             }
             ui.SellMultiple(items, true);
@@ -58,13 +59,10 @@ namespace ShopTogether {
             // Every refusal is told to the friend who pressed the button; a silent no-op looks like "friends cannot trade".
             if (action == 4) { pending.Remove(owner); return; }
             if (!Allowed(owner)) { Refuse(action, "~SMC289~", "outing"); return; }
-            // Only what this trade uses: the one item for a single offer, the whole counter for buying or selling
-            // everything (the final "sell all" confirmation checks its own items).
-            bool free = action == 0 ? item == null || session.Leases.Available(owner, session.World.Id(item), Time.realtimeSinceStartup)
-                      : action == 3 || NativeActions.CounterAvailable(session, owner);
-            if (!free) { Refuse(action, "~SMC290~", "counter item held by someone else"); return; }
+            // Bulk native methods check their selected batch before the first effect.
+            // Unrelated goods on the counter must not block a purchase or sale.
             if (!CustomerReady(action)) return;
-            if (item != null) {
+            if (action == 0 && item != null) {
                 var at = session.World.Address(item.parentInventory);
                 if (at == null || (at.root != 2 && at.root != 3 && at.root != OutingKits.CounterRoot)) { Refuse(action, "~SMC291~", "item not on the counter"); return; }
             }
@@ -87,7 +85,7 @@ namespace ShopTogether {
                 }
             } finally {
                 // A friend's selection must not replace the host's own selection after their action.
-                if (store != null && previousStore != null && previousStore.parentInventory == EmporiumEntry.Instance.backInvinvElement) store.currentNegociatedItem = previousStore;
+                if (store != null) store.currentNegociatedItem = previousStore != null && previousStore.parentInventory == EmporiumEntry.Instance.backInvinvElement ? previousStore : null;
                 ModReflect.Set(ui, "currentNegociatedItem", previousItem != null && previousItem.parentInventory == EmporiumEntry.Instance.backInvinvElement ? previousItem : null);
                 ModReflect.Set(ui, "selectedItem", previousSelection != null && previousSelection.parentInventory == EmporiumEntry.Instance.backInvinvElement ? previousSelection : null);
             }
@@ -100,14 +98,21 @@ namespace ShopTogether {
 
         // Barter and other special offers use a different adapter but can also consume counter items.
         // Apply the same ownership and location checks before letting the host perform the deal.
-        internal static void SpecialAction() {
+        internal static void SpecialAction(GameItem selected) {
             var session = Connection.Current; int owner = RemoteActions.CurrentOwner;
             if (session == null || NegociationUIManager.Instance == null) return;
             if (!Allowed(owner)) { Refuse(0, "~SMC289~", "outing"); return; }
-            if (!NativeActions.CounterAvailable(session, owner)) { Refuse(0, "~SMC290~", "counter item held by someone else"); return; }
             if (!CustomerReady(0)) return;
             var before = Snapshot();
-            NegociationUIManager.Instance.OnOfferAcceptClick();
+            var store = PlayerStore.Instance; var previous = store.currentNegociatedItem;
+            bool gun = Customer().clientIntent == StoreClient.ClientIntent.GUNSMITH;
+            if (gun && selected != null && selected.parentInventory != EmporiumEntry.Instance.backInvinvElement) { Refuse(0, "~SMC291~", "gun not on the back counter"); return; }
+            try {
+                if (gun) store.currentNegociatedItem = selected;
+                NegociationUIManager.Instance.OnOfferAcceptClick();
+            } finally {
+                if (gun) store.currentNegociatedItem = previous != null && previous.parentInventory == EmporiumEntry.Instance.backInvinvElement ? previous : null;
+            }
             if (RemoteActions.PendingNote == null && !PanelRelay.NotifiedDuringAction && before == Snapshot()) {
                 string reason; string note = Why(0, null, out reason); Refuse(0, note, reason);
             }
@@ -128,13 +133,35 @@ namespace ShopTogether {
             return !c.isIntroduced && (c.clientIntent == StoreClient.ClientIntent.BARTER || c.clientIntent == StoreClient.ClientIntent.INFORMATION_DEALER);
         }
 
-        static bool CustomerReady(int action) {
+        internal static bool CustomerReady(int action) {
+            if (DialogueIntent.Committing) { Refuse(action, "~SMC353~", "dialogue delivery pending"); return false; }
             var store = PlayerStore.Instance; var customer = Customer();
             if (store == null || store.currentClientInstance == null) { Refuse(action, "~SMC292~", "no customer at the counter"); return false; }
             if (NegociationUIManager.IsTradeLocked()) { Refuse(action, "~SMC293~", "trade locked (arrest or shootout)"); return false; }
             if (customer == null || customer.isBusinessComplete) { Refuse(action, "~SMC294~", "customer finished"); return false; }
             if (StillTalking(customer)) { Refuse(action, "~SMC295~", "customer still talking"); return false; }
             return true;
+        }
+
+        internal static bool OfferAvailable(NegociationUIManager ui) {
+            var s = Connection.Current; var store = PlayerStore.Instance; var c = Customer();
+            int owner = Math.Max(0, RemoteActions.CurrentOwner);
+            if (c == null) return AuthorityIntent.Refuse("~SMC292~");
+            if (c.clientIntent == StoreClient.ClientIntent.BARTER)
+                return DialogueIntent.Available(s, owner); // Both offered and received goods change ownership.
+            if (c.clientIntent == StoreClient.ClientIntent.INFORMATION_DEALER)
+                return store.CanPay(c.serviceCost) || AuthorityIntent.Refuse("~SMC296~");
+            var item = c.clientIntent == StoreClient.ClientIntent.GUNSMITH ? GunOrderData.ResolveOrderGun() : store.currentNegociatedItem;
+            if (item == null) return AuthorityIntent.Refuse("~SMC291~");
+            if (!DialogueIntent.MayChange(s, item) || !AuthorityIntent.FreeTree(s, owner, item)) return false;
+            if (c.clientIntent != StoreClient.ClientIntent.GUNSMITH && !GeneralHelper.IsItemOwned(item) && !store.CanBuyItemFromTable())
+                return AuthorityIntent.Refuse(item.GetNegociatedValue() > store.playerCash ? "~SMC296~" : "~SMC297~");
+            return true;
+        }
+        internal static void CancelConfirmation(int owner) { pending.Remove(owner); }
+        internal static void HideConfirmation(NegociationUIManager ui) {
+            var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");
+            if (frame != null && frame.confirmRoot != null) frame.confirmRoot.SetActive(false);
         }
 
         /// <summary>What a trade changes: money, the customer's state and what lies on the counters.</summary>
@@ -168,13 +195,16 @@ namespace ShopTogether {
     // the native loop can charge money or remove its first item.
     [HarmonyPatch]
     internal static class HostCounterCommitGuard {
+        static int batchDepth;
         static IEnumerable<MethodBase> TargetMethods() {
             yield return AccessTools.Method(typeof(NegociationUIManager), "SellMultiple");
             yield return AccessTools.Method(typeof(NegociationUIManager), "BuyMultipleItem");
             yield return AccessTools.Method(typeof(PlayerStore), "SellItem");
             yield return AccessTools.Method(typeof(PlayerStore), "BuyItem");
         }
-        static bool Prefix(object __0) {
+        static bool Prefix(object __0, MethodBase __originalMethod, ref bool __state) {
+            __state = false;
+            if (batchDepth > 0 && __originalMethod.DeclaringType == typeof(PlayerStore)) return true;
             var s = Connection.Current;
             if (s == null || !s.IsHost || !s.Ready || WorldReplica.Applying) return true;
             // Native scripted effects retain their flow; UI and relayed commits
@@ -189,7 +219,13 @@ namespace ShopTogether {
                 if (RemoteActions.CurrentOwner < 0) RemoteActions.Notice(RemoteActions.PendingNote ?? "~SMC096~");
                 return false;
             }
+            __state = __originalMethod.DeclaringType == typeof(NegociationUIManager);
+            if (__state) batchDepth++;
             return true;
+        }
+        static Exception Finalizer(Exception __exception, bool __state) {
+            if (__state) batchDepth--;
+            return __exception;
         }
     }
 
@@ -199,16 +235,46 @@ namespace ShopTogether {
         static IEnumerable<MethodBase> TargetMethods() { foreach (var name in Actions) yield return AccessTools.Method(typeof(NegociationUIManager), name); }
         [HarmonyPriority(Priority.First)]
         static bool Prefix(NegociationUIManager __instance, MethodBase __originalMethod) {
-            if (!ReplicaSession.ClientStore) return true;
+            if (!ReplicaSession.ClientStore) {
+                var s = Connection.Current;
+                if (s == null || !s.IsHost || !s.Ready || WorldReplica.Applying) return true;
+                int action = Array.IndexOf(Actions, __originalMethod.Name);
+                if (action == 4) { CounterTrades.CancelConfirmation(Math.Max(0, RemoteActions.CurrentOwner)); return true; }
+                bool local = RemoteActions.CurrentOwner < 0;
+                if (local) RemoteActions.PendingNote = null;
+                bool allowed = CounterTrades.CustomerReady(action);
+                if (allowed && action == 0) allowed = CounterTrades.OfferAvailable(__instance);
+                if (allowed && action == 3) {
+                    CounterTrades.ConfirmSale(s, Math.Max(0, RemoteActions.CurrentOwner), __instance);
+                    allowed = false;
+                }
+                if (action == 3) CounterTrades.HideConfirmation(__instance);
+                if (local && RemoteActions.PendingNote != null) RemoteActions.Notice(RemoteActions.TakeNote());
+                return allowed;
+            }
             if (__originalMethod.Name == "OnOfferAcceptClick" && ShopActions.FriendAcceptsSpecialDeal()) return true;
             if (ReplicaSession.IsReplica && LocalControl.UserAction)
                 RemoteActions.Forward(RemoteActions.Adapter("CounterAction", 2), null, new object[] {
-                    Array.IndexOf(Actions, __originalMethod.Name), ModReflect.Get<GameItem>(__instance, "currentNegociatedItem") });
+                    Array.IndexOf(Actions, __originalMethod.Name), Array.IndexOf(Actions, __originalMethod.Name) <= 1 ? ModReflect.Get<GameItem>(__instance, "currentNegociatedItem") : null });
             if (__originalMethod.Name == "OnConfirmPanelNo") return true;
             if (__originalMethod.Name == "OnConfirmPanelYes") {
                 var frame = ModReflect.Get<NegotiationTabletFrame>(__instance, "frame");
                 if (frame != null && frame.confirmRoot != null) frame.confirmRoot.SetActive(false);
             }
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(NegociationUIManager), "OpenConfirmPanel")]
+    internal static class HostSaleConfirmation {
+        static bool Prefix(NegociationUIManager __instance) {
+            var s = Connection.Current;
+            if (s == null || !s.IsHost || !s.Ready || WorldReplica.Applying || PanelRelay.Capturing) return true;
+            int budget, total;
+            if (CounterTrades.BeginConfirmation(0, __instance, out budget, out total)) return true;
+            CounterTrades.CancelConfirmation(0);
+            CounterTrades.HideConfirmation(__instance);
+            RemoteActions.Notice("~SMC301~");
             return false;
         }
     }
@@ -225,7 +291,7 @@ namespace ShopTogether {
             var button = ModReflect.Get<TabletButton>(ui, "primaryButton");
             if (button == null || button.button != __instance) return;
             var customer = store.currentClientInstance.GetClientBlueprint(); if (customer == null) return;
-            if (ShopActions.FriendAcceptsSpecialDeal()) RemoteActions.Forward(RemoteActions.Adapter("AcceptDeal",0),null,new object[0]);
+            if (ShopActions.FriendAcceptsSpecialDeal()) RemoteActions.Forward(RemoteActions.Adapter("AcceptDeal",1),null,new object[]{ShopActions.SelectedDealItem()});
             else RemoteActions.Forward(RemoteActions.Adapter("CounterAction",2),null,new object[]{customer.clientIntent==StoreClient.ClientIntent.SELL?1:2,null});
         }
     }

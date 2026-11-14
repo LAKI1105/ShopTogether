@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -62,9 +62,10 @@ namespace ShopTogether {
                 if (name == "OnGlasseButtonClick") return customer.glasseDialogue == null ? "~SMC247~" : null;
                 if (name == "OnLeftArrowButtonClick" || name == "OnRightArrowButtonClick")
                     return customer.barterOffer == null || !customer.barterOffer.UseOfferSets() || !customer.isIntroduced ? "~SMC247~" : null;
-                if (!customer.isOfferWholesale) return "~SMC247~";
+                if (!customer.isOfferWholesale || customer.isBusinessComplete) return "~SMC247~";
                 int price = store.GetWholesalePrice();
                 if (price < 0 || price > store.playerCash) return "~SMC343~";
+                foreach (var goods in e.frontInvinvElement.childItems) if (!AuthorityIntent.FreeTree(s, owner, goods)) return "~SMC096~";
                 foreach (var goods in e.GetAllNonOwnedItem()) if (!AuthorityIntent.FreeTree(s, owner, goods)) return "~SMC096~";
                 return null;
             }

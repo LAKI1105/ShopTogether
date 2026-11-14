@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -112,11 +112,16 @@ namespace ShopTogether {
             return client != null && !PlainTrade(client.clientIntent);
         }
         /// <summary>Host side: the accept button for barter, information, gunsmith and other special deals.</summary>
-        internal static void AcceptDeal() {
+        internal static GameItem SelectedDealItem() {
+            var store = PlayerStore.Instance;
+            var c = store != null && store.currentClientInstance != null ? store.currentClientInstance.GetClientBlueprint() : null;
+            return c != null && c.clientIntent == StoreClient.ClientIntent.GUNSMITH ? store.currentNegociatedItem : null;
+        }
+        internal static void AcceptDeal(GameItem selected) {
             var ui = NegociationUIManager.Instance; var store = PlayerStore.Instance;
             var client = store != null && store.currentClientInstance != null ? store.currentClientInstance.GetClientBlueprint() : null;
             if (ui == null || client == null || PlainTrade(client.clientIntent)) { Refuse("~SMC247~"); return; }
-            CounterTrades.SpecialAction();
+            CounterTrades.SpecialAction(selected);
         }
 
         // ---------------- inventory sort undo ----------------
@@ -396,7 +401,7 @@ namespace ShopTogether {
             [HarmonyPriority(Priority.First)]
             static bool Prefix() {
                 if (!Friend || !FriendAcceptsSpecialDeal()) return true;   // a plain buy or sell goes through the shop actions
-                if (Act) Send("AcceptDeal");
+                if (Act) Send("AcceptDeal", SelectedDealItem());
                 return false;
             }
         }
