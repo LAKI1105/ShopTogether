@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){ProbablyMultiplayerCompat.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.26";
+        internal const string BuildVersion="1.3.28";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -131,7 +131,10 @@ namespace ShopTogether {
         void Update(){
             ProbablyMultiplayerCompat.Tick();
             if(!IsClient&&MainMenuUIController.Instance!=null&&EmporiumEntry.Instance==null){ReplicaSession.ClientStore=false;ReplicaSession.SceneReady=false;}
-            if(MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null&&(!launcherShown||launcherState!=LauncherState())){launcherShown=true;DrawLauncher();}
+            if(MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null){
+                if(!launcherShown||launcherState!=LauncherState()){launcherShown=true;DrawLauncher();}
+                if(Time.unscaledTime>=nextLauncherLayerCheck){nextLauncherLayerCheck=Time.unscaledTime+.25f;Diagnostics.Soft("launcher",KeepLauncherAboveChangelog);}
+            }
             SteamInvite.Hook();
             // Joined from the Steam friends list (or "Invite to Game"): connect through Steam once at the main menu.
             if(SteamInvite.Pending!=null&&!IsHost&&!IsClient&&MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null){string connect=SteamInvite.Pending;SteamInvite.Pending=null;ulong hostId;
@@ -164,6 +167,7 @@ namespace ShopTogether {
                                 if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
                             catch(Exception failure){Diagnostics.Report("apply",failure);if(++applyFailures>=5)throw;Debug.LogWarning("[ShopTogether] update not applied, asking the host for the whole shop: "+failure.Message);awaitingFull=true;server.Send(24,new byte[0]);}
                         }}
+                    if(Ready&&ReplicaSession.SceneReady)Diagnostics.Soft("layouts",()=>World.RunLoads(pendingWorld.Count>0?1.0:2.5));
                     if(Ready&&Time.realtimeSinceStartup>=nextRenew){nextRenew=Time.realtimeSinceStartup+5;Send(new Request{kind=RequestKind.Renew});}
                     if(Ready&&!LocalControl.Focused&&LocalLeases.Count>0)ReleaseAll();
                     if(Ready&&pendingWorld.Count==0){ResyncRequest resync=null;Diagnostics.Soft("drift",()=>resync=Drift.Step(World,2.0));if(resync!=null)server.Send(33,Encode(resync));}
@@ -301,14 +305,26 @@ namespace ShopTogether {
         }
         // The main-menu box always shows where things stand and leads back to the room: a room that is open stays
         // reachable from here (and from the button at the top right in the shop) instead of being created again.
-        string launcherState="";
-        string LauncherState(){return (IsHost?"H":IsClient?(Ready?"C":"c"):"-")+"|"+ConnectedNames;}
+        string launcherState="";float nextLauncherLayerCheck;
+        string LauncherState(){return (IsHost?"H":IsClient?(Ready?"C":"c"):"-")+"|"+ConnectedNames+"|"+IssueReport.Count;}
+        internal static void RedrawLauncher(){var c=Current;if(c!=null)c.launcherState="";}
+        // The game's full-screen localized changelog is a later sibling and intercepts menu clicks, despite having
+        // no click action. Keep this launcher immediately above it while leaving later dialogs above the launcher.
+        void KeepLauncherAboveChangelog(){
+            var ui=CustomUIManager.Instance;var w=ui!=null?ui.GetWindow(LauncherId):null;
+            if(w==null||w.root==null||w.root.transform.parent==null)return;var root=w.root.transform;var parent=root.parent;
+            for(int i=0;i<parent.childCount;i++){var sibling=parent.GetChild(i);if(sibling==root||!sibling.gameObject.activeInHierarchy||!sibling.name.EndsWith("_changelog",StringComparison.OrdinalIgnoreCase))continue;
+                int after=sibling.GetSiblingIndex();if(root.GetSiblingIndex()<after)root.SetSiblingIndex(after);}
+        }
         void DrawLauncher(){
             launcherState=LauncherState();
-            var w=CustomUIManager.Window(LauncherId,Loc.Text("~SMC057~"),CustomUIManager.LAYER_MENU).SetSize(340,IsHost||IsClient?240:150).SetPosition(new Vector2(-600,-300));
+            bool issues=IssueReport.Count>0;
+            var w=CustomUIManager.Window(LauncherId,Loc.Text("~SMC057~"),CustomUIManager.LAYER_MENU).SetSize(340,(IsHost||IsClient?240:150)+(issues?44:0)).SetPosition(new Vector2(-600,-300));
             if(IsHost){w.AddLabel(Loc.Text("~SMC237~"+(ConnectedNames.Length>0?"~SMC006~"+ConnectedNames:"~SMC012~"))).AddButton(Loc.Text("~SMC089~"),ShowHostReady).AddButton(Loc.Text("~SMC183~"),()=>{Stop();DrawLauncher();});}
             else if(IsClient){w.AddLabel(Loc.Text(Ready?"~SMC239~":"~SMC240~")).AddButton(Loc.Text("~SMC238~"),ShowStatus).AddButton(Loc.Text("~SMC181~"),()=>{Stop();DrawLauncher();});}
             else w.AddButton(Loc.Text("~SMC060~"),ShowChoice);
+            // Problems this mod ran into can be copied and posted on its Workshop page (nothing is sent by itself).
+            if(issues)w.AddButton(Loc.Text("~SMC298~"+"（"+IssueReport.Count+"）"),IssueReport.CopyAndOpen);
             w.Show();
         }
         // The name shown next to this player's mouse pointer on everyone's screen (Steam name by default).
@@ -327,6 +343,7 @@ namespace ShopTogether {
             else if(!lanOnly)window.AddButton(Loc.Text("~SMC070~"),()=>{if(publicAddress==null)publicAddress=new PublicAddress();});
             if(!steam)window.AddButton(Loc.Text("~SMC161~"),()=>GUIUtility.systemCopyBuffer=localInvite);window.AddLabel(Loc.Text("~SMC136~")).AddLabel(Loc.Text("~SMC113~"));
             if(MainMenuUIController.Instance!=null)window.AddButton(Loc.Text("~SMC106~"),()=>{hostReadyVisible=false;CustomUIManager.Instance.CloseWindow(WindowId);MainMenuUIController.Instance.OnNewGameClick();}).AddButton(Loc.Text("~SMC185~"),()=>{hostReadyVisible=false;CustomUIManager.Instance.CloseWindow(WindowId);MainMenuUIController.Instance.OnLoadGameClick();});
+            if(IssueReport.Count>0)window.AddButton(Loc.Text("~SMC298~"+"（"+IssueReport.Count+"）"),IssueReport.CopyAndOpen);
             window.AddButton(Loc.Text("~SMC184~"),()=>{hostReadyVisible=false;CustomUIManager.Instance.CloseWindow(WindowId);}).AddButton(Loc.Text("~SMC183~"),()=>{Stop();CustomUIManager.Instance.CloseWindow(WindowId);if(MainMenuUIController.Instance!=null)DrawLauncher();}).Show();
         }
         // Same steps as the game's own pause menu "Main Menu" button, without its save/analytics. A friend's copy of the
@@ -364,11 +381,12 @@ namespace ShopTogether {
         }
         void ShowStatus(){
             if(modReport!=null&&CustomUIManager.Instance!=null){ShowModReport();return;}if(CustomUIManager.Instance==null)return;
-            var w=CustomUIManager.Window(WindowId,Loc.Text("~SMC057~"),MainMenuUIController.Instance!=null?CustomUIManager.LAYER_MENU:CustomUIManager.LAYER_OVERLAY).SetSize(500,IsClient?280:220).Center();
+            var w=CustomUIManager.Window(WindowId,Loc.Text("~SMC057~"),MainMenuUIController.Instance!=null?CustomUIManager.LAYER_MENU:CustomUIManager.LAYER_OVERLAY).SetSize(500,(IsClient?280:220)+(IssueReport.Count>0?44:0)).Center();
             if(IsClient)w.AddLabel(Loc.Text(Ready?"~SMC239~":"~SMC240~"));
             if(status.Length>0&&!(IsClient&&Ready))w.AddLabel(Loc.Text(status));
             // Leaving is a deliberate click in this window, never a single misclick on the corner button.
             if(IsClient)w.AddButton(Loc.Text("~SMC181~"),()=>{CustomUIManager.Instance.CloseWindow(WindowId);bool inShop=MainMenuUIController.Instance==null;Stop();if(inShop)ReturnToMenu();else DrawLauncher();});
+            if(IssueReport.Count>0)w.AddButton(Loc.Text("~SMC298~"+"（"+IssueReport.Count+"）"),IssueReport.CopyAndOpen);
             w.AddButton(Loc.Text("~SMC182~"),()=>CustomUIManager.Instance.CloseWindow(WindowId)).Show();
         }
         float nextNames;

@@ -24,6 +24,8 @@ public sealed class ShopTogetherTestDesktop : IDisposable {
     delegate bool EnumWindowProc(IntPtr window, IntPtr state);
     [DllImport("user32.dll", SetLastError=true)] static extern bool EnumDesktopWindows(IntPtr desktop, EnumWindowProc callback, IntPtr state);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
+    [DllImport("user32.dll", SetLastError=true)] static extern bool PostMessage(IntPtr window, uint message, UIntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     static extern bool GetUserObjectInformation(IntPtr handle, int index, StringBuilder info, int length, out int needed);
     [DllImport("kernel32.dll")] static extern int GetCurrentThreadId();
@@ -90,6 +92,32 @@ public sealed class ShopTogetherTestDesktop : IDisposable {
             return Process.GetProcessById(info.processId);
         } catch {TerminateProcess(info.process,1);WaitForSingleObject(info.process,10000);throw;}
         finally {CloseHandle(info.thread);CloseHandle(info.process);}
+    }
+    public void PostMouse(int processId,int x,int y) {
+        if(desktop==IntPtr.Zero||x<0||x>4095||y<0||y>4095)throw new InvalidOperationException("Invalid private-desktop mouse target");
+        IntPtr input=OpenInputDesktop(0,false,0x41);
+        try{if(string.Equals(DesktopName(input),name,StringComparison.OrdinalIgnoreCase)||HasWindow(input,processId))throw new InvalidOperationException("Refusing input on the active desktop");}
+        finally{if(input!=IntPtr.Zero)CloseDesktop(input);}
+        IntPtr target=IntPtr.Zero;
+        EnumWindowProc callback=(window,state)=>{uint owner;GetWindowThreadProcessId(window,out owner);if(owner!=(uint)processId)return true;var klass=new StringBuilder(256);GetClassName(window,klass,klass.Capacity);if(klass.ToString().IndexOf("Unity",StringComparison.OrdinalIgnoreCase)>=0){target=window;return false;}return true;};
+        EnumDesktopWindows(desktop,callback,IntPtr.Zero);
+        if(target==IntPtr.Zero)throw new InvalidOperationException("No Unity window on the private desktop");
+        IntPtr point=(IntPtr)((y<<16)|(x&0xffff));
+        if(!PostMessage(target,0x0200,UIntPtr.Zero,point)||!PostMessage(target,0x0201,(UIntPtr)1,point))throw new Win32Exception(Marshal.GetLastWin32Error(),"Private mouse press failed");
+        Thread.Sleep(250);
+        if(!PostMessage(target,0x0202,UIntPtr.Zero,point))throw new Win32Exception(Marshal.GetLastWin32Error(),"Private mouse release failed");
+    }
+    public void PostMouseAction(int processId,int x,int y,string action) {
+        if(desktop==IntPtr.Zero||x<0||x>4095||y<0||y>4095)throw new InvalidOperationException("Invalid private-desktop mouse target");
+        IntPtr input=OpenInputDesktop(0,false,0x41);
+        try{if(string.Equals(DesktopName(input),name,StringComparison.OrdinalIgnoreCase)||HasWindow(input,processId))throw new InvalidOperationException("Refusing input on the active desktop");}
+        finally{if(input!=IntPtr.Zero)CloseDesktop(input);}
+        IntPtr target=IntPtr.Zero;
+        EnumWindowProc callback=(window,state)=>{uint owner;GetWindowThreadProcessId(window,out owner);if(owner!=(uint)processId)return true;var klass=new StringBuilder(256);GetClassName(window,klass,klass.Capacity);if(klass.ToString().IndexOf("Unity",StringComparison.OrdinalIgnoreCase)>=0){target=window;return false;}return true;};
+        EnumDesktopWindows(desktop,callback,IntPtr.Zero);if(target==IntPtr.Zero)throw new InvalidOperationException("No Unity window on the private desktop");
+        IntPtr point=(IntPtr)((y<<16)|(x&0xffff));uint message;UIntPtr buttons;
+        if(action=="DOWN"){message=0x0201;buttons=(UIntPtr)1;}else if(action=="MOVE"){message=0x0200;buttons=(UIntPtr)1;}else if(action=="UP"){message=0x0202;buttons=UIntPtr.Zero;}else throw new InvalidOperationException("Invalid private mouse action");
+        if(!PostMessage(target,message,buttons,point))throw new Win32Exception(Marshal.GetLastWin32Error(),"Private mouse action failed");
     }
     public void Dispose() { if(desktop!=IntPtr.Zero){if(!CloseDesktop(desktop))throw new Win32Exception(Marshal.GetLastWin32Error(),"Could not close isolated desktop");desktop=IntPtr.Zero;} }
 }

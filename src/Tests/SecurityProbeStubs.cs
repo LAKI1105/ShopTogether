@@ -11,6 +11,11 @@ namespace ShopTogether {
     internal sealed class Connection {
         internal static Connection Current { get { return null; } }
         internal bool IsClient { get { return false; } }
+        internal bool IsHost { get { return false; } }
         internal void SendToHost(byte type,byte[] data) {}
+    }
+    internal static class IssueReport {
+        internal static void Add(string text) {}
+        internal static string Sanitize(string text) { return text; }
     }
 }

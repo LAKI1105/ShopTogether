@@ -110,8 +110,8 @@ namespace ShopTogether {
         internal static void AcceptDeal() {
             var ui = NegociationUIManager.Instance; var store = PlayerStore.Instance;
             var client = store != null && store.currentClientInstance != null ? store.currentClientInstance.GetClientBlueprint() : null;
-            if (ui == null || client == null || PlainTrade(client.clientIntent)) return;
-            ui.OnOfferAcceptClick();
+            if (ui == null || (client != null && PlainTrade(client.clientIntent))) return;
+            CounterTrades.SpecialAction();
         }
 
         // ---------------- inventory sort undo ----------------

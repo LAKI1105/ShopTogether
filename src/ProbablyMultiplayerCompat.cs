@@ -24,10 +24,16 @@ namespace ShopTogether {
 #if LAN_PROBE
             if (ProbeEnabled) return true;
 #endif
+            // Asked on every drop and request; the mod list does not change while playing, so look it up twice a second at most.
+            float now = Time.realtimeSinceStartup;
+            if (now < enabledUntil) return enabledCached;
+            bool found = false;
             foreach (var mod in ModLoader.Mods)
-                if (mod != null && mod.IsEnabled && mod.Manifest != null && string.Equals(mod.Manifest.ID, ModId, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
+                if (mod != null && mod.IsEnabled && mod.Manifest != null && string.Equals(mod.Manifest.ID, ModId, StringComparison.OrdinalIgnoreCase)) { found = true; break; }
+            enabledCached = found; enabledUntil = now + 0.5f;
+            return found;
         }
+        static bool enabledCached; static float enabledUntil = -1f;
         internal static void Tick() {
             if (bound || failed || Time.realtimeSinceStartup < nextCheck || !Enabled()) return;
             nextCheck = Time.realtimeSinceStartup + 1f;

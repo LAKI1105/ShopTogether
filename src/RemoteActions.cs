@@ -238,7 +238,7 @@ namespace ShopTogether {
 
         /// <summary>Validates and executes a friend's action. Returns a reason when refused.</summary>
         internal static string Execute(Connection session, int owner, RemoteCall call) {
-            CurrentOwner = owner; PendingNote = null; PanelRelay.Owner = owner;
+            CurrentOwner = owner; PendingNote = null; PanelRelay.Owner = owner; PanelRelay.NotifiedDuringAction = false;
             try { return Run(session, owner, call); } finally { CurrentOwner = -1; PanelRelay.Owner = 0; PanelRelay.SourceItem = null; PanelRelay.SourceIsActivation = false; }
         }
         static string Run(Connection session, int owner, RemoteCall call) {

@@ -88,7 +88,7 @@ namespace ShopTogether {
             Canvas.ForceUpdateCanvases();uiCamera.Render();
         }
         static readonly Queue<string> controlMessages=new Queue<string>();
-        static Vector3 pointer;static bool fakeInput;static readonly HashSet<KeyCode> pressed=new HashSet<KeyCode>();
+        static Vector3 pointer;static bool fakeInput,nativeMouseEdges;static readonly HashSet<KeyCode> pressed=new HashSet<KeyCode>();
         static string Argument(string key){string[] args=Environment.GetCommandLineArgs();for(int i=0;i<args.Length-1;i++)if(args[i]==key)return args[i+1];return null;}
         static void CloseControl(){if(control!=null){control.Close();control=null;}fakeInput=false;LocalControl.ProbeInput=false;pressed.Clear();if(uiCamera!=null)UnityEngine.Object.Destroy(uiCamera.gameObject);if(uiTarget!=null){uiTarget.Release();UnityEngine.Object.Destroy(uiTarget);}}
         static void Poll(){while(control!=null&&control.Available>0){IPEndPoint source=new IPEndPoint(IPAddress.Any,0);byte[] data=control.Receive(ref source);if(!IPAddress.IsLoopback(source.Address)||data.Length>1024)continue;other=source;controlMessages.Enqueue(Encoding.ASCII.GetString(data));}}
@@ -98,18 +98,25 @@ namespace ShopTogether {
         static void InstallInput(){
             var h=new Harmony("local.lan_shared_shop.test-input");
             h.Patch(AccessTools.PropertyGetter(typeof(Input),"mousePosition"),new HarmonyMethod(typeof(RuntimeProbe).GetMethod("MousePosition",BindingFlags.Static|BindingFlags.NonPublic)));
+            h.Patch(AccessTools.PropertyGetter(typeof(UnityEngine.EventSystems.BaseInput),"mousePosition"),new HarmonyMethod(typeof(RuntimeProbe).GetMethod("MouseUIPosition",BindingFlags.Static|BindingFlags.NonPublic)));
             var key=new HarmonyMethod(typeof(RuntimeProbe).GetMethod("Key",BindingFlags.Static|BindingFlags.NonPublic));
             h.Patch(AccessTools.Method(typeof(Input),"GetKey",new[]{typeof(KeyCode)}),key);
             h.Patch(AccessTools.Method(typeof(Input),"GetKeyDown",new[]{typeof(KeyCode)}),key);
             h.Patch(AccessTools.Method(typeof(Input),"GetKeyUp",new[]{typeof(KeyCode)}),key);
-            h.Patch(AccessTools.Method(typeof(Input),"GetMouseButton",new[]{typeof(int)}),transpiler:new HarmonyMethod(typeof(RuntimeProbe).GetMethod("MouseBody",BindingFlags.Static|BindingFlags.NonPublic)));
-            var noEdge=new HarmonyMethod(typeof(RuntimeProbe).GetMethod("NoMouseEdge",BindingFlags.Static|BindingFlags.NonPublic));
-            h.Patch(AccessTools.Method(typeof(Input),"GetMouseButtonDown",new[]{typeof(int)}),transpiler:noEdge);
-            h.Patch(AccessTools.Method(typeof(Input),"GetMouseButtonUp",new[]{typeof(int)}),transpiler:noEdge);
+            string suite=Argument("--smc-suite");
+            bool nativeMouse=((suite=="mouse1327"||suite=="trade1327"||suite=="layout1326"||suite=="stress1327")&&Argument("--smc-role")=="client")||(suite=="issue1328"&&Argument("--smc-issue-restore")=="1");
+            nativeMouseEdges=nativeMouse;
+            if(!nativeMouse){
+                h.Patch(AccessTools.Method(typeof(Input),"GetMouseButton",new[]{typeof(int)}),transpiler:new HarmonyMethod(typeof(RuntimeProbe).GetMethod("MouseBody",BindingFlags.Static|BindingFlags.NonPublic)));
+                var noEdge=new HarmonyMethod(typeof(RuntimeProbe).GetMethod("NoMouseEdge",BindingFlags.Static|BindingFlags.NonPublic));
+                h.Patch(AccessTools.Method(typeof(Input),"GetMouseButtonDown",new[]{typeof(int)}),transpiler:noEdge);
+                h.Patch(AccessTools.Method(typeof(Input),"GetMouseButtonUp",new[]{typeof(int)}),transpiler:noEdge);
+            }
             fakeInput=true;LocalControl.ProbeInput=true;
         }
         static bool MousePosition(ref Vector3 __result){if(!fakeInput)return true;__result=pointer;return false;}
-        static bool Key(KeyCode __0,MethodBase __originalMethod,ref bool __result){if(!fakeInput)return true;__result=__originalMethod.Name=="GetKey"&&pressed.Contains(__0);return false;}
+        static bool MouseUIPosition(ref Vector2 __result){if(!fakeInput)return true;__result=pointer;return false;}
+        static bool Key(KeyCode __0,MethodBase __originalMethod,ref bool __result){if(!fakeInput||(nativeMouseEdges&&__0>=KeyCode.Mouse0&&__0<=KeyCode.Mouse2))return true;__result=__originalMethod.Name=="GetKey"&&pressed.Contains(__0);return false;}
         static bool ReadMouseButton(int button){return fakeInput&&pressed.Contains((KeyCode)((int)KeyCode.Mouse0+button));}
         static IEnumerable<CodeInstruction> MouseBody(IEnumerable<CodeInstruction> instructions){yield return new CodeInstruction(OpCodes.Ldarg_0);yield return new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(RuntimeProbe),"ReadMouseButton"));yield return new CodeInstruction(OpCodes.Ret);}
         static IEnumerable<CodeInstruction> NoMouseEdge(IEnumerable<CodeInstruction> instructions){yield return new CodeInstruction(OpCodes.Ldarg_0);yield return new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(RuntimeProbe),"ReadMouseEdge"));yield return new CodeInstruction(OpCodes.Ret);}
@@ -204,13 +211,14 @@ namespace ShopTogether {
 #endif
             InstallInput();var a=ModHelper.SpawnItem("magnifier");var b=ModHelper.SpawnItem("magnifier");a.mayStackItemFunc=(x,y)=>false;b.mayStackItemFunc=(x,y)=>false;a.name="SMC_HOST_ITEM";b.name="SMC_CLIENT_ITEM";b.ModifyTag("FEED_DISPENSER_TARGET_PERCENT_INT",t=>t.Enable().SetInt(85));GraphUtils.TryAcceptAll(EmporiumEntry.Instance.invElement,a,1);GraphUtils.TryAcceptAll(EmporiumEntry.Instance.invElement,b,1);foreach(var live in EmporiumEntry.Instance.invElement.childItems){if(live.name=="SMC_HOST_ITEM")a=live;if(live.name=="SMC_CLIENT_ITEM")b=live;}Require(a.unitCount>0&&b.unitCount>0,"test fixtures retain live native items");ShowStorage();
             wait=Wait(()=>!StoreUIManager.Instance.blackscreen.gameObject.activeInHierarchy,"initial shop transition finished",30);while(wait.MoveNext())yield return wait.Current;ShowStorage();yield return null;pointer=Point(a);yield return null;yield return null;Context(a);Require(MenuOpen,"native context preflight");ItemContextHandler.current.UpdateReset();int ticks=0;a.onOneSecondItemFunc=(x,y,z)=>{ticks++;x.unitValue=UnityEngine.Random.Range(100000,200000);};
+            if(Argument("--smc-suite")=="stress1327"){var stress=StressPrepare1327();while(stress.MoveNext())yield return stress.Current;}
             control=new UdpClient(new IPEndPoint(IPAddress.Loopback,0));string code=root.ProbeOpen();root.World.Index();
             {Invite invite;string inviteError;Require(InviteCode.TryDecode(code,out invite,out inviteError),"invite decodes");
              if(SteamRelay.Available&&SteamRelay.LocalId!=0){Require(invite.SteamId==SteamRelay.LocalId,"invite carries this host's Steam account for friends outside the network");ulong parsed;Require(SteamInvite.TryParse("+shoptogether "+SteamRelay.LocalId,out parsed)&&parsed==SteamRelay.LocalId&&!SteamInvite.TryParse("+connect 1.2.3.4:7777",out parsed)&&!SteamInvite.TryParse("+shoptogether 1",out parsed),"Steam friends-list join string: only a person's Steam account is accepted");bool self=false;try{SteamRelay.Connect(SteamRelay.LocalId);}catch(InvalidOperationException){self=true;}Require(self,"Steam refuses joining your own account");}
              else Debug.Log("[SMC NOTE] Steam not running in this test; Steam relay checks skipped");}
             if(SteamRelay.Available&&SteamRelay.LocalId!=0){PlayerNames.Changed=true;wait=Wait(()=>SteamInvite.Advertising,"a Steam room is joinable by Steam friends without a separate invite step",10);while(wait.MoveNext())yield return wait.Current;}
             Debug.Log("[SMC-INTERNAL-INVITE] "+code);Debug.Log("[SMC CONTROL] "+((IPEndPoint)control.Client.LocalEndPoint).Port);
-            wait=Wait(()=>Received("JOINED"),"real client authenticated and applied host state",100);while(wait.MoveNext())yield return wait.Current;
+            wait=Wait(()=>Received("JOINED"),"real client authenticated and applied host state",Argument("--smc-suite")=="stress1327"?300:100);while(wait.MoveNext())yield return wait.Current;
             string limit=Argument("--smc-throttle");if(!string.IsNullOrEmpty(limit)){int kbps;if(!int.TryParse(limit,out kbps)||kbps<1)throw new InvalidOperationException("Invalid test rate");root.ProbeLimitUpload(kbps*125);Debug.Log("[SMC PASS] direct host upload is limited to "+kbps+" kbit/s for the outing test");}
             if(Argument("--smc-suite")!=null){var suite=RunExtended(root,true);while(suite.MoveNext())yield return suite.Current;Signal("COMPLETE");Debug.Log("[SMC COMPLETE] host extended "+Argument("--smc-suite"));yield break;}ShowStorage();pointer=Point(a);yield return null;yield return null;Context(a);Require(MenuOpen,"host native context menu open");Signal("OPEN_MENU");
             wait=Wait(()=>Received("CLIENT_MENU"),"client native context menu open",30);while(wait.MoveNext())yield return wait.Current;Require(MenuOpen,"host menu stays open while client opens another");Signal("CLOSE_MENU");ItemContextHandler.current.UpdateReset();
@@ -238,7 +246,7 @@ namespace ShopTogether {
             Require(!Screen.fullScreen,"client runs in windowed mode");
             if(Argument("--smc-suite")=="recovery")InstallRecoveryProbe(1);
             control=new UdpClient(new IPEndPoint(IPAddress.Loopback,0));other=new IPEndPoint(IPAddress.Loopback,int.Parse(Argument("--smc-control")));root.ProbeJoin(Argument("--smc-invite"));
-            wait=Wait(()=>root.Ready,"client loaded host snapshot through pinned TLS",90);while(wait.MoveNext())yield return wait.Current;
+            wait=Wait(()=>root.Ready,"client loaded host snapshot through pinned TLS",Argument("--smc-suite")=="stress1327"?300:90);while(wait.MoveNext())yield return wait.Current;
             if(Argument("--smc-suite")=="recovery")Require(recoveryInjected==1&&root.ProbeApplyFailures==0,"initial failed snapshot recovered before the client became ready");
             var a=Find(root,"SMC_HOST_ITEM");var b=Find(root,"SMC_CLIENT_ITEM");Require(a!=null&&b!=null,"client has the host test items");int ticks=0;Action<GameItem,GameInventory,SlotMarker> randomCallback=(x,y,z)=>{ticks++;x.unitValue=UnityEngine.Random.Range(1,100);};a.onOneSecondItemFunc=randomCallback;ShowStorage();Signal("JOINED");if(Argument("--smc-suite")!=null){var suite=RunExtended(root,false);while(suite.MoveNext())yield return suite.Current;wait=Wait(()=>Received("COMPLETE"),"extended host acknowledgement");while(wait.MoveNext())yield return wait.Current;Debug.Log("[SMC COMPLETE] client extended "+Argument("--smc-suite"));yield break;}
             wait=Wait(()=>Received("OPEN_MENU"),"host menu barrier");while(wait.MoveNext())yield return wait.Current;pointer=Point(b);yield return null;yield return null;Context(b);Require(MenuOpen,"client native context menu open");Signal("CLIENT_MENU");

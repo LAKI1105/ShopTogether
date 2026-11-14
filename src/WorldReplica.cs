@@ -18,6 +18,31 @@ namespace ShopTogether {
         string lastStore,lastStation;float nextState;
         // Host: items to compare first (just changed), the round-robin position, and each item's last sent fingerprint.
         readonly HashSet<int> dirty=new HashSet<int>();readonly List<int> order=new List<int>();int orderCursor;readonly Dictionary<int,long> fingerprints=new Dictionary<int,long>();readonly Dictionary<int,long> stateHashes=new Dictionary<int,long>();
+        sealed class PendingLoad{internal bool created;internal ReplicaLoad.Before before;}
+        readonly Dictionary<GameItem,PendingLoad> pendingLoads=new Dictionary<GameItem,PendingLoad>();readonly Queue<GameItem> loadOrder=new Queue<GameItem>();
+        void QueueLoad(GameItem item,bool created,ReplicaLoad.Before before){
+            PendingLoad p;
+            if(pendingLoads.TryGetValue(item,out p))p.created|=created;   // keep the oldest "before": the change still counts from there
+            else{p=new PendingLoad{created=created,before=before};pendingLoads[item]=p;loadOrder.Enqueue(item);}
+            bool open=false;try{open=item.contentWindow!=null&&item.contentWindow.IsVisible();}catch{}
+            if(open){pendingLoads.Remove(item);RunLoad(item,p);}
+        }
+        void RunLoad(GameItem item,PendingLoad p){
+            if(Gone(item)||!itemIds.ContainsKey(item))return;
+            ReplicaLoad.Run(item,p.created,p.before);
+            try{item.modifiedState=item.ComputeModifiedShapeState(null,null,null,null,null).Item4;}catch(Exception e){Debug.LogWarning("[ShopTogether] derived state: "+e.Message);}
+        }
+        /// <summary>Friend, every frame: rebuild queued layouts for at most budgetMs.</summary>
+        internal void RunLoads(double budgetMs){
+            if(loadOrder.Count==0||Applying)return;
+            var clock=System.Diagnostics.Stopwatch.StartNew();Applying=true;
+            try{
+                while(loadOrder.Count>0&&clock.Elapsed.TotalMilliseconds<budgetMs){
+                    var item=loadOrder.Dequeue();PendingLoad p;if(!pendingLoads.TryGetValue(item,out p))continue;pendingLoads.Remove(item);
+                    try{RunLoad(item,p);}catch(Exception e){Diagnostics.Report("layout "+(item!=null?item.identifier:"?"),e);}
+                }
+            }finally{Applying=false;}
+        }
         internal void MarkDirty(GameItem item){int id;if(item==null)return;if(itemIds.TryGetValue(item,out id))dirty.Add(id);else structureDirty=true;}
         // Host side: walking the whole shop only when its shape may have changed. Inventory addresses are (container
         // item id, inventory number inside that container), so they do not shift when items move; a new walk is needed
@@ -41,7 +66,7 @@ namespace ShopTogether {
         static bool Placed(GameItem item,Func<bool> move,GameInventory target=null){var was=SandboxItem;bool permit=SandboxMovePermit;Sandbox++;SandboxItem=item;SandboxMovePermit=true;try{return move();}catch(Exception e){Diagnostics.Report("placing "+(item!=null?item.identifier:"?"),e);return item!=null&&(target!=null?item.parentInventory==target:item.parentInventory==null);}finally{Sandbox--;SandboxItem=was;SandboxMovePermit=permit;}}
         static bool Gone(GameItem item){var element=item as GameItemElement;return item==null||element!=null&&element.IsDestroyed();}
         static void Remove(GameItem item){if(Gone(item))return;var inv=item.parentInventory;if(inv!=null)Placed(item,()=>inv.Expel(item));item.Destroy();}
-        internal void Reset(){stateHashes.Clear();structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
+        internal void Reset(){stateHashes.Clear();pendingLoads.Clear();loadOrder.Clear();structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
         internal int Id(GameItem item){int id;return item!=null&&itemIds.TryGetValue(item,out id)?id:0;}
         // A host may pick up an item in the same frame the game creates it. Register just that item's subtree
         // in its already-known inventory rather than waiting for the periodic full-world index.
@@ -228,8 +253,9 @@ namespace ShopTogether {
                 foreach(var item in derived){try{item.modifiedState=item.ComputeModifiedShapeState(null,null,null,null,null).Item4;}catch(Exception e){Debug.LogWarning("[ShopTogether] derived state: "+e.Message);}}
                 // Load hooks read modifiedState. Run them only after both the host state and child placements
                 // have been reflected there, otherwise they rebuild the old controls and inventory sizes.
-                foreach(var load in loads){if(Gone(load.Key))continue;ReplicaLoad.Run(load.Key,createdNow.Contains(load.Key),load.Value);}
-                foreach(var item in derived){try{item.modifiedState=item.ComputeModifiedShapeState(null,null,null,null,null).Item4;}catch(Exception e){Debug.LogWarning("[ShopTogether] derived state: "+e.Message);}}
+                // Rebuilding layouts is spread over the next frames (RunLoads) so a large update does not stall the
+                // friend's mouse. A machine whose window is open right now is refreshed at once.
+                foreach(var load in loads){if(Gone(load.Key))continue;QueueLoad(load.Key,createdNow.Contains(load.Key),load.Value);}
                 if(delta.leases!=null){RemoteLeases.Clear();foreach(var l in delta.leases)if(l!=null)RemoteLeases[l.item]=l.owner;}
                 Version=delta.version;Index();Presentation.ApplyDialogue(delta.presentation,this);
                 ReplicaVisuals.Refresh(delta.store!=null||delta.full);

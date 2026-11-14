@@ -17,6 +17,8 @@ namespace ShopTogether {
     internal static class PanelRelay {
         internal const byte Message = 43;
         internal static int Owner;
+        /// <summary>A message or window went to the friend during their current action (reset when an action starts).</summary>
+        internal static bool NotifiedDuringAction;
         internal static GameItem SourceItem;
         internal static bool SourceIsActivation;
         internal static bool Capturing { get { var s = Connection.Current; return Owner > 0 && s != null && s.IsHost; } }
@@ -156,7 +158,7 @@ namespace ShopTogether {
             if (index == Confirm) numbers.Add(confirmToken);
             var call = new PanelCall { m = index, items = items.ToArray(), texts = texts.ToArray(), numbers = numbers.ToArray() };
             byte[] bytes = Encoding.UTF8.GetBytes(WireJson.ToJson(call));
-            if (bytes.Length <= 16384) s.SendTo(Owner, Message, bytes);
+            if (bytes.Length <= 16384) { s.SendTo(Owner, Message, bytes); NotifiedDuringAction = true; }
             return notice;
         }
 

@@ -12,7 +12,8 @@ public static class IsolatedApproval {
         return Path.GetFullPath(child).StartsWith(root, StringComparison.OrdinalIgnoreCase);
     }
     public static void Tick() {
-        if (done || Environment.GetEnvironmentVariable("SHOPTOGETHER_TEST_ONLY_APPROVE") != "1") return;
+        string mode=Environment.GetEnvironmentVariable("SHOPTOGETHER_TEST_ONLY_APPROVE");
+        if (done || (mode != "1" && mode != "scan")) return;
         bool withVisitor=Environment.GetEnvironmentVariable("SHOPTOGETHER_TEST_WITH_VISITOR")=="1";
         LoadedMod own=null, visitor=null;
         foreach (var mod in ModLoader.Mods) if(mod!=null&&mod.Manifest!=null) {
@@ -27,23 +28,25 @@ public static class IsolatedApproval {
             if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(profile) || !Under(Application.dataPath, root) || !Under(profile, root) || !Under(own.FolderPath, root) || (withVisitor&&!Under(visitor.FolderPath,root)))
                 throw new InvalidOperationException("Approval must stay within the isolated game and test profile");
             if(own.Source!=ModSource.Workshop||own.WorkshopId!=3837477869UL||string.IsNullOrEmpty(own.Manifest.ModVersion))throw new InvalidOperationException("The test candidate identity changed");
-            Approve(own,new HashSet<string>(new[]{"network","steam","reflection-external"},StringComparer.Ordinal));
+            if(mode=="scan"&&ModLoader.IsModEnabled(own.Manifest.ID))throw new InvalidOperationException("Production candidate must remain disabled during the isolated scan");
+            Approve(own,new HashSet<string>(new[]{"network","steam","reflection-external"},StringComparer.Ordinal),mode!="scan");
             if(withVisitor){
                 if(visitor.Source!=ModSource.Workshop||visitor.WorkshopId!=3828909239UL||visitor.Manifest.ModVersion!="2.6.1")throw new InvalidOperationException("The requested visitor mod or version changed");
-                Approve(visitor,new HashSet<string>(new[]{"network","process","steam-auth"},StringComparer.Ordinal));
+                Approve(visitor,new HashSet<string>(new[]{"network","process","steam-auth"},StringComparer.Ordinal),mode!="scan");
             }
             Debug.Log("[PM-TEST APPROVED] game scanner passed; requested capabilities authorized in isolated profile");
         } catch (Exception error) {
-            Debug.LogError("[PM-TEST APPROVAL-FAILED] " + error);
+            Debug.LogError("[PM-TEST APPROVAL-FAILED] " + error.ToString().Replace("\r", " ").Replace("\n", " | "));
         } finally { Application.Quit(); }
     }
-    static void Approve(LoadedMod target,HashSet<string> allowed){
+    static void Approve(LoadedMod target,HashSet<string> allowed,bool enable){
         foreach(var capability in target.Manifest.Capabilities)if(!allowed.Contains(capability))throw new InvalidOperationException("The mod requests an additional capability: "+capability);
         var check=ModLoader.CheckEnable(target);
         if(check==null||check.Refusal!=null||check.Undeclared.Count!=0)throw new InvalidOperationException("Game scanner refused this mod: "+(check==null?"no result":check.Refusal??string.Join(",",check.Undeclared.ToArray())));
+        if(check.Scan!=null)foreach(var finding in check.Scan.Findings)if(finding.Kind=="threads")Debug.Log("[PM-TEST THREAD-SCAN] "+finding);
         foreach(var capability in check.PromptCapabilities)if(!allowed.Contains(capability))throw new InvalidOperationException("The game requests an additional capability: "+capability);
         if(check.Scan!=null)foreach(var finding in check.Scan.Findings)if(finding.Kind=="reflection-external")Debug.Log("[PM-TEST SCAN] "+finding);
-        ModLoader.ApproveAndEnable(target,check);
-        if(!ModLoader.IsModEnabled(target.Manifest.ID)||ModTrust.Get(target.Manifest.ID)==null)throw new InvalidOperationException("The game did not record approval");
+        if(enable){ModLoader.ApproveAndEnable(target,check);
+            if(!ModLoader.IsModEnabled(target.Manifest.ID)||ModTrust.Get(target.Manifest.ID)==null)throw new InvalidOperationException("The game did not record approval");}
     }
 }

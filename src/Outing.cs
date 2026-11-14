@@ -263,7 +263,19 @@ namespace ShopTogether {
             // (Dr. Jackson, other mods' locations) are not shown on a friend's screen.
             // In the shop: the same shutter and counter as the host.
             if (s.location == null && OutingKits.Here == null && OutingKits.Joined == null && !s.onMap && !TransitUI.IsOpen) Visual(() => {
-                if (StoreShutterButton.Instance != null && HostPhase.ShutterClosed() != s.shutterClosed) StoreShutterButton.Instance.ToggleShutterDoor();
+                var shutter = StoreShutterButton.Instance;
+                if (shutter != null) {
+                    if (HostPhase.ShutterClosed() != s.shutterClosed) shutter.ToggleShutterDoor();
+                    // The host's OpenShutter completion callback hides this raycast mask. Friends only replay the
+                    // shutter animation, so they must hide the mask after the same animation actually finishes.
+                    // Otherwise an invisible mask keeps intercepting the outdoor vending machines all day.
+                    var mask = shutter.blockerMaskObject;
+                    if (mask != null && !s.shutterClosed && mask.gameObject.activeSelf &&
+                        shutter.shutterGameObject != null && shutter.blockerGameObject != null &&
+                        shutter.shutterGameObject.transform.position == shutter.endPosition &&
+                        shutter.blockerGameObject.transform.localPosition == shutter.blockerEndPosition)
+                        mask.gameObject.SetActive(false);
+                }
                 var front = EmporiumEntry.Instance.frontInvWindow;
                 if (front != null && front.IsVisible() != s.frontShown) { if (s.frontShown) EmporiumEntry.Instance.ShowFrontArea(); else EmporiumEntry.Instance.HideFrontArea(); }
             });

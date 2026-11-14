@@ -82,6 +82,7 @@ namespace ShopTogether {
             for (int i = 0; i < list.ids.Length; i++) { string n = Clean(list.names[i]); if (list.ids[i] >= 0 && list.ids[i] <= 64 && n.Length > 0) names[list.ids[i]] = n; }
         }
         internal static string Of(int id) { string n; return names.TryGetValue(id, out n) ? n : (id == 0 ? "~SMC077~" : "~SMC102~" + id); }
+        internal static IEnumerable<string> All() { return new List<string>(names.Values); }
         internal static void Reset() { names.Clear(); Changed = true; }
     }
 
