@@ -140,7 +140,6 @@ namespace ShopTogether {
         }
 
         internal static bool CustomerReady(int action) {
-            if (!DialoguePayment.AllowSpending()) return false;
             if (ProbablyMultiplayerCompat.VisitActive) { Refuse(action, "~SMC271~", "human visitor trade uses its own panel"); return false; }
             if (DialogueIntent.Committing) { Refuse(action, "~SMC353~", "dialogue delivery pending"); return false; }
             var store = PlayerStore.Instance; var customer = Customer();
@@ -158,9 +157,10 @@ namespace ShopTogether {
             if (c.clientIntent == StoreClient.ClientIntent.BARTER)
                 return (c.barterOffer != null && c.barterOffer.IsBarterAcceptable() || AuthorityIntent.Refuse("~SMC357~")) && DialogueIntent.Available(s, owner); // Both offered and received goods change ownership.
             if (c.clientIntent == StoreClient.ClientIntent.INFORMATION_DEALER)
-                return store.CanPay(c.serviceCost) || AuthorityIntent.Refuse("~SMC296~");
+                return DialoguePayment.AllowSpending() && (store.CanPay(c.serviceCost) || AuthorityIntent.Refuse("~SMC296~"));
             var item = c.clientIntent == StoreClient.ClientIntent.GUNSMITH ? GunOrderData.ResolveOrderGun() : store.currentNegociatedItem;
             if (item == null) return AuthorityIntent.Refuse("~SMC291~");
+            if (c.clientIntent != StoreClient.ClientIntent.GUNSMITH && !GeneralHelper.IsItemOwned(item) && !DialoguePayment.AllowSpending()) return false;
             if (c.clientIntent == StoreClient.ClientIntent.GUNSMITH && (c.gunOrderData == null || !c.gunOrderData.IsAccepted())) return AuthorityIntent.Refuse("~SMC358~");
             if (!DialogueIntent.MayChange(s, item) || !AuthorityIntent.FreeTree(s, owner, item)) return false;
             if (c.clientIntent == StoreClient.ClientIntent.GUNSMITH) { long reward = c.gunOrderData.GetTotalReward(item); if (reward < 0 || (long)store.playerCash + reward > int.MaxValue) return AuthorityIntent.Refuse("~SMC356~"); }
@@ -186,6 +186,7 @@ namespace ShopTogether {
         internal static bool BatchAvailable(int action, NegociationUIManager ui) {
             var c = Customer(); List<GameItem> items;
             if (action == 1) {
+                if (!DialoguePayment.AllowSpending()) return false;
                 if (c.isRegularSellDisable) return AuthorityIntent.Refuse("~SMC247~");
                 items = new List<GameItem>();
                 foreach (var item in EmporiumEntry.Instance.backInvinvElement.childItems) if (!GeneralHelper.IsItemOwned(item)) items.Add(item);
@@ -229,7 +230,13 @@ namespace ShopTogether {
             return (store != null ? store.playerCash : -1) + "|" + (c != null ? c.isBusinessComplete + "/" + c.GetBudget() : "-") + "|" +
                 (e != null && e.backInvinvElement != null ? e.backInvinvElement.childItems.Count : -1) + "|" +
                 (e != null && e.frontInvinvElement != null ? e.frontInvinvElement.childItems.Count : -1) + "|" +
-                (e != null && e.backInvinvElement != null ? OwnedCount(e.backInvinvElement) : -1);
+                (e != null && e.backInvinvElement != null ? OwnedCount(e.backInvinvElement) : -1) + "|" + CounterContents();
+        }
+        static string CounterContents() {
+            var s=Connection.Current;var e=EmporiumEntry.Instance;if(s==null||e==null)return "";
+            var b=new System.Text.StringBuilder();
+            foreach(var item in e.backInvinvElement.childItems)b.Append(AuthorityIntent.TreeStamp(s,item)).Append(';');
+            return b.ToString(); // Reinspection changes features without exchanging cash or removing goods.
         }
         static int OwnedCount(GameInventory inventory) { int n = 0; foreach (var item in inventory.childItems) if (item != null && GeneralHelper.IsItemOwned(item)) n++; return n; }
 
@@ -247,6 +254,45 @@ namespace ShopTogether {
             }
             reason = "the game made no change"; return "~SMC297~";
         }
+    }
+
+    // BuyItem is void and another mod may decline it. Do not run the native
+    // deal-accepted callback merely because the outer tablet method returned.
+    [HarmonyPatch]
+    internal static class CounterPurchaseOutcome {
+        internal sealed class Purchase {
+            internal Purchase previous;internal List<GameItem> items;internal bool reported;
+            internal int Bought { get { int count=0;foreach(var item in items)if(item!=null&&GeneralHelper.IsItemOwned(item))count++;return count; } }
+        }
+        static Purchase current;
+        static IEnumerable<MethodBase> TargetMethods(){yield return AccessTools.Method(typeof(NegociationUIManager),"BuyItem");yield return AccessTools.Method(typeof(NegociationUIManager),"BuyMultipleItem");yield return AccessTools.Method(typeof(NegociationUIManager),"OnWholesaleClick");}
+        [HarmonyPriority(Priority.First+125)]
+        static void Prefix(MethodBase __originalMethod,object[] __args,out Purchase __state){
+            __state=null;var s=Connection.Current;if(s==null||!s.IsHost||!s.Ready||WorldReplica.Applying)return;
+            var items=__originalMethod.Name=="OnWholesaleClick"?EmporiumEntry.Instance.GetAllNonOwnedItem():__args.Length>0?__args[0] as IEnumerable<GameItem>:new[]{PlayerStore.Instance.currentNegociatedItem};
+            var selected=new List<GameItem>();if(items!=null)foreach(var item in items)if(item!=null&&!GeneralHelper.IsItemOwned(item))selected.Add(item);
+            __state=new Purchase{previous=current,items=selected};current=__state;
+        }
+        internal static bool AcceptDialogue(){
+            if(current==null||current.Bought>0)return true;
+            Report(current);return false;
+        }
+        static void Report(Purchase state){
+            if(state.reported)return;state.reported=true;
+            if(RemoteActions.PendingNote==null)RemoteActions.PendingNote=state.Bought==0?"~SMC366~":"~SMC367~";
+            if(RemoteActions.CurrentOwner<0)RemoteActions.Notice(RemoteActions.PendingNote);
+        }
+        static Exception Finalizer(Exception __exception,Purchase __state){
+            if(__state==null)return __exception;
+            try{var s=Connection.Current;if(s!=null){foreach(var item in __state.items)s.World.MarkDirty(item);s.SyncStateSoon();}
+                if(__exception==null&&__state.Bought<__state.items.Count)Report(__state);
+            }finally{current=__state.previous;}
+            return __exception;
+        }
+    }
+    [HarmonyPatch(typeof(NegociationUIManager),"PlayAcceptDealDialogueOnce")]
+    internal static class CounterPurchaseAcceptance {
+        static bool Prefix(ref bool __result){if(CounterPurchaseOutcome.AcceptDialogue())return true;__result=true;return false;}
     }
 
     // The tablet uses SellMultiple/BuyMultipleItem directly, bypassing the

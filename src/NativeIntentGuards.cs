@@ -54,10 +54,10 @@ namespace ShopTogether {
                 var selected = e.GetAllOwnedItems().Where(x => x.IsTag(tag)).ToList();
                 if (selected.Count == 0) return "~SMC348~";
                 foreach (var selectedItem in selected) { if (!DialogueIntent.MayChange(s, selectedItem)) return "~SMC353~"; if (!AuthorityIntent.FreeTree(s, owner, selectedItem)) return "~SMC096~"; }
+                if(name=="OnRedeemAllLottery") {long total=store.playerCash;foreach(var ticket in selected){if(ticket.unitValue<0||ticket.unitValue>int.MaxValue||total>int.MaxValue-ticket.unitValue)return "~SMC356~";total+=ticket.unitValue;}}
                 return null;
             }
             if (type == typeof(NegociationUIManager)) {
-                if (!DialoguePayment.AllowSpending()) return "~SMC364~";
                 if (ProbablyMultiplayerCompat.VisitActive) return "~SMC271~";
                 var customer = store.currentClientInstance == null ? null : store.currentClientInstance.GetClientBlueprint();
                 if (customer == null || NegociationUIManager.IsTradeLocked()) return "~SMC247~";
@@ -69,6 +69,7 @@ namespace ShopTogether {
                     return null;
                 }
                 if (!customer.isOfferWholesale || customer.isBusinessComplete) return "~SMC247~";
+                if (!DialoguePayment.AllowSpending()) return RemoteActions.PendingNote;
                 long total = 0;
                 foreach (var goods in e.GetAllNonOwnedItem()) {
                     long value = goods.GetNegociatedValue();
@@ -147,7 +148,7 @@ namespace ShopTogether {
             foreach (var code in instructions) {
                 var method = code.operand as MethodInfo;
                 if (method != null && method.Name == "SetInteractable" && method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType == typeof(bool)) {
-                    var ask = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(AuthorityIntent), "Ask"));
+                    var ask = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(AuthorityIntent), "AskDisplay"));
                     ask.labels.AddRange(code.labels); code.labels.Clear(); yield return ask;
                 }
                 yield return code;

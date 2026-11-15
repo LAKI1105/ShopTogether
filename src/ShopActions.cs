@@ -91,11 +91,11 @@ namespace ShopTogether {
         // ---------------- the Wild network: the price is paid on the host ----------------
         /// <summary>Host side: buy a Wild network upgrade, paid with favour first and cash for the rest.</summary>
         internal static void BuyWild(string id) {
-            if (!DialoguePayment.AllowSpending()) return;
             var store = PlayerStore.Instance; NetworkUpgrade upgrade;
             if (store == null || id == null || store.networkUpgrade == null || !store.networkUpgrade.TryGetValue(id, out upgrade) || upgrade == null || !upgrade.IsReady() || upgrade.IsUnlocked()) { Refuse("~SMC247~"); return; }
             int cost = upgrade.GetCost();
             if (cost < 0 || (long)cost > (long)store.playerCash + store.wildFavor) { Refuse("~SMC232~"); return; }
+            if(cost>store.wildFavor&&!DialoguePayment.AllowSpending())return;
             int cashSpent = 0;
             if (store.wildFavor >= cost) store.wildFavor -= cost;
             else { int rest = cost - store.wildFavor; store.wildFavor = 0; store.playerCash -= rest; cashSpent = rest; }

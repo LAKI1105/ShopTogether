@@ -30,15 +30,23 @@ namespace ShopTogether {
             RemoteActions.Forward(RemoteActions.Adapter("StoragePageAction",3),null,new object[]{__originalMethod.Name,(int)__args[0],__args.Length>1?(string)__args[1]:""});return false;
         }
         static bool Controls(ref bool __result){if(scope<=0)return true;__result=true;return false;}
-        static bool BeforeUnlock(object __instance,int index,int price,out int __state){
-            __state=-1;if(!DialoguePayment.AllowSpending())return false;if(RemoteActions.CurrentOwner<=0)return true;
-            __state=Number(__instance,"page");scope++;
+        sealed class UnlockState {internal int page,unlocked;internal bool remote;}
+        static bool BeforeUnlock(object __instance,int index,int price,PlayerStore store,out UnlockState __state){
+            __state=null;var s=Connection.Current;if(s==null||!s.IsHost||!s.Ready)return true;
+            if(RemoteActions.CurrentOwner<0)RemoteActions.PendingNote=null;
+            if(!DialoguePayment.AllowSpending())return false;
             Call(__instance,"RestoreRecordedProgress");
-            if(index!=Number(__instance,"unlocked")||index>=10)RemoteActions.PendingNote="~SMC326~";
+            if(SaveManager.IsDecoding||PlayerStore.Instance!=store||index!=Number(__instance,"unlocked")||index>=10||index<0||price!=(int)AccessTools.Method(AccessTools.TypeByName("ShopStoragePages.PagePrices"),"ForPage").Invoke(null,new object[]{index}))RemoteActions.PendingNote="~SMC326~";
             else if(!PlayerStore.Instance.CanPay(price))RemoteActions.PendingNote="~SMC343~";
+            if(RemoteActions.PendingNote!=null){if(RemoteActions.CurrentOwner<0)RemoteActions.Notice(RemoteActions.PendingNote);return false;}
+            __state=new UnlockState{page=Number(__instance,"page"),unlocked=Number(__instance,"unlocked"),remote=RemoteActions.CurrentOwner>0};if(__state.remote)scope++;
             return true;
         }
-        static void AfterUnlock(object __instance,int __state){if(__state<0)return;try{AccessTools.Field(type,"page").SetValue(__instance,__state);Call(__instance,"RefreshCaption");}finally{scope--;}}
+        static void AfterUnlock(object __instance,UnlockState __state){if(__state==null)return;try{
+            if(Number(__instance,"unlocked")==__state.unlocked&&RemoteActions.PendingNote==null){RemoteActions.PendingNote="~SMC369~";if(RemoteActions.CurrentOwner<0)RemoteActions.Notice(RemoteActions.PendingNote);}
+            if(__state.remote){AccessTools.Field(type,"page").SetValue(__instance,__state.page);Call(__instance,"RefreshCaption");}
+            var s=Connection.Current;if(s!=null)s.SyncStateSoon();
+        }finally{if(__state.remote)scope--;}}
         internal static void StoragePageAction(string action,int page,string name){
             var current=Current;if(current==null||PlayerStore.Instance==null||SaveManager.IsDecoding){RemoteActions.PendingNote="~SMC326~";return;}
             Call(current,"RestoreRecordedProgress");int count=Number(current,"unlocked");

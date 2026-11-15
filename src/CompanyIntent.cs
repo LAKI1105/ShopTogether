@@ -47,6 +47,7 @@ namespace ShopTogether {
             Add("Malice.Malice","Subscribe",null);Add("Malice.Malice","ApplyUnlock",null);
             Add("Malice.RebelStory","BribeMeridian",null);Add("Malice.RebelStory","ReorderBomb",null);
             Patch(AccessTools.Method(T("Malice.MalicePanel"),"Say"),"Toast");
+            patches.Patch(AccessTools.Method(T("Malice.MalicePanel"),"Draw"),transpiler:new HarmonyMethod(typeof(CompanyIntent),"MaliceControls"));
             Patch(AccessTools.PropertySetter(T("Malice.CorpTerms"),"AutoRenew"),"AutoRenew");
             Add("Malice.Rebels","BookFence",null);Add("Malice.RebelStory","CallPickup",null);Add("Malice.RebelStory","CallOdin",null);
             Patch(AccessTools.Method(window,"Open"),"OpenCompany");Patch(AccessTools.Method(T("CardView"),"Open"),"OpenCard");
@@ -55,6 +56,11 @@ namespace ShopTogether {
             Patch(AccessTools.Method(T("UI.Ui"),"Qty"),"QuantityIntent");
             Patch(AccessTools.PropertySetter(T("CompanyState"),"TrafficOn"),"Traffic");
             Patch(AccessTools.Method(T("PastelCo"),"PayBribe"),"Bribe");
+            Patch(AccessTools.Method(T("Services"),"Pay"),"BeforePayment");
+            Patch(AccessTools.Method(T("Malice.Rebels"),"Charge"),"BeforeRebelPayment");
+            Patch(AccessTools.Method(T("Malice.Malice"),"Charge"),"BeforePayment");
+            foreach(string name in new[]{"PayOffAid","PayServiceFee","BribeForReconcile","ReconcileWithRebels"})PatchCashAction(AccessTools.Method(T("Malice.Envoy"),name));
+            PatchCashAction(AccessTools.Method(T("Malice.RebelStory"),"OrderBomb"));
             Patch(AccessTools.Method(corpState,"Save"),"HostSave");Patch(AccessTools.Method(maliceState,"Save"),"HostSave");
             foreach(string name in new[]{"DrawCarmichael","DrawCarmStamina","DrawCarmSpecimen","DrawDavre","DrawDavreCanning","DrawDavreLeviathan","DrawMeridian","DrawMeridianForge","DrawMeridianRefurb","DrawSolana","DrawSolanaVip","DrawSolanaLab","DrawSpacer","DrawSpacerMutual","DrawPastelOrder","DrawCarmOrder","DrawDavreOrder","DrawEquipmentOrder","DrawSpacerOrder"})
                 patches.Patch(AccessTools.Method(window,name),transpiler:new HarmonyMethod(typeof(CompanyIntent),"ClientDisplayGates"));
@@ -74,6 +80,32 @@ namespace ShopTogether {
         static string ClientOrderError(string value){return ClientDrawing()?null:value;}
         static void QuantityIntent(ref int max){if(ClientDrawing())max=Math.Max(10,max);}
         static void ClientUnlocked(ref bool __result){if(ClientDrawing())__result=true;}
+        static IEnumerable<CodeInstruction> MaliceControls(IEnumerable<CodeInstruction> instructions) {
+            var code=instructions.ToList();var applyExits=new HashSet<Label>();
+            for(int i=0;i<code.Count;i++) {
+                var instruction=code[i];
+                // Change action gates only; displayed prices and prerequisites
+                // still read the host's synchronized values.
+                if((instruction.opcode==OpCodes.Brfalse||instruction.opcode==OpCodes.Brfalse_S)&&i>0) {
+                    var condition=code[i-1].operand as MethodInfo;
+                    if(condition!=null&&(condition.Name=="get_Ch2BribeOpen"||condition.Name=="get_Ch2ReorderOpen")) {
+                        var hint=new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(CompanyIntent),"ClientHint"));hint.labels.AddRange(instruction.labels);instruction.labels.Clear();yield return hint;
+                    }
+                }
+                if(instruction.operand is Label&&(instruction.opcode==OpCodes.Bne_Un||instruction.opcode==OpCodes.Bne_Un_S||instruction.opcode==OpCodes.Blt||instruction.opcode==OpCodes.Blt_S)) {
+                    var target=(Label)instruction.operand;bool unlocked=false;
+                    for(int j=Math.Max(0,i-5);j<i;j++){var m=code[j].operand as MethodInfo;if(m!=null&&m.Name=="get_Unlocked")unlocked=true;}
+                    if(unlocked)applyExits.Add(target);
+                    if(applyExits.Contains(target)) {
+                        bool unequal=instruction.opcode==OpCodes.Bne_Un||instruction.opcode==OpCodes.Bne_Un_S;
+                        var compare=new CodeInstruction(unequal?OpCodes.Ceq:OpCodes.Clt);compare.labels.AddRange(instruction.labels);instruction.labels.Clear();yield return compare;
+                        yield return new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(CompanyIntent),unequal?"ClientHint":"ClientBlocked"));
+                        instruction.opcode=unequal?OpCodes.Brfalse:OpCodes.Brtrue;
+                    }
+                }
+                yield return instruction;
+            }
+        }
         static IEnumerable<CodeInstruction> ClientDisplayGates(IEnumerable<CodeInstruction> source,MethodBase __originalMethod){
             var code=source.ToList();var locked=new HashSet<string>{"ui.carmichael.overview.shopNotRegisteredYetDeal","ui.carmichael.stamina.thisNewProductHasnT","ui.davre.overview.noSupplierNumberYet","ui.davre.canning.doreenWillComeTalkOnce","ui.davre.purifier.davreSOwnWaterPurifier","ui.meridian.overview.noLicense","ui.meridian.forging.rosenWillComeTeachOnce","ui.meridian.refurbishment.tierRequired","ui.solana.overview.tierExclusive","ui.spacer.mutualAid.tierRequired"};
             for(int i=0;i<code.Count;i++){
@@ -156,10 +188,21 @@ namespace ShopTogether {
             if(!ReplicaSession.ClientStore)return true;__result=false;
             if(drawing>0 || LocalControl.UserAction){awaiting=true;Send(new CompanyCommand{action="PastelBribe",args=new[]{__0?"1":"0"}});}return false;
         }
+        // Apply the cash reservation at the native fallible payment boundary.
+        // Free gifts, incoming payments and non-paying phone choices stay usable.
+        static bool BeforePayment(object __0,int __1,ref string __result) {
+            if(ReplicaSession.ClientStore || __1<=0 || (int)Call(T("Services"),"CashDue",__0,__1)<=0 || DialoguePayment.AllowSpending())return true;
+            __result=Loc.Text(RemoteActions.PendingNote);return false;
+        }
+        static bool BeforeRebelPayment(int __0,ref string __result) {
+            if(ReplicaSession.ClientStore || __0<=0 || DialoguePayment.AllowSpending())return true;
+            __result=Loc.Text(RemoteActions.PendingNote);return false;
+        }
+        static void PatchCashAction(MethodBase method){patches.Patch(method,prefix:new HarmonyMethod(typeof(CompanyIntent),"BeforeCashAction"));}
+        static bool BeforeCashAction(ref string __result){if(DialoguePayment.AllowSpending())return true;__result=Loc.Text(RemoteActions.PendingNote);return false;}
         internal static void CompanyAction(string packed) {
             Bind();var command=WireJson.FromJson<CompanyCommand>(packed);
             if(command==null || command.args==null || command.args.Length>4 || companyType==null){RemoteActions.PendingNote="~SMC305~";return;}
-            if(command.action!="AutoRenew" && command.action!="Traffic" && !DialoguePayment.AllowSpending())return;
             if(command.action=="PastelBribe") {
                 if(command.args.Length!=1 || command.args[0]!="1"){RemoteActions.PendingNote="~SMC305~";return;}
                 var c=Find("pastel");var state=State(c);

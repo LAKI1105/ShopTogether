@@ -13,7 +13,7 @@ namespace ShopTogether {
             var s = Connection.Current;
             return s != null && s.IsHost && s.Ready && !WorldReplica.Applying ? new HostNativeScope() : null;
         }
-        public void Dispose() { NativeActions.Executing = previous; }
+        public void Dispose() { NativeActions.Executing = previous; if (!previous) { var s=Connection.Current; if(s!=null&&s.IsHost)s.SyncStateSoon(); } }
     }
     [HarmonyPatch]
     internal static class HostTradeEffects {
@@ -49,7 +49,6 @@ namespace ShopTogether {
         static bool Prefix() {
             var s = Connection.Current;
             if (s == null || !s.IsHost || !s.Ready || WorldReplica.Applying || NativeActions.Executing || !LocalControl.UserAction) return true;
-            if (!DialoguePayment.AllowSpending()) return false;
             if (DialogueIntent.Available(s, 0)) return true;
             RemoteActions.Notice(RemoteActions.TakeNote()); return false;
         }

@@ -62,7 +62,7 @@ namespace ShopTogether {
             if(view.dialog==appliedDialog)return;appliedDialog=view.dialog;var ui=DialogUIManager.Instance;if(ui==null)return;
             ui.HideAllDialogUI();if(!view.hasDialog){ui.currentDialog=null;return;}
             var dialog=new Dialogue().SetText(view.title??"",view.text??"");dialog.choices=new List<ValueTuple<GameItem,Dialogue,Action>>();
-            if(view.choices!=null)foreach(var choice in view.choices){var line=new Dialogue().SetText(choice.title??"",choice.text??"");line.forceDisabled=!choice.enabled;dialog.choices.Add(new ValueTuple<GameItem,Dialogue,Action>(null,line,null));}
+            if(view.choices!=null)foreach(var choice in view.choices){var line=new Dialogue().SetText(choice.title??"",choice.text??"");line.forceDisabled=false;dialog.choices.Add(new ValueTuple<GameItem,Dialogue,Action>(null,line,null));}
             ui.currentDialog=dialog;ModReflect.Call(ui,"DisplayLine",new object[]{dialog});if(dialog.choices.Count>0)ui.DisplayChoice();
         }
     }

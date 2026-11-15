@@ -64,6 +64,10 @@ namespace ShopTogether {
                 patches.Patch(prepare, prefix: new HarmonyMethod(AccessTools.Method(typeof(ProbablyMultiplayerCompat), "BeforePrepare")));
                 patches.Patch(commit, prefix: new HarmonyMethod(typeof(ProbablyMultiplayerCompat), "BeforeCommit"), finalizer: new HarmonyMethod(typeof(ProbablyMultiplayerCompat), "AfterCommit"));
                 patches.Patch(update, prefix: new HarmonyMethod(AccessTools.Method(typeof(ProbablyMultiplayerCompat), "AllowUpdate")));
+                patches.Patch(AccessTools.Method(runtime,"Send",new[]{typeof(object)}),prefix:new HarmonyMethod(typeof(VisitorShare),"BeforeNativeSend"),finalizer:new HarmonyMethod(typeof(VisitorShare),"AfterNativeSend"));
+                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.TradeUI"),"Error"),postfix:new HarmonyMethod(typeof(VisitorShare),"TradeError"));
+                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.MultiplayerUI"),"Status"),postfix:new HarmonyMethod(typeof(VisitorShare),"TradeStatus"));
+                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.MultiplayerUI"),"Refresh"),postfix:new HarmonyMethod(typeof(VisitorShare),"TradeRefresh"));
                 bound = true;
                 Debug.Log("[ShopTogether] Probably Multiplayer 2.6.1 compatibility bridge ready");
             } catch (Exception error) {
@@ -91,27 +95,30 @@ namespace ShopTogether {
         }
         // The other mod reserves the receiving inventory while preparing a deal. Do not start that
         // reservation over another cooperative player's existing hold; its normal failure path cancels it.
-        static void BeforePrepare() {
+        static void BeforePrepare(object __0) {
             var session = Connection.Current;
             if (session == null || !session.IsHost || !session.Ready || session.Leases == null) return;
             if (DialoguePayment.Pending) throw new InvalidOperationException(Loc.Text("~SMC364~"));
             foreach (var lease in session.Leases.Snapshot(Time.realtimeSinceStartup))
                 if (lease.owner >= 0) throw new InvalidOperationException("Another player is moving an item. Please try again.");
+            CheckFunds(__0);
         }
         // Other native services may spend cash between preparation and the
         // external commit. Recheck before the visitor mod detaches any items.
         static void BeforeCommit(object __0, out HostNativeScope __state) {
             __state = null;
             var s = Connection.Current; if (s == null || !s.IsHost || !s.Ready) return;
-            BeforePrepare();
-            var type = __0.GetType();
-            int price = (int)AccessTools.Property(type, "Price").GetValue(__0, null);
-            string seller = AccessTools.Property(type, "SellerId").GetValue(__0, null) as string;
+            CheckFunds(__0);
+            __state = HostNativeScope.Begin();
+        }
+        static void CheckFunds(object trade) {
+            var type = trade.GetType();
+            int price = (int)AccessTools.Property(type, "Price").GetValue(trade, null);
+            string seller = AccessTools.Property(type, "SellerId").GetValue(trade, null) as string;
             string self = visitorPlayer.GetValue(null) as string;
             long cash = PlayerStore.Instance.playerCash;
             if (price < 0 || (seller == self ? cash + price > int.MaxValue : cash < price))
                 throw new InvalidOperationException("Available funds changed. Please request the trade again.");
-            __state = HostNativeScope.Begin();
         }
         static Exception AfterCommit(Exception __exception, HostNativeScope __state) { if (__state != null) __state.Dispose(); return __exception; }
         internal static bool Available { get {

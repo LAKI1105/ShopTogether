@@ -63,7 +63,7 @@ namespace ShopTogether {
         // Only what the action itself uses is checked; someone moving something else on the counter does not block it.
         internal static bool ShopAvailable(Connection session,int owner,ShopOperation operation){
             if(operation==ShopOperation.Buy||operation==ShopOperation.Sell||operation==ShopOperation.BuyAll||operation==ShopOperation.SellAll){
-                if(!DialoguePayment.AllowSpending())return false;
+                if((operation==ShopOperation.Buy||operation==ShopOperation.BuyAll)&&!DialoguePayment.AllowSpending())return false;
                 if(DialogueIntent.Committing)return Reject("~SMC353~");
                 // The tablet selects and checks the actual batch before committing.
                 if(operation==ShopOperation.BuyAll||operation==ShopOperation.SellAll)return true;

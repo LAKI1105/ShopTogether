@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){ProbablyMultiplayerCompat.Shutdown();ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.36";
+        internal const string BuildVersion="1.3.37";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -196,7 +196,7 @@ namespace ShopTogether {
             if(EmporiumEntry.Instance==null){Stop();yield break;}
             yield return null;if(sessionGeneration!=generation||!IsClient)yield break;ReplicaSession.SceneReady=true;server.Send(24,new byte[0]);
         }
-        internal void SendRemote(RemoteCall call){if(!IsClient||server==null||!server.authenticated)return;call.sequence=++remoteSequence;Outgoing++;byte[] bytes=Encode(call);if(bytes.Length>65536){RemoteActions.Notice("~SMC201~");return;}server.Send(36,bytes);}
+        internal void SendRemote(RemoteCall call){if(!IsClient||server==null||!server.authenticated){RemoteActions.Notice("~SMC082~");return;}call.sequence=++remoteSequence;Outgoing++;byte[] bytes=Encode(call);if(bytes.Length>65536){RemoteActions.Notice("~SMC201~");return;}server.Send(36,bytes);}
         /// <summary>Host side: a stable name for a connected friend (Steam account, or the typed name for direct connections).</summary>
         /// <summary>Runs a short on-screen effect (the friend-side replay of the shotgun shot).</summary>
         internal void PlayEffect(IEnumerator effect){if(effect!=null)StartCoroutine(effect);}
@@ -260,7 +260,7 @@ namespace ShopTogether {
             if(host&&type==41){int code=data[0];if(Activity.Valid(code)&&code!=peer.activity){peer.activity=code;PlayerNames.Changed=true;}return;}
             if(!host&&type==39){Diagnostics.Soft("cursors",()=>Cursors.FromHost(data,PlayerId));return;}
             if(!host&&type==40){Diagnostics.Soft("names",()=>{var names=WireJson.FromJson<NameList>(Encoding.UTF8.GetString(data));PlayerNames.FromHost(names);Activity.FromHost(names);if(names!=null&&names.ids!=null)SteamInvite.Presence(false,false,SteamInvite.CleanGroup(names.group),names.ids.Length,PlayerNames.Of(0));});return;}
-            if(host&&type==36){if(!peer.modsOk||!peer.sceneReady)return;var call=WireJson.FromJson<RemoteCall>(Encoding.UTF8.GetString(data));if(call==null||call.sequence<=peer.lastRemote)throw new Exception("~SMC169~");peer.lastRemote=call.sequence;string refused=Ready?RemoteActions.Execute(this,peer.id,call):"~SMC082~";if(refused!=null)peer.Send(37,Encoding.UTF8.GetBytes(refused));else{nextSync=0;string note=RemoteActions.TakeNote();if(note!=null)peer.Send(37,Encoding.UTF8.GetBytes(note));}return;}
+            if(host&&type==36){if(!peer.modsOk||!peer.sceneReady){peer.Send(37,Encoding.UTF8.GetBytes("~SMC082~"));return;}var call=WireJson.FromJson<RemoteCall>(Encoding.UTF8.GetString(data));if(call==null||call.sequence<=peer.lastRemote)throw new Exception("~SMC169~");peer.lastRemote=call.sequence;string refused=Ready?RemoteActions.Execute(this,peer.id,call):"~SMC082~";if(refused!=null)peer.Send(37,Encoding.UTF8.GetBytes(refused));else{nextSync=0;string note=RemoteActions.TakeNote();if(note!=null)peer.Send(37,Encoding.UTF8.GetBytes(note));}return;}
             if(!host&&type==34){var phase=WireJson.FromJson<PhaseState>(Encoding.UTF8.GetString(data));bool wasAway=HostPhase.Away;bool changed=false;Diagnostics.Soft("host phase",()=>changed=HostPhase.Apply(phase));if(changed&&ReplicaSession.SceneReady)peer.Send(24,new byte[0]);if(HostPhase.Away&&!wasAway&&Ready)Diagnostics.Soft("release",ReleaseAll);return;}
             if(!host&&type==42){Diagnostics.Soft("achievement",()=>Achievements.FromHost(data));return;}
             if(!host&&type==PanelRelay.Message){Diagnostics.Soft("panel",()=>PanelRelay.FromHost(data));return;}
@@ -271,6 +271,7 @@ namespace ShopTogether {
             throw new Exception("~SMC047~");
         }
         internal void SendToHost(byte type,byte[] data){if(IsClient&&server!=null&&server.authenticated)server.Send(type,data);}
+        internal void SyncStateSoon(){if(IsHost){World.InvalidateState();nextSync=0;}}
         // A completed search can add items or merge stacks without invoking an item-change callback.
         // Prioritize this one ground inventory on the next update rather than waiting for a full scan.
         internal void SyncGroundSoon(GameInventory ground){
@@ -314,7 +315,7 @@ namespace ShopTogether {
             if(request.kind==RequestKind.Claim){long token;bool ok=Leases.Claim(owner,request.items,now,out token);reply(new LeaseReply{sequence=request.sequence,items=request.items,owner=owner,token=token,granted=ok,reason=ok?null:"~SMC096~"});return;}
             string busy=HostPhase.Busy(Ready);if(busy!=null){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason=busy});return;}
             // A game error while running a friend's action refuses that action; it must not cut the friend off.
-            bool success=false;string failed="~SMC167~";try{RemoteActions.PendingNote=null;success=NativeActions.Execute(this,owner,request);if(success){World.Committed(request);string note=RemoteActions.TakeNote();if(note!=null){if(owner==0)RemoteActions.Notice(note);else SendTo(owner,37,Encoding.UTF8.GetBytes(note));}}else{string note=RemoteActions.TakeNote();if(note!=null)failed=note;}}catch(Exception failure){success=false;failed="~SMC085~";Debug.LogWarning("[ShopTogether] action by "+PlayerNames.Of(owner)+" failed on host ("+request.kind+"): "+failure);}finally{if(!success){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason=failed});if(failed=="~SMC167~")Diagnostics.Soft("refused action",()=>NativeActions.ExplainRefusal(this,owner,request));}nextSync=0;}
+            bool success=false;string failed="~SMC167~";try{RemoteActions.PendingNote=null;success=NativeActions.Execute(this,owner,request);if(success){World.Committed(request);string note=RemoteActions.TakeNote();if(note!=null){if(owner==0)RemoteActions.Notice(note);else SendTo(owner,37,Encoding.UTF8.GetBytes(note));}}else{string note=RemoteActions.TakeNote();if(note!=null)failed=note;}}catch(Exception failure){success=false;failed="~SMC085~";Debug.LogWarning("[ShopTogether] action by "+PlayerNames.Of(owner)+" failed on host ("+request.kind+"): "+failure);}finally{if(!success){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason=failed});if(failed=="~SMC167~")Diagnostics.Soft("refused action",()=>NativeActions.ExplainRefusal(this,owner,request));}SyncStateSoon();}
         }
         // The main-menu box always shows where things stand and leads back to the room: a room that is open stays
         // reachable from here (and from the button at the top right in the shop) instead of being created again.

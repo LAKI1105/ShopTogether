@@ -12,6 +12,23 @@ namespace ShopTogether {
         static int showcaseLevel; static bool posterLoaded; static int tap = -1; static float next; static string requests = "";
 
         internal static void Reset() { showcaseLevel = 0; posterLoaded = false; tap = -1; next = 0; requests = ""; }
+        internal static void RefreshTransactions() {
+            if(!ReplicaSession.ClientStore)return;
+            Try(()=>{var ui=CommissaryUIManager.Instance;if(ui!=null&&ui.panel!=null&&ui.panel.activeInHierarchy)ui.RefreshUI();});
+            Try(()=>{if(WildNetworkUI.IsOpen)WildNetworkUI.RefreshAll();});
+            // The legacy screen updates cash each frame, but selection text only
+            // on a click. Refresh its data without replaying a click sound.
+            Try(()=>{var ui=WildUIManager.Instance;if(ui==null||ui.panel==null||!ui.panel.activeInHierarchy||string.IsNullOrEmpty(ui.currentSelectedId))return;
+                NetworkUpgrade upgrade;if(!PlayerStore.Instance.networkUpgrade.TryGetValue(ui.currentSelectedId,out upgrade))return;
+                ui.title.text=upgrade.GetLocalizedTitle();ui.subtitle.text=upgrade.GetLocalizedSubtitle();ui.description.text=upgrade.GetLocalizedDescription();
+                ui.cooldown.text=upgrade.cooldownDuration!=0&&upgrade.cooldownCurrent!=0?LocHelper.GetLocalizedUI("network_ui_cooldown",upgrade.cooldownCurrent):"";
+                ui.cost.text=LocHelper.GetLocalizedUI("network_ui_cost",upgrade.GetCost());
+                bool bought=upgrade.isRepeatable&&upgrade.IsUnlocked(),missing=!upgrade.IsUnlocked()&&!upgrade.IsHavePrerequisite();
+                ui.alreadyMessageTMP.text=bought?upgrade.GetLocalizedAlreadyBought():missing?LocHelper.GetLocalizedUI("network_ui_prerequisite",upgrade.GetMissingPrerequisite()):"";
+                ui.alreadyMessageTMP.gameObject.SetActive(bought||missing);
+                ui.unlockButton.gameObject.SetActive(true);ui.unlockButton.interactable=true;
+            });
+        }
 
         internal static void Refresh(bool force) {
             if (!ReplicaSession.ClientStore || EmporiumEntry.Instance == null || PlayerStore.Instance == null) return;

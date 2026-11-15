@@ -22,6 +22,39 @@ namespace ShopTogether {
         static PropertyInfo connectedProperty,historyProperty; static MethodInfo sendMethod,receiveMethod;
         static VisitorView view; static string draft="",price=""; static float tradeSent;
         static readonly Dictionary<int,float> chatSent=new Dictionary<int,float>();
+        static int pendingOwner=-1;static long pendingVisit;static string pendingCommand;
+        // Keep the requester until the visitor service answers. The native Send
+        // method returning only means that a packet was queued, not a completed trade.
+        static void Reply(string message,bool complete) {
+            int owner=pendingOwner;if(owner<0)return;
+            if(complete){pendingOwner=-1;pendingVisit=0;pendingCommand=null;}
+            var s=Connection.Current;if(s==null||!s.IsHost)return;
+            if(owner==0)RemoteActions.Notice(message);else s.SendTo(owner,37,Encoding.UTF8.GetBytes(Clean(message,600)));
+            s.SyncStateSoon();
+        }
+        static void BeforeNativeSend(object __0,out bool __state) {
+            __state=false;var s=Connection.Current;if(s==null||!s.IsHost||!s.Ready||!Bind())return;
+            string command=StringValue(__0,"type");if(command!="quote"&&command!="buy"&&command!="withdraw_quote")return;
+            TradeRefresh();
+            if(pendingOwner>=0){RemoteActions.PendingNote="~SMC368~";throw new InvalidOperationException(Loc.Text(RemoteActions.PendingNote));}
+            var paused=AccessTools.Field(runtime,"MultiplayerPaused");
+            if(paused!=null&&(bool)paused.GetValue(null)){RemoteActions.PendingNote="~SMC281~";throw new InvalidOperationException(Loc.Text(RemoteActions.PendingNote));}
+            pendingOwner=Math.Max(0,RemoteActions.CurrentOwner);pendingVisit=Stamp(sessionField.GetValue(null));pendingCommand=command;__state=true;
+        }
+        static Exception AfterNativeSend(Exception __exception,bool __state){if(__state&&__exception!=null)Reply(__exception.Message,true);return __exception;}
+        static void TradeError(string command,string message){if(command==pendingCommand)Reply(message,true);}
+        static void TradeStatus(string text){
+            if(pendingOwner<0||string.IsNullOrEmpty(text))return;
+            bool terminal=text=="Deal complete."||text.StartsWith("Trade cancelled:",StringComparison.Ordinal)||text.StartsWith("Visit ended:",StringComparison.Ordinal);
+            Reply(text,terminal);
+        }
+        static void TradeRefresh(){
+            if(pendingOwner<0||sessionField==null)return;
+            var current=sessionField.GetValue(null);
+            if(current==null||Stamp(current)!=pendingVisit){Reply("~SMC281~",true);return;}
+            var quote=Value(current,"Quote");
+            if(pendingCommand=="quote"&&quote!=null||pendingCommand=="withdraw_quote"&&quote==null)Reply("~SMC341~",true);
+        }
 #if LAN_PROBE
         internal static bool ProbeConnected;
 #endif
@@ -72,9 +105,9 @@ namespace ShopTogether {
             if(offers!=null)foreach(DictionaryEntry offer in offers){var items=offer.Value as IEnumerable;if(items==null)continue;foreach(var item in items)if(chosen.Contains(StringValue(item,"Id"))){names.Add(Clean(StringValue(item,"Name"),60));if(names.Count>=12)break;}if(names.Count>=12)break;}
             v.items=names.ToArray();return v;
         }
-        internal static void Capture(PhaseState phase){if(phase==null||!ProbablyMultiplayerCompat.Available)return;try{phase.visitor=Snapshot();}catch(Exception e){Diagnostics.Report("visitor view",e);}}
+        internal static void Capture(PhaseState phase){if(phase==null||!ProbablyMultiplayerCompat.Available)return;try{TradeRefresh();phase.visitor=Snapshot();}catch(Exception e){Diagnostics.Report("visitor view",e);}}
         internal static void Follow(PhaseState phase){view=phase==null?null:phase.visitor;if(view==null){Close();return;}Refresh();}
-        internal static void Reset(){view=null;draft=price="";chatSent.Clear();tradeSent=0;Close();}
+        internal static void Reset(){view=null;draft=price="";chatSent.Clear();tradeSent=0;pendingOwner=-1;pendingVisit=0;pendingCommand=null;Close();}
         static void Close(){if(CustomUIManager.Instance!=null&&CustomUIManager.Instance.IsOpen(WindowId))CustomUIManager.Instance.CloseWindow(WindowId);}
         static void Request(string name,params object[] values){RemoteActions.Forward(RemoteActions.Adapter(name,values.Length),null,values);}
         internal static void Open() {
@@ -108,8 +141,9 @@ namespace ShopTogether {
             if(c==null||!c.IsHost||!c.Ready||owner<=0||!c.HasPeer(owner)||(map!=null&&map.Current!=null))return false;
             try{s=Current();return s!=null&&stamp!=0&&stamp==Stamp(s);}catch{return false;}
         }
-        static void Refused(){RemoteActions.PendingNote="~SMC281~";}
+        static void Refused(){if(RemoteActions.PendingNote==null)RemoteActions.PendingNote="~SMC281~";}
         static bool TradeAllowed(object s,int revision,bool quoteRevision){
+            if(pendingOwner>=0){RemoteActions.PendingNote="~SMC368~";return false;}
             if(!Idle(s)||Time.realtimeSinceStartup-tradeSent<1f)return false;
             object q=Value(s,"Quote");return quoteRevision?q!=null&&IntValue(q,"Revision")==revision:IntValue(s,"Revision")==revision;
         }

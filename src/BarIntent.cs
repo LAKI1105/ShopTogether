@@ -37,8 +37,8 @@ namespace ShopTogether {
             return true;
         }
         static bool Redeem(GameItem __0,out HostNativeScope __state){__state=null;if(!Free(__0))return false;__state=HostNativeScope.Begin();return true;}
-        static bool BeforePay(ref bool __result){if(DialoguePayment.AllowSpending())return true;__result=false;return false;}
-        static bool BeginEffect(out HostNativeScope __state){__state=null;if(!DialoguePayment.AllowSpending())return false;__state=HostNativeScope.Begin();return true;}
+        static bool BeforePay(int __0,ref bool __result){if(__0<=0||DialoguePayment.AllowSpending())return true;__result=false;return false;}
+        static bool BeginEffect(out HostNativeScope __state){__state=HostNativeScope.Begin();return true;}
         static Exception AfterEffect(Exception __exception,HostNativeScope __state){if(__state!=null)__state.Dispose();return __exception;}
         internal static IEnumerable<GameItem> CapturedItems(Delegate callback){
             var seen=new HashSet<object>();var found=new HashSet<GameItem>();Collect(callback.Target,0,seen,found);return found;

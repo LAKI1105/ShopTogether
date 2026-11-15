@@ -18,6 +18,7 @@ namespace ShopTogether {
         internal readonly Dictionary<int,long> Versions=new Dictionary<int,long>();
         internal long Version;internal StorePresentation Presentation=new StorePresentation();
         string lastStore,lastStation;float nextState;
+        internal void InvalidateState(){nextState=0;}
         // Host: items to compare first (just changed), the round-robin position, and each item's last sent fingerprint.
         readonly HashSet<int> dirty=new HashSet<int>();readonly List<int> order=new List<int>();int orderCursor;readonly Dictionary<int,long> fingerprints=new Dictionary<int,long>();readonly Dictionary<int,long> stateHashes=new Dictionary<int,long>();
         sealed class PendingLoad{internal bool created;internal ReplicaLoad.Before before;}
@@ -121,7 +122,7 @@ namespace ShopTogether {
 #if LAN_PROBE
             var captureTimer=System.Diagnostics.Stopwatch.StartNew();
 #endif
-            CompanyIntent.Flush();
+            CompanyIntent.Flush(full||nextState==0);
             Refresh(full);long version=++Version;var changed=new List<ItemRecord>();var removed=new List<int>();
             // A big store has thousands of items: a normal update compares new and just-changed items first, then
             // as many others as fit in a few milliseconds, continuing where the last update stopped.
@@ -263,6 +264,7 @@ namespace ShopTogether {
                 foreach(var load in loads){if(Gone(load.Key))continue;QueueLoad(load.Key,createdNow.Contains(load.Key),load.Value);}
                 if(delta.leases!=null){RemoteLeases.Clear();foreach(var l in delta.leases)if(l!=null)RemoteLeases[l.item]=l.owner;}
                 OverflowReplica.Finish();Version=delta.version;Index();Presentation.ApplyDialogue(delta.presentation,this);
+                if(delta.store!=null)ReplicaVisuals.RefreshTransactions();
                 Readouts.Receive(delta.readouts, delta.full, delta.removed);
                 SceneObjects.Apply(delta.lamps);
                 cassette.Apply(delta.cassette);

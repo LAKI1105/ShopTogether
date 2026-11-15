@@ -5,27 +5,27 @@ A community co-op mod for **Probably Stolen**. Run the game on each computer and
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-目前工作坊版本：**1.3.36**。所有玩家請更新到同一版本後重新開啟遊戲。
+目前工作坊版本：**1.3.37**。所有玩家請更新到相同版本後重新開啟遊戲。
 
-## 1.3.36 有哪些改變？
+## 1.3.37 有哪些改變？
 
-- 修正付款後的原生交貨，可能被模組誤認成新的拖曳而攔住的問題。
-- 修正限買一件時，朋友取消選取後仍可能買到上一件商品；普通整批購買也不再被無關選取擋住。
-- 買賣請求綁定當時的客人；客人已更換就拒絕舊請求。賣出確認改用一次性編號，舊視窗不會確認到新交易。
-- 易物切換選項前會檢查正在被拿取的商品；槍匠、鑑價與收購失敗補上具體原因，已消失的物品不能再次成交。
-- 補上公司開通、續費、目錄解鎖、私下訂貨、補訂炸彈與自動續費設定的主端處理。
-- 修正舊升級介面的重複購買／付款資格檢查，以及飲水販賣機被誤擋而不能收款的問題。
-- 酒吧兌獎、整批交付與在店交貨也納入物品占用及原生交貨處理。
-- 借款、贈款與傭兵情報的延後扣款對話尚未完成時，會暫停並行支出。真人訪客交易結算期間也保護款項，避免被另一筆購買花掉。
-- 買賣總額超過遊戲整數範圍時會拒絕，避免扣款或收入翻成錯誤數字。
+- 修正付款保護擋得太廣，連賣東西、免費服務及不付費的電話操作一起擋住的問題。
+- 修正購買被原版或商品模組拒絕後，外層仍接著跑成交對話；整批購買只完成部分時也會說明。
+- 出售前重新鑑定造成的物品變化，不再被誤判成「沒有動作」。
+- 補上櫃檯對話及公司目錄的朋友端請求路徑，避免舊資料把操作擋在朋友電腦上。
+- 兌換處與已開啟的升級畫面，收到主端結果後更新庫存、額度、價格和冷卻文字。
+- 延後扣款只保護當前報價與已選的付款；補上執照、鑑價入會、安檢及抵押付款，保留原生金額與效果。
+- 真人交易的準備與成交階段分開檢查；外部服務後續拒絕、取消及成交回覆會送回原操作者。
+- 倉庫擴充未完成時會回覆；彩券整批兌領先查總額，避免超出遊戲的整數範圍。
+- 交易完成後的同步會重新讀取主端現金與公司資料；場景未就緒及執行錯誤也會回覆。
 
-Current Workshop release: **1.3.36**. All players must update to the same version and restart.
+Current Workshop release: **1.3.37**. All players must update to the same version and restart.
 
-Native deliveries no longer look like new drag requests. Guest single-item selection, customer identity and sale-confirmation tokens are checked before committing. This release also covers company subscriptions, catalog unlocks and replacement orders, the legacy upgrade screen, water-vending collections, bartender deliveries and redemptions. Pending financial conversations and human-visitor settlement prevent competing spending. Out-of-range counter totals are refused before native accounting.
+Payment reservations now follow the selected unpaid dialogue chain and actual spending boundaries. Sales, free services and unrelated phone actions remain usable. Purchases check actual ownership changes before accepting a deal, while reinspection recognizes item changes. Guest dialogue and order controls submit requests to the host, and open commissary/upgrade screens refresh from its results. Visitor transactions retain their requester for asynchronous responses. Storage failures and lottery overflow are reported, and completed actions invalidate cached shop/company state.
 
 本版以目前遊戲及 18 個已安裝模組的程式來源對照買賣入口。僅執行正式 DLL 編譯；未執行遊戲或自動化測試。下方測試紀錄屬先前版本，不代表本版實機通過。
 
-This release was reviewed in source and compiled. No game or automated tests were run for 1.3.36; historical test results below do not validate this build. Compatibility findings apply to the inspected installed mod versions.
+This version was reviewed in source and compiled. No game or automated tests were run for 1.3.37; historical test results below do not validate this build. Compatibility findings apply to the inspected installed mod versions.
 
 ## 使用方式
 

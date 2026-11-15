@@ -282,7 +282,9 @@ namespace ShopTogether {
         /// <summary>Validates and executes a friend's action. Returns a reason when refused.</summary>
         internal static string Execute(Connection session, int owner, RemoteCall call) {
             CurrentOwner = owner; PendingNote = null; PanelRelay.Owner = owner; PanelRelay.NotifiedDuringAction = false;
-            try { using (HostNativeScope.Begin()) return Run(session, owner, call); } finally { CurrentOwner = -1; PanelRelay.Owner = 0; PanelRelay.SourceItem = null; PanelRelay.SourceIsActivation = false; }
+            try { using (HostNativeScope.Begin()) return Run(session, owner, call); }
+            catch (Exception error) { Diagnostics.Report("remote action",error); return "~SMC085~"; }
+            finally { session.SyncStateSoon(); CurrentOwner = -1; PanelRelay.Owner = 0; PanelRelay.SourceItem = null; PanelRelay.SourceIsActivation = false; }
         }
         static string Run(Connection session, int owner, RemoteCall call) {
             Build();
@@ -370,7 +372,7 @@ namespace ShopTogether {
                 if (result is bool && !(bool)result && PendingNote == null) return "~SMC321~";
                 if (e.Method.DeclaringType == typeof(HopperHelper) && e.Method.Name == "RunAndRecord" && result is int && (int)result == 0 && PendingNote == null) return "~SMC321~";
             }
-            catch (TargetInvocationException error) { Debug.LogWarning("[ShopTogether] remote " + e.Key + " failed on host: " + error.InnerException); return "~SMC085~"; }
+            catch (TargetInvocationException error) { Debug.LogWarning("[ShopTogether] remote " + e.Key + " failed on host: " + error.InnerException); return PendingNote??"~SMC085~"; }
             Forwarded++;
             return null;
         }

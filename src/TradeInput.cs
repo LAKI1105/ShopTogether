@@ -16,7 +16,7 @@ namespace ShopTogether {
             foreach (var code in instructions) {
                 var method = code.operand as MethodInfo;
                 if (method != null && method.Name == "SetInteractable" && method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType == typeof(bool)) {
-                    var ask = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(AuthorityIntent), "Ask"));
+                    var ask = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(AuthorityIntent), "AskDisplay"));
                     ask.labels.AddRange(code.labels); code.labels.Clear(); yield return ask;
                 }
                 yield return code;
@@ -26,7 +26,7 @@ namespace ShopTogether {
     [HarmonyPatch(typeof(WildNetworkUI), "ShowInfo")]
     internal static class WildIntentButton {
         static void Postfix(string id) {
-            if (!ReplicaSession.IsReplica || string.IsNullOrEmpty(id)) return;
+            if (!ReplicaSession.ClientStore || string.IsNullOrEmpty(id)) return;
             var frame = AccessTools.Field(typeof(WildNetworkUI), "frame").GetValue(null);
             if (frame == null) return;
             var button = AccessTools.Field(frame.GetType(), "useButton").GetValue(frame) as Button;
@@ -36,7 +36,7 @@ namespace ShopTogether {
     [HarmonyPatch(typeof(WildUIManager), "OnElementClicked")]
     internal static class LegacyWildIntentButton {
         static void Postfix(WildUIManager __instance) {
-            if (!ReplicaSession.IsReplica || __instance.unlockButton == null) return;
+            if (!ReplicaSession.ClientStore || __instance.unlockButton == null) return;
             __instance.unlockButton.gameObject.SetActive(true); __instance.unlockButton.interactable = true;
         }
     }

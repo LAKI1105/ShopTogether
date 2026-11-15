@@ -11,6 +11,7 @@ namespace ShopTogether {
     internal static class AuthorityIntent {
         internal static bool Friend { get { return ReplicaSession.IsReplica && !NativeActions.Executing; } }
         internal static bool Ask(bool available) { return Friend || available; }
+        internal static bool AskDisplay(bool available) { return ReplicaSession.ClientStore || available; }
         internal static bool Disabled(SelectableElement element) { return !(Friend && (element is MachineryButton || element is MachineryRadioButton)) && element.isDisabled; }
         internal static bool Refuse(string reason) { RemoteActions.PendingNote = reason; return false; }
         internal static bool Free(Connection s, int owner, int id) {
