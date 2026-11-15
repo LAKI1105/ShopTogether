@@ -79,7 +79,9 @@ namespace ShopTogether {
         internal static void FromHost(NameList list) {
             if (list == null || list.ids == null || list.names == null || list.ids.Length != list.names.Length || list.ids.Length > 8) return;
             names.Clear();
-            for (int i = 0; i < list.ids.Length; i++) { string n = Clean(list.names[i]); if (list.ids[i] >= 0 && list.ids[i] <= 64 && n.Length > 0) names[list.ids[i]] = n; }
+            // IDs count connection attempts for the room's lifetime, not its
+            // simultaneous players; the list itself is already capped at eight.
+            for (int i = 0; i < list.ids.Length; i++) { string n = Clean(list.names[i]); if (list.ids[i] >= 0 && n.Length > 0) names[list.ids[i]] = n; }
         }
         internal static string Of(int id) { string n; return names.TryGetValue(id, out n) ? n : (id == 0 ? "~SMC077~" : "~SMC102~" + id); }
         internal static IEnumerable<string> All() { return new List<string>(names.Values); }
@@ -189,7 +191,7 @@ namespace ShopTogether {
             for (int i = 0; i < count; i++) {
                 int id = BitConverter.ToInt32(data, 4 + 12 * i);
                 float x = BitConverter.ToSingle(data, 8 + 12 * i), y = BitConverter.ToSingle(data, 12 + 12 * i);
-                if (id == self || id < 0 || id > 64 || !Valid(x) || !Valid(y)) continue;
+                if (id == self || id < 0 || !Valid(x) || !Valid(y)) continue;
                 Pointer p; if (!others.TryGetValue(id, out p)) others[id] = p = new Pointer();
                 p.X = x; p.Y = y; p.Seen = now;
             }

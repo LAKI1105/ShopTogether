@@ -99,6 +99,10 @@ namespace ShopTogether {
             var visited=new HashSet<GraphNodeStorage>();
             foreach(var root in Roots())Walk(root.Value,root.Key,0,new int[]{0},visited);
             foreach(var pair in new List<KeyValuePair<GameItem,int>>(itemIds))if(!Items.ContainsKey(pair.Value))itemIds.Remove(pair.Key);
+            // Equal counts do not imply equal membership: a sold/consumed item may
+            // be replaced before the next capture. Keep the quiet-change sweep
+            // on the indexed items, including features that do not raise Validate.
+            order.Clear();order.AddRange(Items.Keys);if(orderCursor>=order.Count)orderCursor=0;
         }
         internal void Committed(Request request){structureDirty=true;long revision=++Version;var changed=new HashSet<int>(request.items??new int[0]);if(request.target>0)changed.Add(request.target);if(request.moves!=null)foreach(var move in request.moves)if(move.target>0)changed.Add(move.target);foreach(int id in changed){Versions[id]=revision;signatures[id]=null;}}
         void Walk(GraphNodeStorage node,int root,int owner,int[] ordinal,HashSet<GraphNodeStorage> visited) {

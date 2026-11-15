@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.39";
+        internal const string BuildVersion="1.3.40";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -81,7 +81,7 @@ namespace ShopTogether {
             if(identity!=null){identity.Dispose();identity=null;}
             IsHost=false;IsClient=false;Ready=false;startingClient=false;pendingWorld.Clear();Diagnostics.Reset();incoming.Reset();generation++;
             LocalLeases.Clear();requested.Clear();itemRequests.Clear();waiting.Clear();deferredRelease.Clear();NativeActions.holders.Clear();
-            World.Reset();HostPhase.Reset();awaitingFull=false;applyFailures=0;Cursors.Reset();ReplicaVisuals.Reset();PlayerNames.Reset();nextNames=0;remoteSequence=0;nextPhase=0;nextPhaseCheck=0;lastPhase=null;sequence=0;nextPlayer=0;nextSync=0;nextRenew=0;needsFull=false;
+            World.Reset();Drift.Reset();HostPhase.Reset();awaitingFull=false;applyFailures=0;Cursors.Reset();ReplicaVisuals.Reset();PlayerNames.Reset();nextNames=0;remoteSequence=0;nextPhase=0;nextPhaseCheck=0;lastPhase=null;sequence=0;nextPlayer=0;nextSync=0;nextRenew=0;needsFull=false;
             if(Leases!=null)Leases=new LeaseBook(World.Related);
         }
         static string Password(){byte[] bytes=new byte[24];using(var r=RandomNumberGenerator.Create())r.GetBytes(bytes);return Convert.ToBase64String(bytes);}
@@ -162,7 +162,7 @@ namespace ShopTogether {
                     }
                     foreach(var peer in peers.ToArray())try{Pump(peer,true);}catch(Exception e){Leases.Disconnect(peer.id);peer.Dispose();peers.Remove(peer);PlayerNames.Changed=true;Debug.Log("[ShopTogether] peer disconnected ("+PlayerNames.Of(peer.id)+"): "+e.GetType().Name+" "+e.Message);}
                     Ready=EmporiumEntry.Instance!=null&&MainMenuUIController.Instance==null;
-                    if(Ready){Diagnostics.Soft("old void bags",()=>OutingKits.RemoveOldVoidBags(this));Diagnostics.Soft("phone tick",()=>PhoneShare.HostTick(this));}Diagnostics.Soft("phase",BroadcastPhase);Diagnostics.Soft("cursors",()=>Cursors.Tick(this));Diagnostics.Soft("names",BroadcastNames);
+                    if(Ready){Diagnostics.Soft("old void bags",()=>OutingKits.RemoveOldVoidBags(this));Diagnostics.Soft("phone tick",()=>PhoneShare.HostTick(this));Diagnostics.Soft("shotgun tick",()=>ShotgunView.HostTick(this));}Diagnostics.Soft("phase",BroadcastPhase);Diagnostics.Soft("cursors",()=>Cursors.Tick(this));Diagnostics.Soft("names",BroadcastNames);
                     if(Ready&&Time.realtimeSinceStartup>=nextRenew){nextRenew=Time.realtimeSinceStartup+5;Leases.Renew(0,Time.realtimeSinceStartup);}
                     if(Ready&&Time.realtimeSinceStartup>=nextSync){nextSync=Time.realtimeSinceStartup+.2f;Leases.Expire(Time.realtimeSinceStartup);bool recipients=peers.Exists(p=>p.authenticated&&p.modsOk&&(p.sceneReady||!p.initialSent));if(recipients){
                         // The whole shop goes only to the players who need it (joining, or asking after a failed update);
@@ -189,7 +189,7 @@ namespace ShopTogether {
                                 if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
                             catch(Exception failure){Diagnostics.Report("apply",failure);if(++applyFailures>=5)throw;Debug.LogWarning("[ShopTogether] update not applied, asking the host for the whole shop: "+failure.Message);awaitingFull=true;server.Send(24,new byte[0]);}
                         }}
-                    if(Ready&&ReplicaSession.SceneReady){Diagnostics.Soft("layouts",()=>World.RunLoads(pendingWorld.Count>0?1.0:2.5));Diagnostics.Soft("daily report",()=>SharedScreens.Follow(HostPhase.Last));}
+                    if(Ready&&ReplicaSession.SceneReady){Diagnostics.Soft("layouts",()=>World.RunLoads(pendingWorld.Count>0?1.0:2.5));Diagnostics.Soft("daily report",()=>SharedScreens.Follow(HostPhase.Last));if(pendingWorld.Count==0&&!awaitingFull)Diagnostics.Soft("shotgun confirmation",ShotgunView.Tick);}
                     if(server!=null&&server.authenticated&&Time.realtimeSinceStartup>=nextRenew){
                         nextRenew=Time.realtimeSinceStartup+5;
                         if(Ready)Send(new Request{kind=RequestKind.Renew});

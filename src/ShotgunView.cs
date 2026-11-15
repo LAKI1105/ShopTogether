@@ -21,6 +21,7 @@ namespace ShopTogether {
         internal static bool LastSurvived;
         /// <summary>Friends currently aiming (their player numbers).</summary>
         static readonly HashSet<int> aimers = new HashSet<int>();
+        static StoreClient aimedCustomer;
 
         internal static void Capture(PhaseState state) {
             var ui = StoreUIManager.Instance;
@@ -38,8 +39,10 @@ namespace ShopTogether {
             var ui = StoreUIManager.Instance; var gun = UnityEngine.Object.FindObjectOfType<Shotgun>(); var session = Connection.Current;
             if (ui == null || gun == null || session == null || ui.isShot) { RemoteActions.PendingNote="~SMC303~"; return; }
             if (!gun.CanPickup()) { RemoteActions.PendingNote = "~SMC303~"; return; }
+            if (aimers.Count > 0 && Customer() != aimedCustomer) ForgetAimers();
             bool first = !AnyoneAiming(ui);
             aimers.Add(RemoteActions.CurrentOwner);
+            aimedCustomer = Customer();
             if (!first) return;
             var customer = Customer(); var dialog = DialogUIManager.Instance;
             if (ui.clientGameObject != null) ui.clientGameObject.SetImmediatlyArrive();
@@ -47,14 +50,25 @@ namespace ShopTogether {
                 if (customer != null && customer.holsterResumesDialogue) dialog.PauseConversation();
                 else { dialog.InterruptDialog(); dialog.RemoveCustomerDialogue(); }
             }
-            session.PlayEffect(After(0.35f, () => { if (AnyoneAiming(ui) && !ui.isShot && DialogUIManager.Instance != null) DialogUIManager.Instance.StartDialogue(AugHelper.GetClientReactionUnholster()); }));
+            session.PlayEffect(After(0.35f, () => { if (Customer() == customer && AnyoneAiming(ui) && !ui.isShot && DialogUIManager.Instance != null) DialogUIManager.Instance.StartDialogue(AugHelper.GetClientReactionUnholster()); }));
         }
 
         /// <summary>Host side: a friend lowered the gun without firing. When nobody is aiming any more, the customer
         /// carries on or leaves exactly as when the host holsters.</summary>
         internal static void Lower() {
+            LowerFor(RemoteActions.CurrentOwner);
+        }
+        internal static void HostTick(Connection session) {
+            if (aimers.Count == 0) return;
+            if (Customer() != aimedCustomer) { ForgetAimers(); return; }
+            // Disconnecting cannot send a holster request. Remove that player's
+            // aim through the same last-player cleanup used by an explicit lower.
+            foreach (int owner in new List<int>(aimers)) if (!session.HasPeer(owner)) LowerFor(owner);
+        }
+        static void LowerFor(int owner) {
+            if (Customer() != aimedCustomer) { ForgetAimers(); return; }
             var ui = StoreUIManager.Instance;
-            if (ui == null || !aimers.Remove(RemoteActions.CurrentOwner) || AnyoneAiming(ui) || ui.isShot) return;
+            if (!aimers.Remove(owner) || ui == null || AnyoneAiming(ui) || ui.isShot) return;
             var customer = Customer();
             bool pendingSurvivor = pendingSurvivedField != null && pendingSurvivedField.GetValue(ui) != null;
             if (DialogUIManager.Instance == null || PlayerStore.Instance == null || customer == null) return;
@@ -64,7 +78,7 @@ namespace ShopTogether {
         /// <summary>Host side: an aiming friend pulled the trigger.</summary>
         internal static void Fire() {
             var ui = StoreUIManager.Instance;
-            if (ui == null || !aimers.Contains(RemoteActions.CurrentOwner) || !ui.CanShoot() || Customer() == null) { RemoteActions.PendingNote="~SMC303~"; return; }
+            if (ui == null || !aimers.Contains(RemoteActions.CurrentOwner) || !ui.CanShoot() || Customer() == null || Customer() != aimedCustomer) { RemoteActions.PendingNote="~SMC303~"; return; }
             aimers.Clear();
             // The game's own shot. If the host is not aiming, the host's screen is left alone: the customer is hit and
             // falls in the shop view, and the game's "lower the gun" step at the end only closes the deal window.
@@ -74,7 +88,7 @@ namespace ShopTogether {
             if (LastSurvived) Headless = false;   // a survivor's shot never lowers the gun
         }
 
-        internal static void ForgetAimers() { aimers.Clear(); }
+        internal static void ForgetAimers() { aimers.Clear(); aimedCustomer = null; }
         /// <summary>Host side: a friend's shot is running while the host is not aiming.</summary>
         internal static bool Headless;
         internal static bool ObserverDeath;
@@ -93,6 +107,9 @@ namespace ShopTogether {
 
         // ---------------- friend side ----------------
         static bool aiming, shown, animating, primed;
+        static long raisedFor;
+        static long confirmedFor = -1;
+        static int confirmedShots;
         static int seen;
         internal static bool Aiming { get { return aiming; } }
 
@@ -102,16 +119,38 @@ namespace ShopTogether {
             if (ui == null || animating) return;
             if (aiming) { LowerHere(ui, true); return; }
             if (gun == null) return;
-            if (HostPhase.Away) { RemoteActions.Notice(string.IsNullOrEmpty(HostPhase.Text) ? "~SMC079~" : HostPhase.Text); return; }
-            if (!gun.CanPickup()) { RemoteActions.Notice("~SMC303~"); return; }
-            aiming = true; shown = true;
+            RemoteActions.Forward(RemoteActions.Adapter("Raise", 0), null, new object[0]);
+        }
+
+        internal static void ConfirmRaise(long customer) {
+            var call = new PanelCall { m = 57, texts = new[] { customer.ToString(System.Globalization.CultureInfo.InvariantCulture) }, numbers = new[] { Shots } };
+            Connection.Current.SendTo(RemoteActions.CurrentOwner, PanelRelay.Message, System.Text.Encoding.UTF8.GetBytes(WireJson.ToJson(call)));
+        }
+
+        // Enter the local view only after the host accepted this customer's request.
+        internal static void RaiseHere(string customer, int shots) {
+            long revision; if (!long.TryParse(customer, out revision) || revision <= 0) return;
+            confirmedFor = revision; confirmedShots = shots;
+        }
+
+        // Acknowledgements, phase updates and world data are applied separately.
+        // Wait for the accepted shot baseline and any previous animation; only
+        // discard an acknowledgement once newer host state makes it obsolete.
+        internal static void Tick() {
+            var session = Connection.Current; var ui = StoreUIManager.Instance;
+            if (confirmedFor < 0 || session == null || !session.IsClient || ui == null || !ReplicaSession.SceneReady || !primed) return;
+            if (confirmedShots > seen) return;
+            if (confirmedShots < seen || confirmedFor != session.World.Presentation.CustomerRevision) { confirmedFor = -1; return; }
+            if (animating) return;
+            long revision = confirmedFor; confirmedFor = -1;
+            if (aiming) return;
+            raisedFor = revision; aiming = true; shown = true;
             ui.StartBlackscreenSequence(true, delegate {
                 if (!aiming) return;
                 CounterView(ui, true); ui.isShootingMode = true; ui.isShot = false;
                 if (ui.clientGameObject != null && ui.clientGameObject.image != null) ui.clientGameObject.image.color = Color.white;
                 AudioManager.Instance.Play2("shotgun_pump");
             }, delegate { if (aiming && !animating) ui.shootingUI.SetActive(true); }, 0.25f, 0.1f);
-            RemoteActions.Forward(RemoteActions.Adapter("Raise", 0), null, new object[0]);
         }
 
         /// <summary>Friend side: lower the gun on this screen (and tell the host, unless the customer is already gone).</summary>
@@ -138,8 +177,8 @@ namespace ShopTogether {
             if (ui == null || state == null || !ReplicaSession.SceneReady) return;
             if (!primed) { primed = true; seen = state.shots; }
             if (state.shots != seen) { seen = state.shots; if (!animating) Play(ui, state.survived); }
-            // The customer left while this player was still aiming: just put the gun away here.
-            if (aiming && !animating && PlayerStore.Instance != null && PlayerStore.Instance.currentClientInstance == null) LowerHere(ui, false);
+            // A changed customer invalidates the old aim, even if no empty-counter update arrived.
+            if (aiming && !animating && PlayerStore.Instance != null && (PlayerStore.Instance.currentClientInstance == null || Connection.Current.World.Presentation.CustomerRevision != raisedFor)) LowerHere(ui, true);
             if (!animating && !shown && ui.body != null && ui.body.activeSelf != state.body) ui.body.SetActive(state.body);
         }
 
@@ -238,7 +277,7 @@ namespace ShopTogether {
             Headless = ObserverDeath = false;
             var ui = StoreUIManager.Instance;
             if (shown && ui != null) { try { CounterView(ui, false); ui.isShootingMode = false; ui.isShot = false; } catch (Exception e) { Debug.LogWarning("[ShopTogether] shotgun view: " + e.Message); } }
-            aiming = shown = animating = primed = false; seen = 0; aimers.Clear();
+            aiming = shown = animating = primed = false; seen = 0; raisedFor = 0; confirmedFor = -1; confirmedShots = 0; ForgetAimers();
         }
     }
 

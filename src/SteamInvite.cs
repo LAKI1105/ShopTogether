@@ -45,7 +45,7 @@ namespace ShopTogether {
             try {
                 string status = host ? "~SMC022~" + players + "~SMC005~" + (joinable ? "~SMC013~" : "")
                                      : "~SMC157~" + hostName + "~SMC004~" + players + "~SMC005~";
-                SteamFriends.SetRichPresence("status", status);
+                SteamFriends.SetRichPresence("status", Loc.Text(status));
                 SteamFriends.SetRichPresence("connect", host && joinable ? Marker + " " + SteamRelay.LocalId : "");
                 SteamFriends.SetRichPresence("steam_player_group", group ?? "");
                 SteamFriends.SetRichPresence("steam_player_group_size", players > 0 ? players.ToString(System.Globalization.CultureInfo.InvariantCulture) : "");

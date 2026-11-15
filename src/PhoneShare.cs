@@ -210,7 +210,10 @@ namespace ShopTogether {
             [HarmonyPriority(Priority.First)]
             static bool Prefix(DialoguePhoneUIManager __instance, int index) {
                 if (!Friend) return true;
-                if (Act) { Send("Choose", index, shownSig); __instance.HideChoiceBubble(); }
+                // Keep the current choices until the host advances the dialogue.
+                // A refusal leaves its signature unchanged, so Follow will not
+                // redraw choices hidden optimistically on this machine.
+                if (Act) Send("Choose", index, shownSig);
                 return false;
             }
         }

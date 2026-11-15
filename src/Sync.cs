@@ -209,6 +209,13 @@ namespace ShopTogether {
         internal int Corrections, Removed;
         internal string LastNote = "";
 
+        internal void Reset() {
+            pending = null; cursor = 0; mismatched.Clear(); seen.Clear();
+            repeat.Clear(); unstable.Clear(); strayOnce.Clear();
+            storeAsked = stationAsked = storeUnstable = stationUnstable = false;
+            Corrections = Removed = 0; LastNote = "";
+        }
+
         internal void Offer(Digest digest) { if (digest != null && digest.ids != null && digest.hashes != null && digest.ids.Length == digest.hashes.Length) { pending = digest; cursor = 0; mismatched.Clear(); seen.Clear(); } }
 
         /// <summary>Returns a resync request when the comparison finished and found differences.</summary>

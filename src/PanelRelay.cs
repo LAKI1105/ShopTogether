@@ -169,7 +169,7 @@ namespace ShopTogether {
         // Friend: wait until the host's change has arrived (a used strip shows its result), then open the panel.
         internal static void FromHost(byte[] data) {
             var call = WireJson.FromJson<PanelCall>(Encoding.UTF8.GetString(data));
-            if (call == null || call.m < 0 || call.m > 56 || waiting.Count >= 16) return;
+            if (call == null || call.m < 0 || call.m > 57 || waiting.Count >= 16) return;
             var s = Connection.Current; if (s == null) return;
             if (waiting.Count == 0) { seen = s.World.Version; due = Time.realtimeSinceStartup + 1f; }
             waiting.Add(call);
@@ -230,6 +230,7 @@ namespace ShopTogether {
                 case 52: case 53: CompanyIntent.Show(c.m,Text(c,0),a); break;
                 case 54: CustomPanelRelay.Open(Text(c,0)); break;
                 case 55: case 56: CargoIntent.Show(c.m,Text(c,0)); break;
+                case 57: ShotgunView.RaiseHere(Text(c,0),Number(c,0)); break;
                 case 43: {
                     var ui = NegociationUIManager.Instance; if (ui == null) break;
                     ui.OpenConfirmPanel(); CounterTrades.BindConfirmation(ui, Number(c, 2)); var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");

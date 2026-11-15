@@ -234,7 +234,8 @@ namespace ShopTogether {
             return type == typeof(CounterTrades) || type == typeof(NegociationUIManager) || type == typeof(BargainUIManager) ||
                 type == typeof(AppraisalServiceHelper) || type == typeof(StoreBell) ||
                 type == typeof(PlayerStore) && e.Method.Name == "TryPlayerDismissCurrentClient" ||
-                type == typeof(ShopActions) && e.Method.Name == "AcceptDeal";
+                type == typeof(ShopActions) && e.Method.Name == "AcceptDeal" ||
+                type == typeof(ShotgunView);
         }
         internal static RemoteCall Encode(Entry e, object instance, object[] args) {
             var call = new RemoteCall { key = e.Key, customer = Session.World.Presentation.CustomerRevision, kinds = new string[args.Length], values = new string[args.Length] };
@@ -364,6 +365,7 @@ namespace ShopTogether {
             }
             try {
                 object result = e.Method.Invoke(target, args);
+                if (e.Method.DeclaringType == typeof(ShotgunView) && e.Method.Name == "Raise" && PendingNote == null) ShotgunView.ConfirmRaise(call.customer);
                 if (result is bool && !(bool)result && PendingNote == null) return "~SMC321~";
                 if (e.Method.DeclaringType == typeof(HopperHelper) && e.Method.Name == "RunAndRecord" && result is int && (int)result == 0 && PendingNote == null) return "~SMC321~";
             }
