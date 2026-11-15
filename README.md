@@ -5,27 +5,21 @@ A community co-op mod for **Probably Stolen**. Run the game on each computer and
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-目前工作坊版本：**1.3.37**。所有玩家請更新到相同版本後重新開啟遊戲。
+目前工作坊版本：**1.3.38**。所有玩家請更新到相同版本後重新開啟遊戲。
 
-## 1.3.37 有哪些改變？
+## 1.3.38 有哪些改變？
 
-- 修正付款保護擋得太廣，連賣東西、免費服務及不付費的電話操作一起擋住的問題。
-- 修正購買被原版或商品模組拒絕後，外層仍接著跑成交對話；整批購買只完成部分時也會說明。
-- 出售前重新鑑定造成的物品變化，不再被誤判成「沒有動作」。
-- 補上櫃檯對話及公司目錄的朋友端請求路徑，避免舊資料把操作擋在朋友電腦上。
-- 兌換處與已開啟的升級畫面，收到主端結果後更新庫存、額度、價格和冷卻文字。
-- 延後扣款只保護當前報價與已選的付款；補上執照、鑑價入會、安檢及抵押付款，保留原生金額與效果。
-- 真人交易的準備與成交階段分開檢查；外部服務後續拒絕、取消及成交回覆會送回原操作者。
-- 倉庫擴充未完成時會回覆；彩券整批兌領先查總額，避免超出遊戲的整數範圍。
-- 交易完成後的同步會重新讀取主端現金與公司資料；場景未就緒及執行錯誤也會回覆。
+- 訪客交易失敗或對方離開時，會把原因回給發起操作的人，不再被畫面刷新吃掉。
+- 重新送出報價後，會等新的報價回來，不再把舊報價誤當成這次成功。
+- 訪客連線失敗時，朋友也會收到錯誤說明，不再只有房主看得到。
 
-Current Workshop release: **1.3.37**. All players must update to the same version and restart.
+Current Workshop release: **1.3.38**. All players must update to the same version and restart.
 
-Payment reservations now follow the selected unpaid dialogue chain and actual spending boundaries. Sales, free services and unrelated phone actions remain usable. Purchases check actual ownership changes before accepting a deal, while reinspection recognizes item changes. Guest dialogue and order controls submit requests to the host, and open commissary/upgrade screens refresh from its results. Visitor transactions retain their requester for asynchronous responses. Storage failures and lottery overflow are reported, and completed actions invalidate cached shop/company state.
+Visitor trade failures and departures now report their reason to the requester before the screen refreshes. Resubmitted quotes wait for new quote data instead of treating the old quote as success. Visitor connection errors also reach the requesting friend instead of appearing only on the host.
 
-本版以目前遊戲及 18 個已安裝模組的程式來源對照買賣入口。僅執行正式 DLL 編譯；未執行遊戲或自動化測試。下方測試紀錄屬先前版本，不代表本版實機通過。
+本版從程式面對照訪客交易的請求、回覆與畫面刷新順序，並完成正式 DLL 編譯；未執行遊戲或自動化測試。發布前複查沒有確認到新的問題，未追加修改或升版。下方測試紀錄屬先前版本，不代表本版實機通過。
 
-This version was reviewed in source and compiled. No game or automated tests were run for 1.3.37; historical test results below do not validate this build. Compatibility findings apply to the inspected installed mod versions.
+This version was reviewed in source and compiled. No game or automated tests were run for 1.3.38; historical test results below do not validate this build. The pre-release source review found no additional confirmed issue. Compatibility findings apply to the inspected installed mod versions.
 
 ## 使用方式
 

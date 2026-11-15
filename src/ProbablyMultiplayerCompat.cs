@@ -65,8 +65,9 @@ namespace ShopTogether {
                 patches.Patch(commit, prefix: new HarmonyMethod(typeof(ProbablyMultiplayerCompat), "BeforeCommit"), finalizer: new HarmonyMethod(typeof(ProbablyMultiplayerCompat), "AfterCommit"));
                 patches.Patch(update, prefix: new HarmonyMethod(AccessTools.Method(typeof(ProbablyMultiplayerCompat), "AllowUpdate")));
                 patches.Patch(AccessTools.Method(runtime,"Send",new[]{typeof(object)}),prefix:new HarmonyMethod(typeof(VisitorShare),"BeforeNativeSend"),finalizer:new HarmonyMethod(typeof(VisitorShare),"AfterNativeSend"));
-                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.TradeUI"),"Error"),postfix:new HarmonyMethod(typeof(VisitorShare),"TradeError"));
-                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.MultiplayerUI"),"Status"),postfix:new HarmonyMethod(typeof(VisitorShare),"TradeStatus"));
+                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.TradeUI"),"Error"),prefix:new HarmonyMethod(typeof(VisitorShare),"TradeError"));
+                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.MultiplayerUI"),"Status"),prefix:new HarmonyMethod(typeof(VisitorShare),"TradeStatus"));
+                patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.MultiplayerUI"),"Failure"),prefix:new HarmonyMethod(typeof(VisitorShare),"TradeFailure"));
                 patches.Patch(AccessTools.Method(assembly.GetType("ProbablyMultiplayer.MultiplayerUI"),"Refresh"),postfix:new HarmonyMethod(typeof(VisitorShare),"TradeRefresh"));
                 bound = true;
                 Debug.Log("[ShopTogether] Probably Multiplayer 2.6.1 compatibility bridge ready");
