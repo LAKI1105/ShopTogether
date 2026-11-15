@@ -63,6 +63,7 @@ namespace ShopTogether {
         // Only what the action itself uses is checked; someone moving something else on the counter does not block it.
         internal static bool ShopAvailable(Connection session,int owner,ShopOperation operation){
             if(operation==ShopOperation.Buy||operation==ShopOperation.Sell||operation==ShopOperation.BuyAll||operation==ShopOperation.SellAll){
+                if(!DialoguePayment.AllowSpending())return false;
                 if(DialogueIntent.Committing)return Reject("~SMC353~");
                 // The tablet selects and checks the actual batch before committing.
                 if(operation==ShopOperation.BuyAll||operation==ShopOperation.SellAll)return true;
@@ -89,7 +90,7 @@ namespace ShopTogether {
         }
         internal static bool Execute(Connection session,int owner,Request request){
             if(!OutingKits.RequestAllowed(session,owner,request))return Reject("~SMC217~");
-            int previousOwner=RemoteActions.CurrentOwner;Executing=true;PanelRelay.Owner=owner;RemoteActions.CurrentOwner=owner;
+            bool previousExecuting=Executing;int previousOwner=RemoteActions.CurrentOwner;Executing=true;PanelRelay.Owner=owner;RemoteActions.CurrentOwner=owner;
             try {
                 double now=Time.realtimeSinceStartup;
                 if(request.kind==RequestKind.Move)return Move(session,owner,request,now);
@@ -130,7 +131,7 @@ namespace ShopTogether {
                     }
                     return false;
                 }
-                if(request.kind==RequestKind.ShopAction){if(!CounterTrades.Allowed(owner))return false;if(!ShopAvailable(session,owner,(ShopOperation)request.operation))return false;var store=PlayerStore.Instance;
+                if(request.kind==RequestKind.ShopAction){if(!CounterTrades.Allowed(owner))return false;if(request.operation<=(int)ShopOperation.SellAll&&!session.World.Presentation.CurrentCustomer(request.worldVersion))return Reject("~SMC363~");if(!ShopAvailable(session,owner,(ShopOperation)request.operation))return false;var store=PlayerStore.Instance;
                     switch((ShopOperation)request.operation){
                         case ShopOperation.NextCustomer:if(!store.CanNextClient())return false;store.TryCallNextClient();return true;
                         case ShopOperation.Buy:case ShopOperation.Sell:return Reject("~SMC171~"); // Single trades require the requesting player's explicit item (CounterAction).
@@ -141,7 +142,7 @@ namespace ShopTogether {
                     }
                 }
                 return false;
-            } finally {Executing=false;PanelRelay.Owner=0;RemoteActions.CurrentOwner=previousOwner;PanelRelay.SourceItem=null;PanelRelay.SourceIsActivation=false;}
+            } finally {Executing=previousExecuting;PanelRelay.Owner=0;RemoteActions.CurrentOwner=previousOwner;PanelRelay.SourceItem=null;PanelRelay.SourceIsActivation=false;}
         }
         static bool Reject(string reason){
             RemoteActions.PendingNote=reason;
@@ -236,7 +237,7 @@ namespace ShopTogether {
     internal static class ClientShopAction {
         static readonly Dictionary<string,ShopOperation> operations=new Dictionary<string,ShopOperation>{{"TryCallNextClient",ShopOperation.NextCustomer},{"BuyItemFromTable",ShopOperation.Buy},{"SellItemFromTable",ShopOperation.Sell},{"BuyAllItemFromTable",ShopOperation.BuyAll},{"SellAllItemFromTable",ShopOperation.SellAll}};
         static IEnumerable<MethodBase> TargetMethods(){foreach(string name in operations.Keys)yield return typeof(PlayerStore).GetMethod(name);}
-        [HarmonyPriority(Priority.First)] static bool Prefix(MethodBase __originalMethod){
+        [HarmonyPriority(Priority.First + 200)] static bool Prefix(MethodBase __originalMethod){
             var operation=operations[__originalMethod.Name];
             if(!ReplicaSession.ClientStore){
                 if(!NativeActions.Active)return true;
@@ -255,7 +256,7 @@ namespace ShopTogether {
             if(WorldReplica.Applying)return false;
             if(!NativeActions.Active){NativeActions.NotReady();return false;}
             if(LocalControl.UserAction){
-                if(operation==ShopOperation.NextCustomer)NativeActions.Session.Send(new Request{kind=RequestKind.ShopAction,items=new int[0],operation=(int)operation});
+                if(operation==ShopOperation.NextCustomer)NativeActions.Session.Send(new Request{kind=RequestKind.ShopAction,items=new int[0],operation=(int)operation,worldVersion=NativeActions.Session.World.Presentation.CustomerRevision});
                 else {
                     int action=operation==ShopOperation.BuyAll?1:operation==ShopOperation.SellAll?2:0;
                     RemoteActions.Forward(RemoteActions.Adapter("CounterAction",2),null,new object[]{action,action==2?null:PlayerStore.Instance.currentNegociatedItem});

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
@@ -12,7 +12,7 @@ namespace ShopTogether {
     /// host's own game code, and the result comes back through world sync. Only functions listed here are
     /// forwarded; every other world change on a friend's machine stays blocked by the replica barriers.
     /// </summary>
-    [Serializable] internal sealed class RemoteCall { public long sequence; public string key; public string instance; public string[] kinds; public string[] values; }
+    [Serializable] internal sealed class RemoteCall { public long sequence, customer; public int offerSet = -1; public string key; public string instance; public string[] kinds; public string[] values; }
 
     internal static class RemoteActions {
         internal sealed class Entry {
@@ -188,6 +188,7 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(ShopActions).GetMethod("BuyWild", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("AcceptDeal", BF)));
             AddAdapter(M(() => typeof(CounterTrades).GetMethod("CounterAction", BF)));
+            AddAdapter(M(() => typeof(CounterTrades).GetMethod("ResolveConfirmation", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("UndoSort", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("SetAppraisalAllowed", BF)));
             AddAdapter(M(() => typeof(ShopActions).GetMethod("ApplyPerk", BF)));
@@ -228,8 +229,20 @@ namespace ShopTogether {
 
         // ---------------- friend side ----------------
 
+        static bool CustomerAction(Entry e) {
+            var type = e.Method.DeclaringType;
+            return type == typeof(CounterTrades) || type == typeof(NegociationUIManager) || type == typeof(BargainUIManager) ||
+                type == typeof(AppraisalServiceHelper) || type == typeof(StoreBell) ||
+                type == typeof(PlayerStore) && e.Method.Name == "TryPlayerDismissCurrentClient" ||
+                type == typeof(ShopActions) && e.Method.Name == "AcceptDeal";
+        }
         internal static RemoteCall Encode(Entry e, object instance, object[] args) {
-            var call = new RemoteCall { key = e.Key, kinds = new string[args.Length], values = new string[args.Length] };
+            var call = new RemoteCall { key = e.Key, customer = Session.World.Presentation.CustomerRevision, kinds = new string[args.Length], values = new string[args.Length] };
+            if (e.Method.DeclaringType == typeof(ShopActions) && e.Method.Name == "AcceptDeal") {
+                var current = PlayerStore.Instance.currentClientInstance;
+                var offer = current == null ? null : current.GetClientBlueprint().barterOffer;
+                call.offerSet = offer == null ? -1 : offer.currentSetIndex;
+            }
             if (!e.Method.IsStatic) {
                 call.instance = e.InstanceKey == null ? null : e.InstanceKey(instance);
                 if (call.instance == null) return null;
@@ -269,17 +282,23 @@ namespace ShopTogether {
         /// <summary>Validates and executes a friend's action. Returns a reason when refused.</summary>
         internal static string Execute(Connection session, int owner, RemoteCall call) {
             CurrentOwner = owner; PendingNote = null; PanelRelay.Owner = owner; PanelRelay.NotifiedDuringAction = false;
-            try { return Run(session, owner, call); } finally { CurrentOwner = -1; PanelRelay.Owner = 0; PanelRelay.SourceItem = null; PanelRelay.SourceIsActivation = false; }
+            try { using (HostNativeScope.Begin()) return Run(session, owner, call); } finally { CurrentOwner = -1; PanelRelay.Owner = 0; PanelRelay.SourceItem = null; PanelRelay.SourceIsActivation = false; }
         }
         static string Run(Connection session, int owner, RemoteCall call) {
             Build();
             Entry e;
             if (call == null || call.key == null || !byKey.TryGetValue(call.key, out e)) return "~SMC030~";
+            if (CustomerAction(e) && !session.World.Presentation.CurrentCustomer(call.customer)) return "~SMC363~";
+            if (e.Method.DeclaringType == typeof(ShopActions) && e.Method.Name == "AcceptDeal") {
+                var current = PlayerStore.Instance.currentClientInstance;
+                var offer = current == null ? null : current.GetClientBlueprint().barterOffer;
+                if ((offer == null ? -1 : offer.currentSetIndex) != call.offerSet) return "~SMC365~";
+            }
             // Without a working Probably Multiplayer bridge, or during its trade, hold back what can take part in its
             // trades (the counter, customers, the bell and shutter); machines, outings and the rest keep working.
-            bool tradeSide = e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton);
+            bool tradeSide = e.Method.DeclaringType == typeof(ShopActions) && e.Method.Name == "AcceptDeal" || e.Method.DeclaringType == typeof(AppraisalServiceHelper) || e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton);
             if (tradeSide && ProbablyMultiplayerCompat.BlockRemote(session, owner)) return "~SMC271~";
-            if (ProbablyMultiplayerCompat.VisitActive && (e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton))) return "~SMC271~";
+            if (ProbablyMultiplayerCompat.VisitActive && tradeSide) return "~SMC271~";
             if (e.HostOnly != null) return e.HostOnly;
             if ((e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades)) && !CounterTrades.Allowed(owner)) return "~SMC217~";
             string busy = HostPhase.Busy(session.Ready); if (busy != null) return busy;
@@ -296,12 +315,13 @@ namespace ShopTogether {
             double now = Time.realtimeSinceStartup;
             for (int i = 0; i < n; i++) {
                 Type want = e.Parameters[i].ParameterType;
+                if (e.Method.DeclaringType == typeof(CounterTrades) && e.Method.Name == "CounterAction" && i == 1 && args[0] is int && (int)args[0] == 1 && !CounterTrades.UsesBuySelection) { args[i] = null; continue; }
                 string kind = call.kinds[i], value = call.values[i];
                 switch (kind) {
                     case "null": if (want.IsValueType) return "~SMC171~"; args[i] = null; break;
                     case "item": {
                         int id; GameItem item;
-                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) || !session.World.Items.TryGetValue(id, out item) || item == null) return "~SMC095~";
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) || !session.World.Items.TryGetValue(id, out item) || !AuthorityIntent.Live(item)) return "~SMC095~";
                         if (ProbablyMultiplayerCompat.Protected(item)) return "~SMC271~";
                         if (!want.IsInstanceOfType(item)) return "~SMC171~";
                         if (!DialogueIntent.CanTouch(session, item)) return "~SMC353~";
@@ -385,7 +405,7 @@ namespace ShopTogether {
     internal static class RemoteActionPatch {
         static IEnumerable<MethodBase> TargetMethods() { return RemoteActions.Targets(); }
 
-        [HarmonyPriority(Priority.First)]
+        [HarmonyPriority(Priority.First + 200)]
         static bool Prefix(MethodBase __originalMethod, object __instance, object[] __args) {
             var session = Connection.Current;
             if (!ReplicaSession.ClientStore) {
@@ -529,7 +549,7 @@ namespace ShopTogether {
 
     [HarmonyPatch(typeof(StoreRequest), "FillRequest")]
     internal static class FriendFillRequest {
-        [HarmonyPriority(Priority.First)]
+        [HarmonyPriority(Priority.First + 200)]
         static bool Prefix(StoreRequest __instance) {
             if(WorldReplica.Applying)return true;
             if(!ReplicaSession.ClientStore){

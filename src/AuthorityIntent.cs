@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -16,9 +16,13 @@ namespace ShopTogether {
         internal static bool Free(Connection s, int owner, int id) {
             return s.Leases.Available(owner, id, Time.realtimeSinceStartup) || Refuse("~SMC096~");
         }
+        internal static bool Live(GameItem item) {
+            return item != null && item.parentInventory != null && (!(item is GameItemElement) || !((GameItemElement)item).IsDestroyed());
+        }
         internal static bool FreeTree(Connection s,int owner,GameItem item) {
             if(item==null)return Refuse("~SMC095~");
             if(s==null||!s.IsHost||!s.Ready)return true;
+            if(!Live(item))return Refuse("~SMC095~");
             if(!Free(s,owner,s.World.Id(item)))return false;
             foreach(var child in item.FindAllChildItems())if(!Free(s,owner,s.World.Id(child)))return false;
             return true;

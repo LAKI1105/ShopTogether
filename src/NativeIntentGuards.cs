@@ -20,6 +20,7 @@ namespace ShopTogether {
                     t == typeof(NegociationUIManager)) yield return m;
             }
         }
+        [HarmonyPriority(Priority.First + 150)]
         static bool Prefix(MethodBase __originalMethod, object __instance, object[] __args) {
             var s = Connection.Current;
             if (s == null || !s.IsHost || !s.Ready || WorldReplica.Applying) return true;
@@ -56,13 +57,24 @@ namespace ShopTogether {
                 return null;
             }
             if (type == typeof(NegociationUIManager)) {
+                if (!DialoguePayment.AllowSpending()) return "~SMC364~";
+                if (ProbablyMultiplayerCompat.VisitActive) return "~SMC271~";
                 var customer = store.currentClientInstance == null ? null : store.currentClientInstance.GetClientBlueprint();
                 if (customer == null || NegociationUIManager.IsTradeLocked()) return "~SMC247~";
                 if (name == "OnInterogationButtonClick") return customer.interogationDialogue == null ? "~SMC247~" : null;
                 if (name == "OnGlasseButtonClick") return customer.glasseDialogue == null ? "~SMC247~" : null;
-                if (name == "OnLeftArrowButtonClick" || name == "OnRightArrowButtonClick")
-                    return customer.barterOffer == null || !customer.barterOffer.UseOfferSets() || !customer.isIntroduced ? "~SMC247~" : null;
+                if (name == "OnLeftArrowButtonClick" || name == "OnRightArrowButtonClick") {
+                    if (customer.isBusinessComplete || customer.barterOffer == null || !customer.barterOffer.UseOfferSets() || !customer.isIntroduced) return "~SMC247~";
+                    foreach (var goods in e.GetAllNonOwnedItem()) if (!AuthorityIntent.FreeTree(s, owner, goods)) return RemoteActions.PendingNote;
+                    return null;
+                }
                 if (!customer.isOfferWholesale || customer.isBusinessComplete) return "~SMC247~";
+                long total = 0;
+                foreach (var goods in e.GetAllNonOwnedItem()) {
+                    long value = goods.GetNegociatedValue();
+                    if (value < 0 || value > int.MaxValue || total > int.MaxValue - value) return "~SMC356~";
+                    total += value;
+                }
                 int price = store.GetWholesalePrice();
                 if (price < 0 || price > store.playerCash) return "~SMC343~";
                 foreach (var goods in e.frontInvinvElement.childItems) if (!AuthorityIntent.FreeTree(s, owner, goods)) return "~SMC096~";
@@ -83,10 +95,11 @@ namespace ShopTogether {
             if (item == null) return "~SMC095~";
             if (!AuthorityIntent.FreeTree(s, owner, item)) return "~SMC096~";
             if (type == typeof(AppraisalServiceHelper)) {
+                if (ProbablyMultiplayerCompat.VisitActive) return "~SMC271~";
                 var customer = store.currentClientInstance == null ? null : store.currentClientInstance.GetClientBlueprint();
-                if (customer == null || customer.clientIntent != StoreClient.ClientIntent.APPRAISAL_SERVICE ||
+                if (customer == null || customer.isBusinessComplete || !AuthorityIntent.Live(item) || (item.parentInventory != e.frontInvinvElement && item.parentInventory != e.backInvinvElement) || customer.clientIntent != StoreClient.ClientIntent.APPRAISAL_SERVICE ||
                     !item.IsTag("APPRAISAL_ITEM") || GeneralHelper.IsItemOwned(item) || NegociationUIManager.IsTradeLocked()) return "~SMC247~";
-                if (!(args[1] is int) || (int)args[1] < 0) return "~SMC305~";
+                if (!(args[1] is int) || (int)args[1] < 0 || (int)args[1] > 1000000000) return "~SMC305~";
                 return null;
             }
             if (!GeneralHelper.IsItemOwned(item)) return "~SMC347~";
@@ -99,7 +112,8 @@ namespace ShopTogether {
             string id = type == typeof(MachineAutoButcher) ? "auto_butcher" : type == typeof(MachineCassettePlayer) ? "cassette_player" :
                 type == typeof(MachineDealMaker) ? "deal_maker" : type == typeof(MachineFeedDispenser) ? "livestock_feed_dispenser" :
                 type == typeof(VendingMachineHelper) ? "vending_machine" : null;
-            if (id != null && item.identifier != id) return "~SMC347~";
+            if (id != null && item.identifier != id && !(type == typeof(VendingMachineHelper) && item.identifier == "vending_fountain")) return "~SMC347~";
+            if (type == typeof(VendingMachineHelper)) { int cash = item.GetTagReadonly("VENDING_CASH").GetInt(); if (cash <= 0) return "~SMC362~"; if ((long)store.playerCash + cash > int.MaxValue) return "~SMC356~"; }
             if (type == typeof(HopperHelper) && !item.IsTag("HOPPER_INTAKE_TAG")) return "~SMC347~";
             if (type == typeof(StorageExpansionHelper)) {
                 var tabs = AccessTools.Method(typeof(StorageExpansionHelper), "GetTabs").Invoke(null, new object[] { item }) as MachineryTabs;
@@ -122,7 +136,7 @@ namespace ShopTogether {
                 used = true;
                 if (!DialogueIntent.MayChange(session, item)) { RemoteActions.Notice("~SMC353~"); return; }
                 if (!AuthorityIntent.FreeTree(session, 0, item)) { RemoteActions.Notice("~SMC096~"); return; }
-                original();
+                using (HostNativeScope.Begin()) original();
             };
         }
     }

@@ -36,6 +36,7 @@ namespace ShopTogether {
             return true;
         }
         internal static bool Available(Connection s, int owner) {
+            if (ProbablyMultiplayerCompat.TradeLocked) return AuthorityIntent.Refuse("~SMC271~");
             var e = EmporiumEntry.Instance; if (e == null) return AuthorityIntent.Refuse("~SMC081~");
             foreach (var inventory in new[] { e.frontInvinvElement, e.backInvinvElement })
                 foreach (var item in inventory.childItems) if (!AuthorityIntent.FreeTree(s, owner, item)) return false;

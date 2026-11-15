@@ -30,12 +30,13 @@ namespace ShopTogether {
             RemoteActions.Forward(RemoteActions.Adapter("StoragePageAction",3),null,new object[]{__originalMethod.Name,(int)__args[0],__args.Length>1?(string)__args[1]:""});return false;
         }
         static bool Controls(ref bool __result){if(scope<=0)return true;__result=true;return false;}
-        static void BeforeUnlock(object __instance,int index,int price,out int __state){
-            __state=-1;if(RemoteActions.CurrentOwner<=0)return;
+        static bool BeforeUnlock(object __instance,int index,int price,out int __state){
+            __state=-1;if(!DialoguePayment.AllowSpending())return false;if(RemoteActions.CurrentOwner<=0)return true;
             __state=Number(__instance,"page");scope++;
             Call(__instance,"RestoreRecordedProgress");
             if(index!=Number(__instance,"unlocked")||index>=10)RemoteActions.PendingNote="~SMC326~";
             else if(!PlayerStore.Instance.CanPay(price))RemoteActions.PendingNote="~SMC343~";
+            return true;
         }
         static void AfterUnlock(object __instance,int __state){if(__state<0)return;try{AccessTools.Field(type,"page").SetValue(__instance,__state);Call(__instance,"RefreshCaption");}finally{scope--;}}
         internal static void StoragePageAction(string action,int page,string name){

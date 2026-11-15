@@ -91,6 +91,7 @@ namespace ShopTogether {
         // ---------------- the Wild network: the price is paid on the host ----------------
         /// <summary>Host side: buy a Wild network upgrade, paid with favour first and cash for the rest.</summary>
         internal static void BuyWild(string id) {
+            if (!DialoguePayment.AllowSpending()) return;
             var store = PlayerStore.Instance; NetworkUpgrade upgrade;
             if (store == null || id == null || store.networkUpgrade == null || !store.networkUpgrade.TryGetValue(id, out upgrade) || upgrade == null || !upgrade.IsReady() || upgrade.IsUnlocked()) { Refuse("~SMC247~"); return; }
             int cost = upgrade.GetCost();
@@ -99,7 +100,8 @@ namespace ShopTogether {
             if (store.wildFavor >= cost) store.wildFavor -= cost;
             else { int rest = cost - store.wildFavor; store.wildFavor = 0; store.playerCash -= rest; cashSpent = rest; }
             RunStats.OnWildUpgradeBought(cashSpent);
-            upgrade.Unlock();
+            using (HostNativeScope.Begin()) upgrade.Unlock();
+            EmporiumAnalytics.TrackWildUpgradePurchased(id);
             if (EmporiumAudioPlayer.Instance != null) EmporiumAudioPlayer.Instance.PlayRegister();
         }
         static void Refuse(string text) { RemoteActions.PendingNote = text; }
@@ -369,11 +371,19 @@ namespace ShopTogether {
             }
             [HarmonyPriority(Priority.First)]
             static bool Prefix(object __instance) {
-                if (!Friend) return true;
-                if (!Act) return false;
                 var manager = __instance as WildUIManager;
                 string id = manager != null ? manager.currentSelectedId : (selected != null ? selected.GetValue(null) as string : null);
-                if (!string.IsNullOrEmpty(id)) Send("BuyWild", id);
+                if (!Friend) {
+                    var s = Connection.Current;
+                    if (s == null || !s.IsHost || !s.Ready || WorldReplica.Applying) return true;
+                    RemoteActions.PendingNote = null;
+                    BuyWild(id);
+                    if (RemoteActions.PendingNote != null) RemoteActions.Notice(RemoteActions.TakeNote());
+                    if (manager != null && id != null) manager.OnElementClicked(id);
+                    else AccessTools.Method(typeof(WildNetworkUI), "RefreshAll").Invoke(null, null);
+                    return false;
+                }
+                if (Act && !string.IsNullOrEmpty(id)) Send("BuyWild", id);
                 return false;
             }
         }

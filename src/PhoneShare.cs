@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -77,6 +77,7 @@ namespace ShopTogether {
             if (talk == null || talk.currentDialog == null || talk.IsChoice()) { AuthorityIntent.Refuse("~SMC336~"); return; }
             var current = new PhaseState(); Capture(current);
             if (current.phone == null || sig != current.phone.sig) { AuthorityIntent.Refuse("~SMC332~"); return; }
+            if (!DialoguePayment.AllowSpending() || !DialogueIntent.Available(Connection.Current, RemoteActions.CurrentOwner)) return;
             talk.OnAdvancePressed();
         }
         internal static void Choose(int index, int sig) {
@@ -86,6 +87,7 @@ namespace ShopTogether {
             if (talk == null || talk.currentDialog == null || current.phone == null || sig != current.phone.sig || !ChoicesShown(talk)
                 || talk.currentDialog.choices == null || index < 0 || index >= talk.currentDialog.choices.Count) { AuthorityIntent.Refuse("~SMC332~"); return; }
             if (!talk.currentDialog.IsChoiceEnabledAt(index)) { AuthorityIntent.Refuse("~SMC333~"); return; }
+            if (!DialoguePayment.AllowSpending() || !DialogueIntent.Available(Connection.Current, RemoteActions.CurrentOwner)) return;
             talk.SelectChoice(index);
         }
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
@@ -144,7 +144,7 @@ namespace ShopTogether {
             if (index == BudgetConfirm) {
                 int budget, total;
                 if (!CounterTrades.BeginConfirmation(Owner, NegociationUIManager.Instance, out budget, out total)) return false;
-                numbers.Add(budget); numbers.Add(total);
+                numbers.Add(budget); numbers.Add(total); numbers.Add(CounterTrades.ConfirmationToken(Owner));
             }
             var parameters = method.GetParameters();
             for (int i = 0; i < args.Length; i++) {
@@ -232,7 +232,7 @@ namespace ShopTogether {
                 case 55: case 56: CargoIntent.Show(c.m,Text(c,0)); break;
                 case 43: {
                     var ui = NegociationUIManager.Instance; if (ui == null) break;
-                    ui.OpenConfirmPanel(); var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");
+                    ui.OpenConfirmPanel(); CounterTrades.BindConfirmation(ui, Number(c, 2)); var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");
                     if (frame != null && frame.confirmText != null)
                         frame.confirmText.text = LocHelper.GetLocalizedUI("ui_nego_budget_warning", Number(c, 0), Number(c, 1) - Number(c, 0));
                     break; }

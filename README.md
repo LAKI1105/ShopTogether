@@ -5,25 +5,27 @@ A community co-op mod for **Probably Stolen**. Run the game on each computer and
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-目前工作坊版本：**1.3.35**。所有玩家請更新到同一版本後重新開啟遊戲。
+目前工作坊版本：**1.3.36**。所有玩家請更新到同一版本後重新開啟遊戲。
 
-## 1.3.35 有哪些改變？
+## 1.3.36 有哪些改變？
 
-- 單件與整批買賣都在成交前檢查實際商品及容器內容；有人拿著、或正在等待對話交付的物品不能被賣掉。
-- 修正朋友的部分買賣入口沒有帶上所選商品、可能沿用房主選取物的問題；朋友操作完也會還原房主的選取。
-- 房主與朋友的賣出確認都綁定當時的客人、商品、內容、價格與預算。有變動就要求重新確認，不會直接賣掉後來換上的貨。
-- 舊的整批買賣入口改走遊戲現行的平板交易流程，避免累加金額造成多扣或多加款；未參與交易的商品被別人拿著，也不再誤擋整筆交易。
-- 易物會檢查前後台商品；批發會檢查將搬移的前台商品與購買商品；槍匠交付會使用操作端的選取並檢查槍枝及零件占用。
-- 補上訂單、公司服務、兌換、調酒、機台與回店操作繞過待交付物保護的入口。
-- 自動屠宰不再把自己當成房主，不能處理房主正拿著的動物。
+- 修正付款後的原生交貨，可能被模組誤認成新的拖曳而攔住的問題。
+- 修正限買一件時，朋友取消選取後仍可能買到上一件商品；普通整批購買也不再被無關選取擋住。
+- 買賣請求綁定當時的客人；客人已更換就拒絕舊請求。賣出確認改用一次性編號，舊視窗不會確認到新交易。
+- 易物切換選項前會檢查正在被拿取的商品；槍匠、鑑價與收購失敗補上具體原因，已消失的物品不能再次成交。
+- 補上公司開通、續費、目錄解鎖、私下訂貨、補訂炸彈與自動續費設定的主端處理。
+- 修正舊升級介面的重複購買／付款資格檢查，以及飲水販賣機被誤擋而不能收款的問題。
+- 酒吧兌獎、整批交付與在店交貨也納入物品占用及原生交貨處理。
+- 借款、贈款與傭兵情報的延後扣款對話尚未完成時，會暫停並行支出。真人訪客交易結算期間也保護款項，避免被另一筆購買花掉。
+- 買賣總額超過遊戲整數範圍時會拒絕，避免扣款或收入翻成錯誤數字。
 
-Current Workshop release: **1.3.35**. All players must update to the same version and restart.
+Current Workshop release: **1.3.36**. All players must update to the same version and restart.
 
-Trades check the actual selected goods and their contents before committing. Guest trades carry the guest's selection, and stale sale confirmations are rejected for both host and guests. Legacy batch trade calls use the current native tablet flow instead of cumulative charging. Barter, wholesale and gunsmith deliveries respect occupied goods. This also closes indirect consumption paths during pending dialogue deliveries and prevents automatic butchering from using the host's item ownership.
+Native deliveries no longer look like new drag requests. Guest single-item selection, customer identity and sale-confirmation tokens are checked before committing. This release also covers company subscriptions, catalog unlocks and replacement orders, the legacy upgrade screen, water-vending collections, bartender deliveries and redemptions. Pending financial conversations and human-visitor settlement prevent competing spending. Out-of-range counter totals are refused before native accounting.
 
-本版以程式碼對照完成修正，僅執行正式 DLL 編譯；未執行遊戲或自動化測試。下方測試紀錄是先前版本的紀錄，不代表本版已經實機通過。
+本版以目前遊戲及 18 個已安裝模組的程式來源對照買賣入口。僅執行正式 DLL 編譯；未執行遊戲或自動化測試。下方測試紀錄屬先前版本，不代表本版實機通過。
 
-This release was reviewed in source and compiled. No game or automated tests were run for 1.3.35; historical test results below do not validate this build.
+This release was reviewed in source and compiled. No game or automated tests were run for 1.3.36; historical test results below do not validate this build. Compatibility findings apply to the inspected installed mod versions.
 
 ## 使用方式
 

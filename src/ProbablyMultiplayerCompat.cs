@@ -11,7 +11,7 @@ namespace ShopTogether {
         const string Portrait = "lemocuber_probablymultiplayer_player_sprite";
         const string PatchId = "shop_together.probably_multiplayer_compat";
         static Harmony patches;
-        static FieldInfo active, externalConnection, externalSession;
+        static FieldInfo active, externalConnection, externalSession, visitorPlayer;
         static PropertyInfo locked;
         static MethodInfo preview, selected, registerPortrait, disconnect;
         static bool bound, failed, clientSuspended;
@@ -55,11 +55,14 @@ namespace ShopTogether {
                 selected = AccessTools.Method(visit, "IsSelectedOriginal", new[] { typeof(GameItem) });
                 registerPortrait = AccessTools.Method(sprite, "Register", new[] { typeof(string) });
                 var prepare = AccessTools.Method(transfer, "Prepare");
+                var commit = AccessTools.Method(transfer, "Commit");
+                visitorPlayer = AccessTools.Field(runtime, "PlayerId");
                 var update = AccessTools.Method(core, "Update");
-                if (active == null || externalConnection==null || externalSession==null || disconnect==null || locked == null || preview == null || selected == null || registerPortrait == null || prepare == null || update == null)
+                if (active == null || externalConnection==null || externalSession==null || disconnect==null || locked == null || preview == null || selected == null || registerPortrait == null || prepare == null || commit == null || visitorPlayer == null || update == null)
                     throw new InvalidOperationException("Probably Multiplayer interface changed");
                 patches = new Harmony(PatchId);
                 patches.Patch(prepare, prefix: new HarmonyMethod(AccessTools.Method(typeof(ProbablyMultiplayerCompat), "BeforePrepare")));
+                patches.Patch(commit, prefix: new HarmonyMethod(typeof(ProbablyMultiplayerCompat), "BeforeCommit"), finalizer: new HarmonyMethod(typeof(ProbablyMultiplayerCompat), "AfterCommit"));
                 patches.Patch(update, prefix: new HarmonyMethod(AccessTools.Method(typeof(ProbablyMultiplayerCompat), "AllowUpdate")));
                 bound = true;
                 Debug.Log("[ShopTogether] Probably Multiplayer 2.6.1 compatibility bridge ready");
@@ -91,9 +94,26 @@ namespace ShopTogether {
         static void BeforePrepare() {
             var session = Connection.Current;
             if (session == null || !session.IsHost || !session.Ready || session.Leases == null) return;
+            if (DialoguePayment.Pending) throw new InvalidOperationException(Loc.Text("~SMC364~"));
             foreach (var lease in session.Leases.Snapshot(Time.realtimeSinceStartup))
-                if (lease.owner > 0) throw new InvalidOperationException("Another player is moving an item. Please try again.");
+                if (lease.owner >= 0) throw new InvalidOperationException("Another player is moving an item. Please try again.");
         }
+        // Other native services may spend cash between preparation and the
+        // external commit. Recheck before the visitor mod detaches any items.
+        static void BeforeCommit(object __0, out HostNativeScope __state) {
+            __state = null;
+            var s = Connection.Current; if (s == null || !s.IsHost || !s.Ready) return;
+            BeforePrepare();
+            var type = __0.GetType();
+            int price = (int)AccessTools.Property(type, "Price").GetValue(__0, null);
+            string seller = AccessTools.Property(type, "SellerId").GetValue(__0, null) as string;
+            string self = visitorPlayer.GetValue(null) as string;
+            long cash = PlayerStore.Instance.playerCash;
+            if (price < 0 || (seller == self ? cash + price > int.MaxValue : cash < price))
+                throw new InvalidOperationException("Available funds changed. Please request the trade again.");
+            __state = HostNativeScope.Begin();
+        }
+        static Exception AfterCommit(Exception __exception, HostNativeScope __state) { if (__state != null) __state.Dispose(); return __exception; }
         internal static bool Available { get {
             return bound && !failed;
         } }

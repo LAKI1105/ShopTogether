@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -37,6 +37,8 @@ namespace ShopTogether {
             string lineSignature=JsonConvert.SerializeObject(new object[]{result.title,result.text,result.choices});if(dialog!=lastDialog||lineSignature!=lastLine){lastDialog=dialog;lastLine=lineSignature;dialogSerial++;}result.dialog=dialogSerial;return result;
         }
         internal bool CurrentDialogue(long revision){return revision==dialogSerial&&DialogUIManager.Instance!=null&&DialogUIManager.Instance.currentDialog==lastDialog;}
+        internal bool CurrentCustomer(long revision){var current=PlayerStore.Instance.currentClientInstance;return current==lastCustomer&&revision==(current==null?0:customerSerial);}
+        internal long CustomerRevision {get{return appliedCustomer;}}
         internal long DialogRevision {get{return appliedDialog;}}
         /// <summary>Friend: customers still waiting today (the queue itself only exists on the host).</summary>
         internal static int ClientsLeft;
@@ -67,7 +69,7 @@ namespace ShopTogether {
     [HarmonyPatch]
     internal static class ReplicaDialogueInput {
         static IEnumerable<MethodBase> TargetMethods(){yield return AccessTools.Method(typeof(DialogUIManager),"OnAdvancePressed");yield return AccessTools.Method(typeof(DialogUIManager),"SelectChoice");}
-        [HarmonyPriority(Priority.First)] static bool Prefix(MethodBase __originalMethod,object[] __args){
+        [HarmonyPriority(Priority.First + 200)] static bool Prefix(MethodBase __originalMethod,object[] __args){
             var session=Connection.Current;
             if(!ReplicaSession.ClientStore){
                 if(session!=null&&session.IsHost&&session.Ready&&LocalControl.UserAction&&!NativeActions.Executing&&RemoteActions.CurrentOwner<0&&!DialogueIntent.Available(session,0)){

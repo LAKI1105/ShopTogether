@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
@@ -44,6 +44,10 @@ namespace ShopTogether {
             foreach(string name in new[]{"OrderLeviathan","MakeUpCanning","OrderCanningMachine"})Add("Services",name,"DavreCo");
             Add("CarmichaelCo","OrderSpecimen","CarmichaelCo");Add("MeridianCo","OrderForgeMachine","MeridianCo");Add("MeridianCo","MakeUpForge",null);
             foreach(string name in new[]{"PayOffAid","AgreePlan","PayServiceFee","AcceptBomb","BribeForReconcile","ReconcileWithRebels","CallBombOdin"})Add("Malice.Envoy",name,null);
+            Add("Malice.Malice","Subscribe",null);Add("Malice.Malice","ApplyUnlock",null);
+            Add("Malice.RebelStory","BribeMeridian",null);Add("Malice.RebelStory","ReorderBomb",null);
+            Patch(AccessTools.Method(T("Malice.MalicePanel"),"Say"),"Toast");
+            Patch(AccessTools.PropertySetter(T("Malice.CorpTerms"),"AutoRenew"),"AutoRenew");
             Add("Malice.Rebels","BookFence",null);Add("Malice.RebelStory","CallPickup",null);Add("Malice.RebelStory","CallOdin",null);
             Patch(AccessTools.Method(window,"Open"),"OpenCompany");Patch(AccessTools.Method(T("CardView"),"Open"),"OpenCard");
             Patch(AccessTools.Method(window,"Draw"),"BeginDraw","EndDraw");Patch(AccessTools.Method(window,"Toast"),"Toast");
@@ -138,6 +142,16 @@ namespace ShopTogether {
             if(drawing>0){var company=AccessTools.Field(window,"_company").GetValue(null);awaiting=true;Send(new CompanyCommand{action="Traffic",args=new[]{Id(company),__0?"1":"0"}});}
             return WorldReplica.Applying;
         }
+        static bool AutoRenew(object __instance,bool __0) {
+            if(!ReplicaSession.ClientStore || WorldReplica.Applying)return true;
+            if(drawing>0){
+                var company=AccessTools.Field(window,"_company").GetValue(null);
+                if(company!=null && ReferenceEquals(Call(T("Malice.Malice"),"TermsOf",company),__instance)) {
+                    awaiting=true;Send(new CompanyCommand{action="AutoRenew",args=new[]{Id(company),__0?"1":"0"}});
+                }
+            }
+            return false;
+        }
         static bool Bribe(bool __0,ref bool __result) {
             if(!ReplicaSession.ClientStore)return true;__result=false;
             if(drawing>0 || LocalControl.UserAction){awaiting=true;Send(new CompanyCommand{action="PastelBribe",args=new[]{__0?"1":"0"}});}return false;
@@ -145,6 +159,7 @@ namespace ShopTogether {
         internal static void CompanyAction(string packed) {
             Bind();var command=WireJson.FromJson<CompanyCommand>(packed);
             if(command==null || command.args==null || command.args.Length>4 || companyType==null){RemoteActions.PendingNote="~SMC305~";return;}
+            if(command.action!="AutoRenew" && command.action!="Traffic" && !DialoguePayment.AllowSpending())return;
             if(command.action=="PastelBribe") {
                 if(command.args.Length!=1 || command.args[0]!="1"){RemoteActions.PendingNote="~SMC305~";return;}
                 var c=Find("pastel");var state=State(c);
@@ -153,6 +168,15 @@ namespace ShopTogether {
                 int cash=(int)Call(T("Services"),"CashDue",c,price);
                 if(!(bool)Call(T("Services"),"CanAfford",cash)){RemoteActions.PendingNote="~SMC343~";return;}
                 bool paid=(bool)Call(T("PastelCo"),"PayBribe",true);Flush(true);RemoteActions.PendingNote=paid?"~SMC341~":"~SMC125~";return;
+            }
+            if(command.action=="AutoRenew") {
+                if(command.args.Length!=2 || (command.args[1]!="0" && command.args[1]!="1")){RemoteActions.PendingNote="~SMC305~";return;}
+                var c=Find(command.args[0]);
+                if(c==null || !(bool)Get(c,"Active") || !(bool)Call(T("Malice.Malice"),"Applies",c)){RemoteActions.PendingNote="~SMC345~";return;}
+                var terms=Call(T("Malice.Malice"),"TermsOf",c);
+                if(terms==null){RemoteActions.PendingNote="~SMC326~";return;}
+                AccessTools.Property(terms.GetType(),"AutoRenew").SetValue(terms,command.args[1]=="1",null);
+                Flush(true);RemoteActions.PendingNote="~SMC341~";return;
             }
             if(command.action=="Traffic") {
                 if(command.args.Length!=2 || (command.args[1]!="0" && command.args[1]!="1")){RemoteActions.PendingNote="~SMC305~";return;}
@@ -181,8 +205,9 @@ namespace ShopTogether {
             }
             // Prices are host quotes, never accepted from a remote argument.
             if(company!=null){int minimum=method.Name=="BookLab"?2:method.Name=="ClaimGift"?3:method.Name=="RequestRefurbish"?2:
-                method.Name=="PlaceOrder"||method.Name=="OrderSpecimen"||method.Name=="RequestBloodRecovery"||method.Name=="OrderForgeMachine"?0:1;
+                method.Name=="Subscribe"||method.Name=="ApplyUnlock"||method.Name=="PlaceOrder"||method.Name=="OrderSpecimen"||method.Name=="RequestBloodRecovery"||method.Name=="OrderForgeMachine"?0:1;
                 if(Tier(company)<minimum){RemoteActions.PendingNote="~SMC345~";return;}}
+            if(method.DeclaringType==T("Malice.Malice") && (company==null || !(bool)Call(T("Malice.Malice"),"Applies",company))){RemoteActions.PendingNote="~SMC345~";return;}
             if(method.Name=="OrderLeviathan")args[1]=Call(window,"LeviathanPrice");
             if(method.Name=="OrderSpecimen") {
                 var prices=new Dictionary<string,int>{{"@silverblood",500},{"@blood_drawer",250},{"@isomer_reactor",400},{"@sb_handbook",50}};int price;
@@ -200,7 +225,7 @@ namespace ShopTogether {
                 foreach(GameItem item in ((IEnumerable)Call(T("Services"),candidates)).Cast<GameItem>().Take(limit))
                     if(!DialogueIntent.MayChange(Connection.Current,item) || !AuthorityIntent.FreeTree(Connection.Current,Math.Max(0,RemoteActions.CurrentOwner),item))return;
             }
-            string result=(string)method.Invoke(null,args);Flush(true);RemoteActions.PendingNote=string.IsNullOrEmpty(result)?"~SMC341~":result;
+            string result;using(HostNativeScope.Begin())result=(string)method.Invoke(null,args);Flush(true);RemoteActions.PendingNote=string.IsNullOrEmpty(result)?"~SMC341~":result;
         }
         static bool OpenCompany(object __0) { if(!PanelRelay.Capturing)return true;Relay(new PanelCall{m=52,texts=new[]{Id(__0)}});return false; }
         static int Tier(object company){return (int)AccessTools.Method(companyType,"Tier").Invoke(company,new[]{State(company)});}
