@@ -17,7 +17,7 @@ $bridge=Join-Path $managed 'ShopTogetherTestRedirect.dll'
 if($LASTEXITCODE -ne 0){throw 'Could not build the isolated Workshop path redirect'}
 $approval=Join-Path $managed 'ShopTogetherIsolatedApproval.dll'
 if($AllowApprovedTestTrust){
-    & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /noconfig /nostdlib /target:library "/out:$approval" "/r:$managed\mscorlib.dll" "/r:$managed\System.dll" "/r:$managed\System.Core.dll" "/r:$managed\netstandard.dll" "/r:$managed\Assembly-CSharp.dll" "/r:$managed\UnityEngine.CoreModule.dll" "/r:$managed\Newtonsoft.Json.dll" (Join-Path $PSScriptRoot 'IsolatedApproval.cs') (Join-Path $PSScriptRoot 'IsolatedVisitorTest.cs')
+    & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /noconfig /nostdlib /target:library "/out:$approval" "/r:$managed\mscorlib.dll" "/r:$managed\System.dll" "/r:$managed\System.Core.dll" "/r:$managed\netstandard.dll" "/r:$managed\Assembly-CSharp.dll" "/r:$managed\UnityEngine.CoreModule.dll" "/r:$managed\Newtonsoft.Json.dll" (Join-Path $PSScriptRoot 'IsolatedApproval.cs')
     if($LASTEXITCODE -ne 0){throw 'Could not build the isolated approval helper'}
 }
 

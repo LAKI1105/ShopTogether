@@ -210,7 +210,7 @@ namespace ShopTogether {
                 int price=(int)AccessTools.Property(T("PastelCo"),"Bribe").GetValue(null,null);
                 int cash=(int)Call(T("Services"),"CashDue",c,price);
                 if(!(bool)Call(T("Services"),"CanAfford",cash)){RemoteActions.PendingNote="~SMC343~";return;}
-                bool paid=(bool)Call(T("PastelCo"),"PayBribe",true);Flush(true);RemoteActions.PendingNote=paid?"~SMC341~":"~SMC125~";return;
+                bool paid=(bool)Call(T("PastelCo"),"PayBribe",true);Flush(true);RemoteActions.PendingNote=RemoteActions.PendingNote??(paid?"~SMC341~":"~SMC125~");return;
             }
             if(command.action=="AutoRenew") {
                 if(command.args.Length!=2 || (command.args[1]!="0" && command.args[1]!="1")){RemoteActions.PendingNote="~SMC305~";return;}
@@ -268,7 +268,7 @@ namespace ShopTogether {
                 foreach(GameItem item in ((IEnumerable)Call(T("Services"),candidates)).Cast<GameItem>().Take(limit))
                     if(!DialogueIntent.MayChange(Connection.Current,item) || !AuthorityIntent.FreeTree(Connection.Current,Math.Max(0,RemoteActions.CurrentOwner),item))return;
             }
-            string result;using(HostNativeScope.Begin())result=(string)method.Invoke(null,args);Flush(true);RemoteActions.PendingNote=string.IsNullOrEmpty(result)?"~SMC341~":result;
+            string result;using(HostNativeScope.Begin())result=(string)method.Invoke(null,args);Flush(true);RemoteActions.PendingNote=RemoteActions.PendingNote??(string.IsNullOrEmpty(result)?"~SMC341~":result);
         }
         static bool OpenCompany(object __0) { if(!PanelRelay.Capturing)return true;Relay(new PanelCall{m=52,texts=new[]{Id(__0)}});return false; }
         static int Tier(object company){return (int)AccessTools.Method(companyType,"Tier").Invoke(company,new[]{State(company)});}

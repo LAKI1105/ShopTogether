@@ -111,6 +111,13 @@ namespace ShopTogether {
             foreach(var child in node.children)Walk(child,root,owner,ordinal,visited);
         }
         internal InventoryAddress Address(GameInventory inventory){InventoryAddress a;return inventory!=null&&addresses.TryGetValue(inventory,out a)?a:null;}
+        GameInventory ReplicaInventory(InventoryAddress address,Dictionary<string,GameInventory> containers){
+            GameInventory inventory;
+            // An item's ID is global. Its inner inventories remain the same when the
+            // container moves between roots; the host's new root need not be placed yet.
+            if(address.container>0)return containers.TryGetValue(address.container+":"+address.ordinal,out inventory)?inventory:null;
+            return Inventories.TryGetValue(address.Key,out inventory)?inventory:null;
+        }
         /// <summary>Friend side: who is holding which item right now, as last reported by the host.</summary>
         internal readonly Dictionary<int,int> RemoteLeases=new Dictionary<int,int>();
         internal bool Related(int a,int b) {
@@ -119,11 +126,14 @@ namespace ShopTogether {
         }
         static bool Contains(GameItem parent,GameItem child){var inv=child.parentInventory;int limit=128;while(inv!=null&&limit-->0){var p=inv.GetParentItem();if(p==null)return false;if(p==parent)return true;inv=p.parentInventory;}return false;}
         internal WorldDelta Capture(bool full,int player,LeaseBook leases,double now) {
+            WorldDelta incremental;return Capture(full,player,leases,now,out incremental);
+        }
+        internal WorldDelta Capture(bool full,int player,LeaseBook leases,double now,out WorldDelta incremental) {
 #if LAN_PROBE
             var captureTimer=System.Diagnostics.Stopwatch.StartNew();
 #endif
             CompanyIntent.Flush(full||nextState==0);
-            Refresh(full);long version=++Version;var changed=new List<ItemRecord>();var removed=new List<int>();
+            Refresh(full);long version=++Version;var changed=new List<ItemRecord>();var updates=new List<ItemRecord>();var removed=new List<int>();
             // A big store has thousands of items: a normal update compares new and just-changed items first, then
             // as many others as fit in a few milliseconds, continuing where the last update stopped.
             var timer=System.Diagnostics.Stopwatch.StartNew();var done=new HashSet<int>();
@@ -134,7 +144,7 @@ namespace ShopTogether {
                 node.childItems=new List<long>();node.childItemInventoryNode=new List<int>();node.tempLink=null;
                 var record=new ItemRecord{id=id,parent=Address(item.parentInventory),node=node,features=item.itemFeatures.ToArray()};
                 string signature=WireJson.ToJson(record);string old;
-                if(!signatures.TryGetValue(id,out old)||old!=signature){Versions[id]=version;signatures[id]=signature;changed.Add(record);try{fingerprints[id]=Fingerprint.Item(this,id,item);}catch{fingerprints.Remove(id);}}else if(full)changed.Add(record);
+                if(!signatures.TryGetValue(id,out old)||old!=signature){Versions[id]=version;signatures[id]=signature;changed.Add(record);updates.Add(record);try{fingerprints[id]=Fingerprint.Item(this,id,item);}catch{fingerprints.Remove(id);}}else if(full)changed.Add(record);
                 record.version=Versions[id];
             };
             if(full){foreach(var pair in Items)check(pair.Key,pair.Value);}
@@ -152,6 +162,10 @@ namespace ShopTogether {
             string store=lastStore,station=lastStation;
             if(full||store==null||station==null||UnityEngine.Time.realtimeSinceStartup>=nextState){nextState=UnityEngine.Time.realtimeSinceStartup+.5f;store=Convert.ToBase64String(StoreState.Serialize(PlayerStore.Instance));station=Convert.ToBase64String(StoreState.SerializeStation(StoreStation.Instance));}
             var result=new WorldDelta{version=version,full=full,player=player,items=changed.ToArray(),removed=removed.ToArray(),grids=grids.ToArray(),leases=leases.Snapshot(now),presentation=Presentation.Capture(this),readouts=Readouts.Capture(this,full),lamps=SceneObjects.Capture(),overflow=OverflowReplica.Capture(),cassette=CassetteReplica.Capture(),store=full||store!=lastStore?store:null,station=full||station!=lastStation?station:null};
+            // A full snapshot advances the shared capture baseline too. Existing peers must
+            // receive changes discovered by it, even when only a joining/resyncing peer needs
+            // the full item list. Reuse the same presentation/readouts instead of capturing twice.
+            incremental=full?new WorldDelta{version=version,full=false,player=player,items=updates.ToArray(),removed=result.removed,grids=result.grids,leases=result.leases,presentation=result.presentation,readouts=result.readouts,lamps=result.lamps,overflow=result.overflow,cassette=result.cassette,store=store!=lastStore?store:null,station=station!=lastStation?station:null}:result;
             lastStore=store;lastStation=station;
 #if LAN_PROBE
             if(!full)RuntimeProbe.CaptureMilliseconds.Add(captureTimer.Elapsed.TotalMilliseconds);
@@ -247,11 +261,13 @@ namespace ShopTogether {
                     }
                 }
                 // Newly created containers must be indexed before their children are attached.
+                Inventories.Clear();addresses.Clear();
                 var visited=new HashSet<GraphNodeStorage>();foreach(var root in Roots())Walk(root.Value,root.Key,0,new int[]{0},visited);
                 foreach(var r in delta.items){GameItem item=Items[r.id];Walk(item,r.parent.root,r.id,new int[]{0},visited);}
-                if(delta.grids!=null)foreach(var g in delta.grids){GameInventory inv;if(g.width<1||g.height<1||g.width>512||g.height>512)throw new InvalidOperationException("~SMC112~");if(Inventories.TryGetValue(g.address.Key,out inv)){var grid=inv as GameGridInventory;if(grid!=null&&(grid.inventoryShape.width!=g.width||grid.inventoryShape.height!=g.height))grid.SetShape(g.width,g.height);}}
-                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv;if(!Inventories.TryGetValue(r.parent.Key,out inv)){
-                    Diagnostics.Report("layout",new InvalidOperationException("missing inventory "+r.parent.Key+" for "+item.identifier));throw new InvalidOperationException("~SMC069~");}if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~");}item.Validate();}
+                var containers=new Dictionary<string,GameInventory>();foreach(var pair in addresses)if(pair.Value.container>0)containers.Add(pair.Value.container+":"+pair.Value.ordinal,pair.Key);
+                if(delta.grids!=null)foreach(var g in delta.grids){if(g.width<1||g.height<1||g.width>512||g.height>512)throw new InvalidOperationException("~SMC112~");var grid=ReplicaInventory(g.address,containers) as GameGridInventory;if(grid!=null&&(grid.inventoryShape.width!=g.width||grid.inventoryShape.height!=g.height))grid.SetShape(g.width,g.height);}
+                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv=ReplicaInventory(r.parent,containers);if(inv==null){
+                    Diagnostics.Report("layout",new InvalidOperationException("missing inventory root="+r.parent.root+" container="+r.parent.container+" ordinal="+r.parent.ordinal+" for "+item.identifier));throw new InvalidOperationException("~SMC069~");}if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~");}item.Validate();}
                 foreach(var item in leaving){if(Gone(item))continue;try{Remove(item);}catch(Exception e){Debug.LogWarning("[ShopTogether] remove: "+e.Message);}}
                 // Tags the game reads (custom names, conditions...) live in each item's derived state, which the game
                 // recomputes from its own and its children's state. Recompute it for every applied item and its containers.

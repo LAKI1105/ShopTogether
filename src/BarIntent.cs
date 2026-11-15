@@ -15,12 +15,34 @@ namespace ShopTogether {
             patches.Patch(AccessTools.Method(session,"Pay"),prefix:new HarmonyMethod(typeof(BarIntent),"BeforePay"));
             patches.Patch(AccessTools.Method(story,"Choose"),prefix:new HarmonyMethod(typeof(BarIntent),"Choose"),finalizer:new HarmonyMethod(typeof(BarIntent),"AfterEffect"));
             patches.Patch(AccessTools.Method(AccessTools.TypeByName("BartenderMod.BarStoryProps"),"Redeem"),prefix:new HarmonyMethod(typeof(BarIntent),"Redeem"),finalizer:new HarmonyMethod(typeof(BarIntent),"AfterEffect"));
+            patches.Patch(AccessTools.Method(AccessTools.TypeByName("BartenderMod.BarStoryProps"),"OpenEnglishPaper"),prefix:new HarmonyMethod(typeof(BarIntent),"EnglishPaper"));
             patches.Patch(AccessTools.Method(AccessTools.TypeByName("BartenderMod.BarSupply"),"Checkout"),prefix:new HarmonyMethod(typeof(BarIntent),"BeginEffect"),finalizer:new HarmonyMethod(typeof(BarIntent),"AfterEffect"));
             foreach(var nested in AccessTools.TypeByName("BartenderMod.BarCustomers").GetNestedTypes(BindingFlags.Public|BindingFlags.NonPublic))
                 foreach(var method in nested.GetMethods(BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.DeclaredOnly))
                     if(method.ReturnType==typeof(void)&&method.Name.Contains("<Offer>b__"))patches.Patch(method,prefix:new HarmonyMethod(typeof(BarIntent),"OfferCallback"),finalizer:new HarmonyMethod(typeof(BarIntent),"AfterEffect"));
         }
         static void Notice(string text){if(RemoteActions.CurrentOwner>0)RemoteActions.PendingNote=text;}
+        static bool EnglishPaper(GameItem __0,object __1){
+            if(!PanelRelay.Capturing)return true;
+            // This native paper is created dynamically and cannot be reopened by registry
+            // ID on a guest. Use the existing panel relay; all callbacks stay on the host.
+            var props=AccessTools.TypeByName("BartenderMod.BarStoryProps");
+            var translate=AccessTools.Method(AccessTools.TypeByName("BartenderMod.BarL"),"T",new[]{typeof(string)});
+            string id=(string)AccessTools.Field(__1.GetType(),"Id").GetValue(__1);
+            string name=(string)AccessTools.Field(__1.GetType(),"Name").GetValue(__1);
+            var panel=CustomUIManager.Window("bartender_action.story_prop",(string)translate.Invoke(null,new object[]{name}),"paper").SetSize(460f,560f).SetDraggable(true);
+            AccessTools.Field(props,"inspection").SetValue(null,panel.Handle);
+            panel.BeginScroll(440f).AddLabel((string)AccessTools.Method(props,"EnglishDocument").Invoke(null,new object[]{id}));
+            if(id=="contracts"){
+                int branch=(int)AccessTools.Method(session,"Int").Invoke(null,new object[]{"story.viola.branch",0});
+                string status=branch==1?"签下了品牌署名的那份。":branch==2?"定下了如实署名的那份。":"尚未签署。";
+                panel.AddLabel((string)translate.Invoke(null,new object[]{status}));
+            }
+            panel.End();
+            if(id=="ticket")panel.AddButton("Claim prize · 400 credits",()=>AccessTools.Method(props,"Redeem").Invoke(null,new object[]{__0}));
+            panel.AddButton("Close",()=>AccessTools.Method(props,"Close").Invoke(null,null)).Show();
+            return false;
+        }
         internal static bool Free(GameItem item){
             var s=Connection.Current;if(s==null||!s.IsHost||!s.Ready)return true;
             if(item==null||item.parentInventory==null||s.World.Id(item)<=0){RemoteActions.PendingNote="~SMC326~";return false;}

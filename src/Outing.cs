@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
@@ -22,9 +22,11 @@ namespace ShopTogether {
         public string title, panelSig;
         public string[] lines; public bool[] buttons, enabled;
         public PhoneView phone;                               // the shop phone
-        public VisitorView visitor;                           // the host's human visitor
+
         public bool body, survived; public int shots;   // the counter shotgun: body on the floor, shots fired
         public string ending; public int morning;       // the game's ending, and how many morning reports the host has seen
+        public int reportDay, evening; public bool morningOpen, eveningOpen;
+        public string[] reportLogs;
     }
 
     internal static class HostPhase {
@@ -75,7 +77,7 @@ namespace ShopTogether {
                 ShotgunView.Capture(state);
                 SharedScreens.Capture(state);
                 PhoneShare.Capture(state);
-                VisitorShare.Capture(state);
+
             } catch (Exception e) { Debug.LogWarning("[ShopTogether] phase capture: " + e.Message); }
             return state;
         }
@@ -89,14 +91,14 @@ namespace ShopTogether {
             try { FriendView.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] follow host: " + e.Message); }
             try { OutingKits.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] outing view: " + e.Message); }
             try { PhoneShare.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] phone: " + e.Message); }
-            try { VisitorShare.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] visitor: " + e.Message); }
+
             try { ShotgunView.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] shotgun view: " + e.Message); }
             try { SharedScreens.Follow(state); } catch (Exception e) { Debug.LogWarning("[ShopTogether] shared screens: " + e.Message); }
             Last = state;
             return wasAway && !Away;
         }
 
-        internal static void Reset() { Away = false; Text = ""; Last = null; FriendView.Reset(); ShotgunView.Reset(); SharedScreens.Reset(); OutingKits.ResetView(); PhoneShare.Reset(); VisitorShare.Reset(); }
+        internal static void Reset() { Away = false; Text = ""; Last = null; FriendView.Reset(); ShotgunView.Reset(); SharedScreens.Reset(); OutingKits.ResetView(); PhoneShare.Reset(); }
     }
 
     /// <summary>
@@ -107,36 +109,59 @@ namespace ShopTogether {
         static int endings, mornings;           // host: how many times each was shown
         static string ending = "";
         static bool primed; static string seenEnding; static int seenMorning;
+        static int evenings, seenEvening, reportDay;
+        static string[] reportLogs = new string[0];
 
-        internal static void Capture(PhaseState state) { state.ending = endings > 0 ? endings + ":" + ending : ""; state.morning = mornings; }
-        internal static void Reset() { endings = 0; mornings = 0; ending = ""; primed = false; seenEnding = null; seenMorning = 0; }
+        internal static void Capture(PhaseState state) {
+            state.ending = endings > 0 ? endings + ":" + ending : ""; state.morning = mornings;
+            state.reportDay = reportDay; state.reportLogs = reportLogs; state.evening = evenings;
+            var calendar = AdvCalendarUIManager.Instance;
+            state.morningOpen = calendar != null && calendar.nightlyReportSection != null && calendar.nightlyReportSection.activeInHierarchy;
+            state.eveningOpen = EndOfDayUIManager.Instance != null && EndOfDayUIManager.Instance.IsOpen;
+        }
+        internal static void Reset() { endings = 0; mornings = 0; ending = ""; primed = false; seenEnding = null; seenMorning = 0; evenings = seenEvening = reportDay = 0; reportLogs = new string[0]; }
 
         [HarmonyPatch(typeof(PlayerStore), "ExecuteGameOver")]
         internal static class HostEnding { static void Postfix(string ending) { if (!ReplicaSession.ClientStore) { endings++; SharedScreens.ending = ending ?? ""; } } }
-        [HarmonyPatch(typeof(StartOfDayUIManager), "OpenUI")]
-        internal static class HostMorning { static void Postfix() { if (!ReplicaSession.ClientStore) mornings++; } }
+        [HarmonyPatch(typeof(StartOfDayUIManager), "ShowMorningReport")]
+        internal static class HostMorning {
+            // InitPanel consumes nightLogs. Retain the host's result before the UI clears it.
+            static void Prefix(out string[] __state) { __state = !ReplicaSession.ClientStore && PlayerStore.Instance != null ? PlayerStore.Instance.nightLogs.ToArray() : null; }
+            static void Postfix(string[] __state) { if (__state != null) { reportLogs = __state; reportDay = StoreStation.Instance.dayCounter; mornings++; } }
+        }
+        [HarmonyPatch(typeof(EndOfDayUIManager), "OpenUI")]
+        internal static class HostEvening { static void Postfix(EndOfDayUIManager __instance) { if (!ReplicaSession.ClientStore && __instance.IsOpen) evenings++; } }
 
         /// <summary>Friend side. What was already on screen when this player joined is not shown again.</summary>
         internal static void Follow(PhaseState state) {
-            if (state == null || !ReplicaSession.SceneReady) return;
-            if (!primed) { primed = true; seenEnding = state.ending ?? ""; seenMorning = state.morning; return; }
+            if (state == null || !ReplicaSession.ClientStore || !ReplicaSession.SceneReady || state.away) return;
+            if (!primed) { primed = true; seenEnding = state.ending ?? ""; seenMorning = state.morningOpen ? 0 : state.morning; seenEvening = state.eveningOpen ? 0 : state.evening; }
+            if (state.evening != seenEvening && EndOfDayUIManager.Instance != null && PlayerStore.Instance != null && StoreStation.Instance != null && StoreStation.Instance.dayCounter == state.day) {
+                if (!state.eveningOpen) seenEvening = state.evening;
+                else if (PlayerStore.Instance.storeState == PlayerStore.StoreState.CLOSED) {
+                    EndOfDayUIManager.Instance.OpenUI();
+                    if (EndOfDayUIManager.Instance.IsOpen) seenEvening = state.evening;
+                }
+            }
             if ((state.ending ?? "") != seenEnding) {
                 seenEnding = state.ending ?? "";
                 int cut = seenEnding.IndexOf(':');
                 if (cut > 0) ShowEnding(seenEnding.Substring(cut + 1));
             }
-            if (state.morning != seenMorning) {
-                seenMorning = state.morning;
-                ShowMorningReport();
-            }
+            if (state.morning != seenMorning && StoreStation.Instance != null && StoreStation.Instance.dayCounter >= state.reportDay && ShowMorningReport(state.reportLogs)) seenMorning = state.morning;
         }
 
         // Only the report is shown here: the game's function also fixes up the shop's state, which stays the host's.
-        static void ShowMorningReport() {
+        static bool ShowMorningReport(string[] logs) {
             var ui = StartOfDayUIManager.Instance; var store = PlayerStore.Instance;
-            if (ui == null || store == null) return;
+            if (ui == null || store == null || AdvCalendarUIManager.Instance == null || logs == null) return false;
             var state = store.storeState; int lockFlag = store.lockShutterButtonFlag;
-            try { ui.ShowMorningReport(); } finally { store.storeState = state; store.lockShutterButtonFlag = lockFlag; }
+            var oldLogs = store.nightLogs; var oldActions = store.nightlyAction;
+            try {
+                // Display the captured result without replaying native nightly effects on the guest.
+                store.nightLogs = new List<string>(logs); store.nightlyAction = new List<Action>();
+                ui.ShowMorningReport(); return true;
+            } finally { store.nightLogs = oldLogs; store.nightlyAction = oldActions; store.storeState = state; store.lockShutterButtonFlag = lockFlag; }
         }
 
         // The same texts the game's ExecuteGameOver picks for each ending, in this player's language.

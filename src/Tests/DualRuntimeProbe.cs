@@ -93,7 +93,7 @@ namespace ShopTogether {
         static void CloseControl(){if(control!=null){control.Close();control=null;}fakeInput=false;LocalControl.ProbeInput=false;pressed.Clear();if(uiCamera!=null)UnityEngine.Object.Destroy(uiCamera.gameObject);if(uiTarget!=null){uiTarget.Release();UnityEngine.Object.Destroy(uiTarget);}}
         static void Poll(){while(control!=null&&control.Available>0){IPEndPoint source=new IPEndPoint(IPAddress.Any,0);byte[] data=control.Receive(ref source);if(!IPAddress.IsLoopback(source.Address)||data.Length>1024)continue;other=source;controlMessages.Enqueue(Encoding.ASCII.GetString(data));}}
         static bool Received(string message){Poll();int count=controlMessages.Count;for(int i=0;i<count;i++){string next=controlMessages.Dequeue();if(next==message)return true;controlMessages.Enqueue(next);}return false;}
-        static void Signal(string message){byte[] bytes=Encoding.ASCII.GetBytes(message);control.Send(bytes,bytes.Length,other);}
+        static void Signal(string message){byte[] bytes=Encoding.ASCII.GetBytes(message);if(bytes.Length>1024)throw new InvalidOperationException("Test control message exceeds receiver limit: "+bytes.Length);control.Send(bytes,bytes.Length,other);}
         static IEnumerator Wait(Func<bool> predicate,string label,float duration=40){float deadline=Time.realtimeSinceStartup+duration;bool done=false;while(!(done=predicate())&&Time.realtimeSinceStartup<deadline)yield return null;Require(done,label);}
         static void InstallInput(){
             var h=new Harmony("local.lan_shared_shop.test-input");
@@ -104,7 +104,7 @@ namespace ShopTogether {
             h.Patch(AccessTools.Method(typeof(Input),"GetKeyDown",new[]{typeof(KeyCode)}),key);
             h.Patch(AccessTools.Method(typeof(Input),"GetKeyUp",new[]{typeof(KeyCode)}),key);
             string suite=Argument("--smc-suite");
-            bool nativeMouse=((suite=="mouse1327"||suite=="trade1327"||suite=="layout1326"||suite=="stress1327")&&Argument("--smc-role")=="client")||(suite=="issue1328"&&Argument("--smc-issue-restore")=="1");
+            bool nativeMouse=((suite=="reported1339"||suite=="release1339"||suite=="mouse1327"||suite=="trade1327"||suite=="layout1326"||suite=="stress1327")&&Argument("--smc-role")=="client")||(suite=="issue1328"&&Argument("--smc-issue-restore")=="1");
             nativeMouseEdges=nativeMouse;
             if(!nativeMouse){
                 h.Patch(AccessTools.Method(typeof(Input),"GetMouseButton",new[]{typeof(int)}),transpiler:new HarmonyMethod(typeof(RuntimeProbe).GetMethod("MouseBody",BindingFlags.Static|BindingFlags.NonPublic)));
@@ -206,9 +206,6 @@ namespace ShopTogether {
             if(Argument("--smc-suite")==null){var tlsCheck=TlsCheck();while(tlsCheck.MoveNext())yield return tlsCheck.Current;}
             NewGameData.Instance.skipIntro=true;NewGameData.Instance.disableTutorialHint=true;MainMenuUIController.Instance.StartNewGameClick();
             wait=Wait(()=>EmporiumEntry.Instance!=null&&ItemMouseDragHandler.current!=null,"host isolated shop",90);while(wait.MoveNext())yield return wait.Current;yield return new WaitForSecondsRealtime(2);
-#if PM_REAL_PROBE
-            if(Argument("--smc-suite")=="probably_real"||Argument("--smc-suite")==null)IsolatedVisitorTest.DismissLogin();
-#endif
             InstallInput();var a=ModHelper.SpawnItem("magnifier");var b=ModHelper.SpawnItem("magnifier");a.mayStackItemFunc=(x,y)=>false;b.mayStackItemFunc=(x,y)=>false;a.name="SMC_HOST_ITEM";b.name="SMC_CLIENT_ITEM";GraphUtils.TryAcceptAll(EmporiumEntry.Instance.invElement,a,1);GraphUtils.TryAcceptAll(EmporiumEntry.Instance.invElement,b,1);foreach(var live in EmporiumEntry.Instance.invElement.childItems){if(live.name=="SMC_HOST_ITEM")a=live;if(live.name=="SMC_CLIENT_ITEM")b=live;}Require(a.unitCount>0&&b.unitCount>0,"test fixtures retain live native items");ShowStorage();
             wait=Wait(()=>!StoreUIManager.Instance.blackscreen.gameObject.activeInHierarchy,"initial shop transition finished",30);while(wait.MoveNext())yield return wait.Current;ShowStorage();yield return null;pointer=Point(a);yield return null;yield return null;Context(a);Require(MenuOpen,"native context preflight");ItemContextHandler.current.UpdateReset();int ticks=0;a.onOneSecondItemFunc=(x,y,z)=>{ticks++;x.unitValue=UnityEngine.Random.Range(100000,200000);};
             if(Argument("--smc-suite")=="stress1327"){var stress=StressPrepare1327();while(stress.MoveNext())yield return stress.Current;}

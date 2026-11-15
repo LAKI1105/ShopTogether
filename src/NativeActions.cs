@@ -100,17 +100,24 @@ namespace ShopTogether {
                     var move=request.moves[0];GameItem item;long version;
                     if(move==null||!session.World.Items.TryGetValue(request.items[0],out item)||move.item!=request.items[0])return Reject("~SMC095~");
                     if(!session.Leases.Owns(owner,move.item,move.lease,now))return Reject("~SMC096~");
-                    if(!session.World.Versions.TryGetValue(move.item,out version)||version!=move.version)return Reject("~SMC312~");
+                    if(!session.World.Versions.TryGetValue(move.item,out version))return Reject("~SMC312~");
                     if(move.count<1||move.count>item.unitCount)return Reject("~SMC313~");
                     GraphNodeStorage destination;
                     if(request.target!=0){GameItem target;if(!session.World.Items.TryGetValue(request.target,out target))return Reject("~SMC095~");if(!AuthorityIntent.Free(session,owner,request.target))return false;
                         if(request.operation==1){
-                            if(GeneralHelper.MayPlayerInsertInto(target)&&target.MayHaveValidInventorySlot(item)&&item.MayRemove()&&item.MaxNumRemove()>=move.count){if(GraphUtils.TryAcceptAll(target,item,move.count)<move.count)return true;return Reject("~SMC314~");}
-                            if(target.MayStack(item)){if(!item.MayRemove()||item.MaxNumRemove()<move.count)return Reject("~SMC315~");var stack=target.GetStackSlot(item);if(stack==null||stack.numTransfer<move.count)return Reject("~SMC314~");return stack.TryAcceptOnce(move.count)==move.count||Reject("~SMC314~");}
-                            return AuthorityIntent.Target(item,target,request.index);
+                            bool insert=GeneralHelper.MayPlayerInsertInto(target)&&target.MayHaveValidInventorySlot(item)&&item.MayRemove()&&item.MaxNumRemove()>=move.count;
+                            bool stackable=!insert&&target.MayStack(item);
+                            // A drop can mean "use on", not a placement. Like ItemAction.Target,
+                            // use the host's current predicates/state: liquid temperature/reactions
+                            // can change its version in transit without invalidating a pour.
+                            if(!insert&&!stackable)return AuthorityIntent.Target(item,target,request.index);
+                            if(version!=move.version)return Reject("~SMC312~");
+                            if(insert){if(GraphUtils.TryAcceptAll(target,item,move.count)<move.count)return true;return Reject("~SMC314~");}
+                            if(!item.MayRemove()||item.MaxNumRemove()<move.count)return Reject("~SMC315~");var stack=target.GetStackSlot(item);if(stack==null||stack.numTransfer<move.count)return Reject("~SMC314~");return stack.TryAcceptOnce(move.count)==move.count||Reject("~SMC314~");
                         }
+                        if(version!=move.version)return Reject("~SMC312~");
                         if(!GeneralHelper.MayPlayerInsertInto(target))return Reject("~SMC314~");destination=target;}
-                    else{GameInventory inventory;if(request.inventory==null||!session.World.Inventories.TryGetValue(request.inventory.Key,out inventory))return Reject("~SMC111~");if(request.inventory.container!=0&&!AuthorityIntent.Free(session,owner,request.inventory.container))return false;if(!GeneralHelper.MayPlayerInsertInto(inventory))return Reject("~SMC314~");destination=inventory;}
+                    else{if(version!=move.version)return Reject("~SMC312~");GameInventory inventory;if(request.inventory==null||!session.World.Inventories.TryGetValue(request.inventory.Key,out inventory))return Reject("~SMC111~");if(request.inventory.container!=0&&!AuthorityIntent.Free(session,owner,request.inventory.container))return false;if(!GeneralHelper.MayPlayerInsertInto(inventory))return Reject("~SMC314~");destination=inventory;}
                     if(!item.MayRemove()||move.count>item.MaxNumRemove())return Reject("~SMC315~");
                     return GraphUtils.TryAcceptAll(destination,item,move.count)<move.count||Reject("~SMC314~");
                 }
@@ -195,9 +202,11 @@ namespace ShopTogether {
         // Only picking an item up claims it. Opening, right-clicking or double-clicking an item never locks it for
         // others (those handlers keep their last item until the next press, which left machines locked).
         static IEnumerable<MethodBase> TargetMethods(){yield return typeof(ItemMouseDragHandler).GetMethod("OnEventPress",BindingFlags.Instance|BindingFlags.NonPublic);}
-        [HarmonyPriority(Priority.First)] static bool Prefix(InputActionHandler __instance,ISet<KeyCode> __0){
-            if(!NativeActions.Active||!(__0.Contains(KeyCode.Mouse0)||__0.Contains(KeyCode.Mouse1)))return true;
-            GameItem item=RenderHandler.RaycastElement<GameItem>(Input.mousePosition,null);if(item==null)return true;
+        [HarmonyPriority(Priority.First)] static bool Prefix(ItemMouseDragHandler __instance,ISet<KeyCode> __0){
+            // Match the native pickup branch. A secondary press while dragging rotates/flips
+            // the held item; claiming the item under the pointer would release that hold.
+            if(!NativeActions.Active||__instance.IsDraggingItem||!__0.Contains(__instance.key)||ItemPinHelper.BlocksClicks)return true;
+            GameItem item=RenderHandler.RaycastElement<GameItemElement>(Input.mousePosition,null);if(item==null)return true;
             var session=NativeActions.Session;int id=session.World.Id(item);
             // Only the host may assign an ID. Guests must use an ID supplied in the host's snapshot.
             if(id<=0&&session.IsHost){try{id=session.World.EnsureHostItem(item);}catch(Exception error){Diagnostics.Report("index new item",error);}}
@@ -217,11 +226,11 @@ namespace ShopTogether {
     internal static class CloseLocalContainer {static void Postfix(PixelWindow __instance){NativeActions.Unhold(__instance);}}
     [HarmonyPatch(typeof(SlotMarker),"TryAcceptOnce")]
     internal static class ClientPlace {
-        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,int __0,ref int __result){if(PanelRelay.BuildingCratePreview&&PanelRelay.IsCratePreview(__instance.inventory,__instance.item))return true;if(LocalControl.LocalChoice(__instance.inventory,__instance.item))return true;if(!NativeActions.Active){NativeActions.NotReady();return !ReplicaSession.IsReplica;}var s=NativeActions.Session;if(s.IsHost&&!LocalControl.UserAction)return true;if(s.IsHost&&LocalControl.UserAction&&!ProbablyMultiplayerCompat.AllowsHostPlacement(__instance,__0)){__result=0;return false;}if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__0);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
+        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,int __0,ref int __result){if(PanelRelay.BuildingCratePreview&&PanelRelay.IsCratePreview(__instance.inventory,__instance.item))return true;if(LocalControl.LocalChoice(__instance.inventory,__instance.item))return true;if(!NativeActions.Active){NativeActions.NotReady();return !ReplicaSession.IsReplica;}var s=NativeActions.Session;if(s.IsHost&&!LocalControl.UserAction)return true;if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__0);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
     }
     [HarmonyPatch(typeof(SlotMarker),"AcceptUnchecked")]
     internal static class ClientPlaceUnchecked {
-        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,ref int __result){if(PanelRelay.BuildingCratePreview&&PanelRelay.IsCratePreview(__instance.inventory,__instance.item))return true;if(LocalControl.LocalChoice(__instance.inventory,__instance.item))return true;if(!NativeActions.Active){NativeActions.NotReady();return !ReplicaSession.IsReplica;}var s=NativeActions.Session;if(s.IsHost&&!LocalControl.UserAction)return true;if(s.IsHost&&LocalControl.UserAction&&!ProbablyMultiplayerCompat.AllowsHostPlacement(__instance,__instance.numTransfer)){__result=0;return false;}if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__instance.numTransfer);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
+        [HarmonyPriority(Priority.First)] static bool Prefix(SlotMarker __instance,ref int __result){if(PanelRelay.BuildingCratePreview&&PanelRelay.IsCratePreview(__instance.inventory,__instance.item))return true;if(LocalControl.LocalChoice(__instance.inventory,__instance.item))return true;if(!NativeActions.Active){NativeActions.NotReady();return !ReplicaSession.IsReplica;}var s=NativeActions.Session;if(s.IsHost&&!LocalControl.UserAction)return true;if(!LocalControl.UserAction||__instance.item==null){__result=0;return false;}var move=NativeActions.Describe(__instance,__instance.numTransfer);if(move.count<=0){__result=0;return false;}s.Submit(new Request{kind=RequestKind.Move,items=new[]{move.item},moves=new[]{move}});__result=move.count;return false;}
     }
     [HarmonyPatch]
     internal static class ClientItemAction {

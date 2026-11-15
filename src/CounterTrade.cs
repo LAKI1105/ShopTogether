@@ -140,7 +140,7 @@ namespace ShopTogether {
         }
 
         internal static bool CustomerReady(int action) {
-            if (ProbablyMultiplayerCompat.VisitActive) { Refuse(action, "~SMC271~", "human visitor trade uses its own panel"); return false; }
+
             if (DialogueIntent.Committing) { Refuse(action, "~SMC353~", "dialogue delivery pending"); return false; }
             var store = PlayerStore.Instance; var customer = Customer();
             if (store == null || store.currentClientInstance == null) { Refuse(action, "~SMC292~", "no customer at the counter"); return false; }

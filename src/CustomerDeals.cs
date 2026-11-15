@@ -51,7 +51,10 @@ namespace ShopTogether {
                 long version; world.Versions.TryGetValue(id, out version); Judgement known;
                 if (cache.TryGetValue(id, out known) && known.version == version && version != 0) { full = known.full; contentsIgnored = known.shallow; }
                 else {
-                    try { full = customer.IsClientBuyingThisItem(item, false); contentsIgnored = customer.IsClientBuyingThisItem(item, true); } catch { continue; }
+                    // The native tablet/trade uses the one-argument overload. Content mods
+                    // may extend that entry point, so calling the two-argument body directly
+                    // can report a different answer from the host's actual transaction.
+                    try { full = customer.IsClientBuyingThisItem(item); contentsIgnored = customer.IsClientBuyingThisItem(item, true); } catch { continue; }
                     cache[id] = new Judgement { version = version, full = full, shallow = contentsIgnored };
                 }
                 judgedIds.Add(id); if (full) buyingIds.Add(id); if (contentsIgnored) shallowIds.Add(id);
@@ -128,6 +131,16 @@ namespace ShopTogether {
             var session = Connection.Current; if (session == null) return false;
             int id = session.World.Id(item); if (id <= 0 || !judged.Contains(id)) return false;
             buys = (ignoreContents ? shallow : buying).Contains(id); return true;
+        }
+    }
+
+    // Stop at the same entry point the host evaluated. In particular, mod postfixes
+    // that respect __runOriginal must not rerun their host-only rules on the replica.
+    [HarmonyPatch(typeof(StoreClient), "IsClientBuyingThisItem", new[] { typeof(GameItem) })]
+    internal static class ReplicaCustomerBuysDefault {
+        static bool Prefix(StoreClient __instance, GameItem __0, ref bool __result) {
+            bool buys; if (!CustomerDeals.Answer(__instance, __0, false, out buys)) return true;
+            __result = buys; return false;
         }
     }
 

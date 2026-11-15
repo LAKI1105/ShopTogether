@@ -1,25 +1,37 @@
 # 多人操作：可能很混亂 / Multiplayer Control: Probably Chaotic
 
-
-A community co-op mod for **Probably Stolen**. Run the game on each computer and operate the same host-owned shop with separate cursors and interfaces. Up to eight players, including the host.
+A community co-op mod for **Probably Stolen**. Up to eight players, including the host, run their own game and share one host-owned shop with separate cursors and menus.
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-目前工作坊版本：**1.3.38**。所有玩家請更新到相同版本後重新開啟遊戲。
+版本：**1.3.39**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
-## 1.3.38 有哪些改變？
+## 1.3.39 更新內容
 
-- 訪客交易失敗或對方離開時，會把原因回給發起操作的人，不再被畫面刷新吃掉。
-- 重新送出報價後，會等新的報價回來，不再把舊報價誤當成這次成功。
-- 訪客連線失敗時，朋友也會收到錯誤說明，不再只有房主看得到。
+- 修正拖曳途中影像消失或旋轉被重設；單件與多選都保留手上影像。實物失效或完整重新同步時，仍會取消拖曳。
+- 修正拖曳中右鍵旋轉／翻面誤改拿取物品，以及舊拒絕回覆取消新一輪操作。
+- 修正機台按鈕漏掉下一次點擊；水瓶打印按鈕也使用此流程。
+- 修正拖曳裝水因溫度等資料變動被誤判過期；使用條件與液體運算仍由房主的原版遊戲決定。
+- 收購偏好使用與原版交易相同的入口，納入該入口上的模組規則，朋友讀取房主答案。
+- 修正裝著物品的容器跨庫存搬移後，朋友找不到內部庫存。
+- 修正晚加入／重新同步的完整資料更新共用紀錄，卻漏送變化給已在線玩家。
+- 改善加入期間的連線維持、場景載入失敗與逾時處理；隔離直連接入失敗，避免連帶中止整間房。
+- 同步睡前結算與睡後報告明細；外出被拒後保留背包選擇，直到房主確認抵達。
+- 補齊部分延後付款保護、真正的交易拒絕原因及酒吧英文文件／兌獎操作。
+- 優化網路收包與多選拖曳核對，減少重複搬移、掃描及暫時字串。
+- 移除深空串門（Probably Multiplayer）相容功能。安裝包只含 DLL、manifest 與封面；原始碼在 GitHub，不再把 ZIP 放進遊戲掃描的模組資料夾。
 
-Current Workshop release: **1.3.38**. All players must update to the same version and restart.
+1.3.28 報告中的普通買賣「客人還在說話」是舊版誤用介紹狀態；現版已保留正確的買賣條件，沒有重新加入該限制。上述修正針對確認的程式缺口，不代表所有同類症狀或第三方模組情境都已排除。
 
-Visitor trade failures and departures now report their reason to the requester before the screen refreshes. Resubmitted quotes wait for new quote data instead of treating the old quote as success. Visitor connection errors also reach the requesting friend instead of appearing only on the host.
+Version **1.3.39**, for game **0.46D**. Fixes cover drag visuals and stale replies, missed machine clicks, stale-version pouring, selected buying preferences, filled-container moves, join/resync handling, daily reports, backpack retries and payment feedback. Network parsing and group-drag checks do less repeated work. Probably Multiplayer integration has been removed. Runtime packages contain only the DLL, manifest and preview; source is distributed through this repository. All players must use the same build and restart.
 
-本版從程式面對照訪客交易的請求、回覆與畫面刷新順序，並完成正式 DLL 編譯；未執行遊戲或自動化測試。發布前複查沒有確認到新的問題，未追加修改或升版。下方測試紀錄屬先前版本，不代表本版實機通過。
+## 本版驗證範圍
 
-This version was reviewed in source and compiled. No game or automated tests were run for 1.3.38; historical test results below do not validate this build. The pre-release source review found no additional confirmed issue. Compatibility findings apply to the inspected installed mod versions.
+已在確認隔離的 Windows 桌面，以本機雙程序驗證正式包掃描、TLS 加入、錯誤接入不拖垮房主、商品重同步後顯示與買賣、容器搬移、連續打印兩瓶、舊資料版本的裝水請求、拖曳影像／旋轉、多選與重新同步取消，以及外出拒絕後背包重試。完整快照分送與舊回覆使用受控資料檢查，不當作三台實機晚加入的驗證。
+
+初輪整合測試在日結確認逾時；測試通道的報告長度處理修正後，只補驗未完成的日結與效能。睡前介面、換日、四條中文明細及獨立報告摘要比對通過。沒有宣稱完整腳本從頭到尾一次全過，也沒有因此修改正式日結邏輯。
+
+本機雙端、41 件物品、12 秒取樣：房主增量快照 54 筆，中位數 **4.89 ms**、第 95 百分位 **7.90 ms**；20 次操作經房主執行後回傳，中位數 **17.59 ms**、第 95 百分位 **517.71 ms**。沒有改前對照，不宣稱提升百分比。這不是不同 Steam 帳號的外網測試，也不涵蓋八人房、大型店面或所有第三方模組。
 
 ## 使用方式
 
@@ -29,10 +41,6 @@ This version was reviewed in source and compiled. No game or automated tests wer
 4. 外出與回店由房主判定並帶全員同行；選背包和目的地的畫面各自操作。
 5. 多人成就開關由每台電腦自行設定。關閉只影響自己的多人期間成就解鎖與進度。
 
-如果大家都啟用相同版本的「深空串門」2.6.1，朋友也能在自己的畫面與房主店裡的真人訪客交談、選擇交易物品、報價和購買。訪客連線與交易仍由房主處理；交易結算時，庫存會暫時鎖定以保護物品。真人訪客的外部連線尚未經過實機測試。
-
-串門相容功能需要遊戲的「反射」權限，讓本模組讀取串門的訪客與交易狀態；更新後請在各自的遊戲內檢視並核准新增權限。連線請求限於模組列出的操作，沒有提供遠端檔案或執行指令的功能。
-
 外出與回店是全員同行，垃圾場的拾荒次數、地上物品、口袋與背包由大家共用。選中的實體背包及原有內容依原版規則帶出。正常回店時，只帶回背包和口袋裡的物品；留在地上的物品不會帶回。確認期間內容改變或有人拿取物品時，請重新操作。
 
 ## How it works
@@ -41,15 +49,11 @@ The host runs gameplay simulation and owns the save. Guests render replicated ga
 
 Compatibility with arbitrary third-party mods is not guaranteed. A mod with a new interface or custom state may need an adapter. Matching enabled mods and versions is recommended.
 
-When everyone has Probably Multiplayer 2.6.1 enabled, guests can use their own screen to chat, select items, quote and buy from the host's human visitor. The host owns the visitor connection and the transaction; inventory is briefly locked during the visitor mod's transaction settlement. Other versions of that mod are not supported by this adapter. A live connection with an external human visitor has not been tested in-game.
-
 During multiplayer, travel and return are shared: the host validates the requested destination and backpack, and all players follow the resulting location. Custom third-party interfaces still require compatible adapters. Scene lamp clicks use host state; the installed Bartender worklamp description opens for the requesting player. The host can hear a guest's phone call even while its panel is hidden.
 
 Travel and return are shared, including search attempts, ground items, pockets and the outing backpack. The selected real backpack and its existing contents travel under the base game's rules. On a normal return, items in the backpack and pockets come home; items left on the ground do not. If items change or someone handles them during confirmation, request the action again.
 
 Direct connections use pinned TLS. Steam transport uses Steam networking identities. Incoming messages have direction, size and rate checks; actions are limited to registered game operations and valid accessible items. This does not expose a shell or general file access. The mod and game still run with your account's local permissions; these checks are not a security audit or a guarantee against every bug.
-
-The optional visitor adapter declares the game's `reflection-external` capability to access the other mod's internal visit and trade state. Each player must review and approve newly requested permissions in the game. The adapter accepts only bounded chat and trade requests and does not provide a remote file or command interface.
 
 ## Build
 
@@ -60,7 +64,7 @@ $env:PROBABLY_STOLEN_PATH = 'D:\SteamLibrary\steamapps\common\Probably Stolen'
 ./src/Build.ps1 -OutputPath ./ShopTogether.dll
 ```
 
-Package `ShopTogether.dll` with `src/manifest.xml`. For a .NET SDK build, set the same environment variable and run `bash build.sh`. Proprietary game assemblies are referenced from the installed game's `Managed` directory and must not be redistributed.
+Use `src/Package.ps1 -PreviewPath <preview.jpg>` to produce `out/Workshop` with only `ShopTogether.dll`, `manifest.xml` and `preview.jpg`. Never put source ZIPs, scripts, or build output folders in the runtime package. The game scans every installed file. Network, Steam and reflection capabilities remain declared because shared-shop transport and the remaining game/mod adapters use them. For a .NET SDK build, set the same environment variable and run `bash build.sh`. Proprietary game assemblies are referenced from the installed game's `Managed` directory and must not be redistributed.
 
 ## Tests
 

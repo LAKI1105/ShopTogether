@@ -18,10 +18,10 @@ namespace ShopTogether {
         public void OnEnable() {
             instance=new GameObject("ShopTogetherAuthority");UnityEngine.Object.DontDestroyOnLoad(instance);instance.AddComponent<Connection>();
         }
-        public void OnDisable(){ProbablyMultiplayerCompat.Shutdown();ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
+        public void OnDisable(){ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.38";
+        internal const string BuildVersion="1.3.39";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -35,6 +35,7 @@ namespace ShopTogether {
         internal LeaseBook Leases;
         internal readonly Dictionary<int,long> LocalLeases=new Dictionary<int,long>();
         readonly HashSet<int> requested=new HashSet<int>();
+        readonly Dictionary<int,long> itemRequests=new Dictionary<int,long>();
         readonly List<Request> waiting=new List<Request>();
         readonly HashSet<int> deferredRelease=new HashSet<int>();
         readonly List<Peer> peers=new List<Peer>();
@@ -79,7 +80,7 @@ namespace ShopTogether {
             if(server!=null){server.Dispose();server=null;}if(listener!=null){listener.Close();listener=null;}
             if(identity!=null){identity.Dispose();identity=null;}
             IsHost=false;IsClient=false;Ready=false;startingClient=false;pendingWorld.Clear();Diagnostics.Reset();incoming.Reset();generation++;
-            LocalLeases.Clear();requested.Clear();waiting.Clear();deferredRelease.Clear();NativeActions.holders.Clear();
+            LocalLeases.Clear();requested.Clear();itemRequests.Clear();waiting.Clear();deferredRelease.Clear();NativeActions.holders.Clear();
             World.Reset();HostPhase.Reset();awaitingFull=false;applyFailures=0;Cursors.Reset();ReplicaVisuals.Reset();PlayerNames.Reset();nextNames=0;remoteSequence=0;nextPhase=0;nextPhaseCheck=0;lastPhase=null;sequence=0;nextPlayer=0;nextSync=0;nextRenew=0;needsFull=false;
             if(Leases!=null)Leases=new LeaseBook(World.Related);
         }
@@ -129,7 +130,7 @@ namespace ShopTogether {
             if(secret.Length<8||secret.Length>64){status="~SMC122~";ShowManualJoin();return;}
             try{BeginJoin(new[]{endpoint});}catch(Exception e){Stop();status=e.Message;ShowStatus();}}
         void Update(){
-            ProbablyMultiplayerCompat.Tick();
+
             ModRuntimeAuthority.Tick();
             if(!IsClient&&MainMenuUIController.Instance!=null&&EmporiumEntry.Instance==null){ReplicaSession.ClientStore=false;ReplicaSession.SceneReady=false;}
             if(MainMenuUIController.Instance!=null&&CustomUIManager.Instance!=null){
@@ -147,7 +148,18 @@ namespace ShopTogether {
                 if(IsHost||IsClient){SteamRelay.Poll();Diagnostics.Soft("click pause",FriendGuards.Tick);NativeActions.Sweep();Diagnostics.Soft("panels",()=>PanelRelay.Tick(this));Diagnostics.Soft("machine panels",()=>MachineDisplay.Tick(this));if(IsClient)Diagnostics.Flush(this);}
                 if(IsHost){
                     SteamRelay.SteamChannel arrival;while((arrival=SteamRelay.NextArrival())!=null){if(peers.Count>=MaxFriends){arrival.Dispose();continue;}peers.Add(new Peer{channel=arrival,id=++nextPlayer,deadline=Time.realtimeSinceStartup+20});Debug.Log("[ShopTogether] friend connecting through Steam");}
-                    if(listener.Poll(0,SelectMode.SelectRead)){var incoming=listener.Accept();if(peers.Count>=MaxFriends||!admissions.Admit(((IPEndPoint)incoming.RemoteEndPoint).Address.ToString(),Time.realtimeSinceStartup))incoming.Close();else{var peer=new Peer{socket=incoming,id=++nextPlayer,deadline=Time.realtimeSinceStartup+15};peers.Add(peer);peer.channel=new SecureChannel(incoming,identity.Certificate,null);}}
+                    if(listener.Poll(0,SelectMode.SelectRead)){
+                        var incoming=listener.Accept();
+                        if(peers.Count>=MaxFriends||!admissions.Admit(((IPEndPoint)incoming.RemoteEndPoint).Address.ToString(),Time.realtimeSinceStartup))incoming.Close();
+                        else{
+                            var peer=new Peer{socket=incoming,id=++nextPlayer,deadline=Time.realtimeSinceStartup+15};
+                            // TLS setup belongs to this incoming peer, just like Pump below.
+                            // A constructor/handshake-start failure must not reach EndSession
+                            // and tear down the host plus every already connected friend.
+                            try{peer.channel=new SecureChannel(incoming,identity.Certificate,null);peers.Add(peer);}
+                            catch(Exception error){peer.Dispose();Debug.LogWarning("[ShopTogether] direct peer setup failed: "+error.GetType().Name+" "+error.Message);}
+                        }
+                    }
                     foreach(var peer in peers.ToArray())try{Pump(peer,true);}catch(Exception e){Leases.Disconnect(peer.id);peer.Dispose();peers.Remove(peer);PlayerNames.Changed=true;Debug.Log("[ShopTogether] peer disconnected ("+PlayerNames.Of(peer.id)+"): "+e.GetType().Name+" "+e.Message);}
                     Ready=EmporiumEntry.Instance!=null&&MainMenuUIController.Instance==null;
                     if(Ready){Diagnostics.Soft("old void bags",()=>OutingKits.RemoveOldVoidBags(this));Diagnostics.Soft("phone tick",()=>PhoneShare.HostTick(this));}Diagnostics.Soft("phase",BroadcastPhase);Diagnostics.Soft("cursors",()=>Cursors.Tick(this));Diagnostics.Soft("names",BroadcastNames);
@@ -156,15 +168,18 @@ namespace ShopTogether {
                         // The whole shop goes only to the players who need it (joining, or asking after a failed update);
                         // everyone else keeps getting the small update, so one player's resync does not stall the others.
                         Func<Peer,bool> eligible=p=>p.authenticated&&p.modsOk&&(p.sceneReady||!p.initialSent);Func<Peer,bool> wantsWhole=p=>needsFull||!p.initialSent||p.wantsFull;
-                        if(peers.Exists(p=>eligible(p)&&!wantsWhole(p)))SendWorld(World.Capture(false,0,Leases,Time.realtimeSinceStartup),p=>eligible(p)&&!wantsWhole(p));
-                        if(peers.Exists(p=>eligible(p)&&wantsWhole(p)))SendWorld(World.Capture(true,0,Leases,Time.realtimeSinceStartup),p=>eligible(p)&&wantsWhole(p));
+                        if(peers.Exists(p=>eligible(p)&&wantsWhole(p))){
+                            WorldDelta incremental;var full=World.Capture(true,0,Leases,Time.realtimeSinceStartup,out incremental);
+                            if(peers.Exists(p=>eligible(p)&&!wantsWhole(p)))SendWorld(incremental,p=>eligible(p)&&!wantsWhole(p));
+                            SendWorld(full,p=>eligible(p)&&wantsWhole(p));
+                        }else SendWorld(World.Capture(false,0,Leases,Time.realtimeSinceStartup),eligible);
                         needsFull=false;
                         if(Time.realtimeSinceStartup>=nextDigest&&peers.Exists(p=>p.authenticated&&p.modsOk&&p.sceneReady)){nextDigest=Time.realtimeSinceStartup+4;var digest=LargeTransfer.Pack(32,Encode(World.BuildDigest()));foreach(var p in peers.ToArray())if(p.authenticated&&p.modsOk&&p.sceneReady){try{LargeTransfer.Deliver(p.Send,digest);}catch(Exception dropped){Leases.Disconnect(p.id);p.Dispose();peers.Remove(p);PlayerNames.Changed=true;Debug.Log("[ShopTogether] peer dropped while sending ("+PlayerNames.Of(p.id)+"): "+dropped.GetType().Name+" "+dropped.Message);}}}}else World.Index();}
                 }
                 if(IsClient&&server!=null){
                     if(server.channel==null&&server.socket!=null&&server.socket.Poll(0,SelectMode.SelectWrite)){if((int)server.socket.GetSocketOption(SocketOptionLevel.Socket,SocketOptionName.Error)!=0)throw new Exception("~SMC147~");server.channel=new SecureChannel(server.socket,null,hostKey);}
                     Pump(server,false);Diagnostics.Soft("cursors",()=>Cursors.Tick(this));Diagnostics.Soft("machine settings",MachineSettings.Flush);
-                    if(server.authenticated&&!startingClient&&pendingWorld.Count>0){startingClient=true;StartCoroutine(StartClientScene(generation));}
+                    if(server.authenticated&&!startingClient&&pendingWorld.Count>0){startingClient=true;StartCoroutine(LoadClientScene(generation));}
                     var applyTimer=System.Diagnostics.Stopwatch.StartNew();
                     for(int applied=0;applied<8&&pendingWorld.Count>0&&ReplicaSession.SceneReady&&(applied==0||applyTimer.ElapsedMilliseconds<6);applied++){var next=pendingWorld.Dequeue();
                         if(awaitingFull&&!next.full){}
@@ -174,14 +189,46 @@ namespace ShopTogether {
                                 if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
                             catch(Exception failure){Diagnostics.Report("apply",failure);if(++applyFailures>=5)throw;Debug.LogWarning("[ShopTogether] update not applied, asking the host for the whole shop: "+failure.Message);awaitingFull=true;server.Send(24,new byte[0]);}
                         }}
-                    if(Ready&&ReplicaSession.SceneReady)Diagnostics.Soft("layouts",()=>World.RunLoads(pendingWorld.Count>0?1.0:2.5));
-                    if(Ready&&Time.realtimeSinceStartup>=nextRenew){nextRenew=Time.realtimeSinceStartup+5;Send(new Request{kind=RequestKind.Renew});}
+                    if(Ready&&ReplicaSession.SceneReady){Diagnostics.Soft("layouts",()=>World.RunLoads(pendingWorld.Count>0?1.0:2.5));Diagnostics.Soft("daily report",()=>SharedScreens.Follow(HostPhase.Last));}
+                    if(server!=null&&server.authenticated&&Time.realtimeSinceStartup>=nextRenew){
+                        nextRenew=Time.realtimeSinceStartup+5;
+                        if(Ready)Send(new Request{kind=RequestKind.Renew});
+                        // The mod list is already queued before this message. Keep the Steam
+                        // link alive while receiving the first snapshot or loading the scene;
+                        // cursor/activity updates otherwise start only after Ready.
+                        else server.Send(41,new byte[]{0});
+                    }
                     if(Ready&&!LocalControl.Focused&&LocalLeases.Count>0)ReleaseAll();
                     if(Ready&&pendingWorld.Count==0){ResyncRequest resync=null;Diagnostics.Soft("drift",()=>resync=Drift.Step(World,2.0));if(resync!=null)server.Send(33,Encode(resync));}
                 }
             }catch(Exception e){
                 if(IsClient&&server!=null&&!server.authenticated&&joinCandidates.Count>0){try{NextJoinCandidate();return;}catch(Exception retry){e=retry;}}
-                bool client=IsClient;if(client&&server!=null&&server.authenticated){try{Diagnostics.Report("session ended",e);Diagnostics.Flush(this,true);server.Write();}catch{}}Stop();status="~SMC132~"+e.Message;Debug.LogException(e);if(client&&MainMenuUIController.Instance==null){statusOnMenu=true;ReturnToMenu();}else ShowStatus();}
+                EndSession(e);}
+        }
+        void EndSession(Exception error){
+            bool client=IsClient;if(client&&server!=null&&server.authenticated){try{Diagnostics.Report("session ended",error);Diagnostics.Flush(this,true);server.Write();}catch{}}
+            Stop();status="~SMC132~"+error.Message;Debug.LogException(error);
+            if(client&&MainMenuUIController.Instance==null){statusOnMenu=true;ReturnToMenu();}else ShowStatus();
+        }
+        IEnumerator LoadClientScene(int sessionGeneration){
+            var loading=StartClientScene(sessionGeneration);
+            try{
+                while(sessionGeneration==generation&&IsClient){
+                    bool more=false;object next=null;Exception failure=null;
+                    // Exceptions after a yield are outside Update's catch. Route them through
+                    // the same disconnect/report path instead of leaving a stuck joining state.
+                    try{more=loading.MoveNext();if(more)next=loading.Current;}
+                    catch(Exception error){failure=error;}
+                    if(failure!=null){EndSession(failure);yield break;}
+                    if(!more)yield break;
+                    yield return next;
+                }
+            }finally{var disposable=loading as IDisposable;if(disposable!=null)disposable.Dispose();}
+        }
+        static bool ClientSceneAvailable(){
+            var entry=EmporiumEntry.Instance;
+            return entry!=null&&entry.invElement!=null&&entry.backInvinvElement!=null&&entry.frontInvinvElement!=null&&
+                PlayerStore.Instance!=null&&StoreStation.Instance!=null&&ItemMouseDragHandler.current!=null&&ReplicaSession.Seed==null;
         }
         IEnumerator StartClientScene(int sessionGeneration){
             if(MainMenuUIController.Instance==null)throw new InvalidOperationException("~SMC163~");
@@ -191,9 +238,9 @@ namespace ShopTogether {
             NewGameData.Instance.skipIntro=true;NewGameData.Instance.disableTutorialHint=true;
             MainMenuUIController.Instance.StartNewGameClick();
             float deadline=Time.realtimeSinceStartup+90;
-            while((EmporiumEntry.Instance==null||ItemMouseDragHandler.current==null)&&Time.realtimeSinceStartup<deadline){if(sessionGeneration!=generation||!IsClient)yield break;yield return null;}
+            while(!ClientSceneAvailable()&&Time.realtimeSinceStartup<deadline){if(sessionGeneration!=generation||!IsClient)yield break;yield return null;}
             if(sessionGeneration!=generation||!IsClient)yield break;
-            if(EmporiumEntry.Instance==null){Stop();yield break;}
+            if(!ClientSceneAvailable())throw new InvalidOperationException("~SMC370~");
             yield return null;if(sessionGeneration!=generation||!IsClient)yield break;ReplicaSession.SceneReady=true;server.Send(24,new byte[0]);
         }
         internal void SendRemote(RemoteCall call){if(!IsClient||server==null||!server.authenticated){RemoteActions.Notice("~SMC082~");return;}call.sequence=++remoteSequence;Outgoing++;byte[] bytes=Encode(call);if(bytes.Length>65536){RemoteActions.Notice("~SMC201~");return;}server.Send(36,bytes);}
@@ -228,11 +275,13 @@ namespace ShopTogether {
             // Read only while what was read is being handled: a busy frame leaves the rest in the link instead of overflowing.
             // (Both limits stay above the largest single message each side accepts, so a message is never left half-read.)
             for(int i=0;i<4&&peer.input.Count<(host?96*1024:2*1024*1024);i++){int count=peer.channel.Receive(peer.buffer);if(count<0)break;if(count==0)throw new Exception("~SMC156~");for(int j=0;j<count;j++)peer.input.Add(peer.buffer[j]);if(peer.input.Count>(host?131072:4*1024*1024+4))throw new Exception("~SMC154~");}
-            var timer=System.Diagnostics.Stopwatch.StartNew();
-            for(int i=0;i<32&&peer.input.Count>=5;i++){int length=(peer.input[0]<<24)|(peer.input[1]<<16)|(peer.input[2]<<8)|peer.input[3];byte type=peer.input[4];
-                if(length<1||!ProtocolGuard.Valid(host,peer.authenticated,peer.matched,type,length-1))throw new Exception("~SMC029~");if(peer.input.Count<length+4)break;
+            var timer=System.Diagnostics.Stopwatch.StartNew();int consumed=0;
+            for(int i=0;i<32&&peer.input.Count-consumed>=5;i++){int length=(peer.input[consumed]<<24)|(peer.input[consumed+1]<<16)|(peer.input[consumed+2]<<8)|peer.input[consumed+3];byte type=peer.input[consumed+4];
+                if(length<1||!ProtocolGuard.Valid(host,peer.authenticated,peer.matched,type,length-1))throw new Exception("~SMC029~");if(peer.input.Count-consumed<length+4)break;
                 if(host&&!peer.guard.Admit(Time.realtimeSinceStartup))break;   // over the message rate: handle the rest a moment later
-                byte[] data=new byte[length-1];peer.input.CopyTo(5,data,0,data.Length);peer.input.RemoveRange(0,length+4);Receive(peer,host,type,data);peer.partialSince=0;if(peer.closing||timer.ElapsedMilliseconds>=2)break;}
+                byte[] data=new byte[length-1];peer.input.CopyTo(consumed+5,data,0,data.Length);consumed+=length+4;Receive(peer,host,type,data);peer.partialSince=0;if(peer.closing||timer.ElapsedMilliseconds>=2)break;}
+            // Compact once per batch, rather than copying the unread tail for every packet.
+            if(consumed>0)peer.input.RemoveRange(0,consumed);
             // A big update over a slow upload takes a while: only a message that stops arriving altogether ends the link.
             if(peer.input.Count>0){if(peer.partialSince==0||peer.input.Count!=peer.partialSize){peer.partialSince=Time.realtimeSinceStartup;peer.partialSize=peer.input.Count;}else if(Time.realtimeSinceStartup-peer.partialSince>60)throw new Exception("~SMC153~");}else peer.partialSize=0;
         }
@@ -267,7 +316,7 @@ namespace ShopTogether {
             if(!host&&type==37){Diagnostics.Soft("notice",()=>RemoteActions.Notice(Encoding.UTF8.GetString(data)));return;}
             if(host&&type==21){var request=WireJson.FromJson<Request>(Encoding.UTF8.GetString(data));if(request==null||request.sequence<=peer.lastSequence)throw new Exception("~SMC169~");peer.lastSequence=request.sequence;Process(peer.id,request,reply=>peer.Send(22,Encode(reply)));return;}
             if(!host&&type==20){var delta=WireJson.FromJson<WorldDelta>(Encoding.UTF8.GetString(data));if(delta==null||pendingWorld.Count>=512)throw new Exception("~SMC104~");pendingWorld.Enqueue(delta);return;}
-            if(!host&&type==22){var reply=WireJson.FromJson<LeaseReply>(Encoding.UTF8.GetString(data));if(reply==null)throw new Exception("~SMC168~");Diagnostics.Soft("reply",()=>{OnLocalReply(reply);if(!reply.granted)NativeActions.CancelItems(reply.items);});return;}
+            if(!host&&type==22){var reply=WireJson.FromJson<LeaseReply>(Encoding.UTF8.GetString(data));if(reply==null)throw new Exception("~SMC168~");Diagnostics.Soft("reply",()=>OnLocalReply(reply));return;}
             throw new Exception("~SMC047~");
         }
         internal void SendToHost(byte type,byte[] data){if(IsClient&&server!=null&&server.authenticated)server.Send(type,data);}
@@ -279,7 +328,11 @@ namespace ShopTogether {
             foreach(var item in ground.childItems)World.MarkDirty(item);
             nextSync=0;
         }
-        internal void Send(Request request){if(request.kind!=RequestKind.Renew&&request.kind!=RequestKind.Release)Outgoing++;request.sequence=++sequence;if(IsHost)Process(0,request,OnLocalReply);else if(IsClient&&server!=null&&server.authenticated)server.Send(21,Encode(request));}
+        internal void Send(Request request){
+            request.sequence=++sequence;
+            if(request.kind!=RequestKind.Renew&&request.kind!=RequestKind.Release){Outgoing++;if(request.items!=null)foreach(int id in request.items)itemRequests[id]=request.sequence;}
+            if(IsHost)Process(0,request,OnLocalReply);else if(IsClient&&server!=null&&server.authenticated)server.Send(21,Encode(request));
+        }
         /// <summary>The other player currently holding any of these items, or -1.</summary>
         internal int BusyOwner(int[] ids){
             if(ids==null)return -1;double now=Time.realtimeSinceStartup;
@@ -288,7 +341,21 @@ namespace ShopTogether {
                 else foreach(var l in World.RemoteLeases)if(l.Value!=PlayerId&&(l.Key==id||World.Related(l.Key,id)))return l.Value;}
             return -1;
         }
-        void OnLocalReply(LeaseReply reply){if(!reply.granted){int owner=BusyOwner(reply.items);ItemBusyHint.Show(owner);}if(reply.items!=null)foreach(int id in reply.items){requested.Remove(id);if(reply.granted)LocalLeases[id]=reply.token;else LocalLeases.Remove(id);}if(!reply.granted){status=reply.reason;if(!string.IsNullOrEmpty(reply.reason)&&BusyOwner(reply.items)<0)RemoteActions.Notice(reply.reason);}FlushWaiting();}   // a refused action says why (busy items already show who has them)
+        void OnLocalReply(LeaseReply reply){
+            var current=new List<int>();
+            if(reply.items!=null)foreach(int id in reply.items){
+                long sent;if(!itemRequests.TryGetValue(id,out sent)||sent!=reply.sequence)continue;
+                current.Add(id);itemRequests.Remove(id);requested.Remove(id);
+                if(reply.granted)LocalLeases[id]=reply.token;else LocalLeases.Remove(id);
+            }
+            if(!reply.granted){
+                int owner=current.Count>0?BusyOwner(current.ToArray()):-1;if(current.Count>0)ItemBusyHint.Show(owner);
+                status=reply.reason;if(!string.IsNullOrEmpty(reply.reason)&&owner<0)RemoteActions.Notice(reply.reason);
+                // A refusal for an earlier drop must not revoke a later pickup of the same item.
+                if(IsClient&&current.Count>0)NativeActions.CancelItems(current.ToArray());
+            }
+            FlushWaiting();
+        }
         internal void Claim(int[] ids){var fresh=new List<int>();foreach(int id in ids){deferredRelease.Remove(id);if(!LocalLeases.ContainsKey(id)&&requested.Add(id))fresh.Add(id);}for(int at=0;at<fresh.Count;at+=128)Send(new Request{kind=RequestKind.Claim,items=fresh.GetRange(at,Math.Min(128,fresh.Count-at)).ToArray()});}   // the host takes at most 128 per request
         void SendWorld(WorldDelta delta,Func<Peer,bool> to){
             World.LastSentVersion=delta.version;byte[] raw=Encode(delta);var packed=LargeTransfer.Pack(20,raw);if(packed.Type==26)Debug.Log("[ShopTogether] large update: "+(raw.Length/1024)+" KB in "+packed.Parts.Length+" compressed pieces (full="+delta.full+")");
@@ -296,7 +363,7 @@ namespace ShopTogether {
         }
         internal void Submit(Request request){if(request.items==null||request.items.Length==0)return;Claim(request.items);waiting.Add(request);FlushWaiting();}
         void FlushWaiting(){while(waiting.Count>0){var request=waiting[0];bool pending=false,denied=false;foreach(int id in request.items){if(requested.Contains(id))pending=true;else if(!LocalLeases.ContainsKey(id))denied=true;}if(pending)break;waiting.RemoveAt(0);if(denied)continue;if(request.moves!=null)foreach(var m in request.moves)m.lease=LocalLeases[m.item];else request.lease=LocalLeases[request.items[0]];Send(request);foreach(int id in request.items)if(!NativeActions.Retains(id))deferredRelease.Add(id);}FlushReleases();}
-        void FlushReleases(){var release=new List<int>();foreach(int id in deferredRelease){if(requested.Contains(id))continue;bool busy=false;foreach(var r in waiting)if(Array.IndexOf(r.items,id)>=0){busy=true;break;}if(!busy)release.Add(id);}if(release.Count==0)return;foreach(int id in release){deferredRelease.Remove(id);LocalLeases.Remove(id);}for(int at=0;at<release.Count;at+=128)Send(new Request{kind=RequestKind.Release,items=release.GetRange(at,Math.Min(128,release.Count-at)).ToArray()});}
+        void FlushReleases(){var release=new List<int>();foreach(int id in deferredRelease){if(requested.Contains(id))continue;bool busy=false;foreach(var r in waiting)if(Array.IndexOf(r.items,id)>=0){busy=true;break;}if(!busy)release.Add(id);}if(release.Count==0)return;foreach(int id in release){deferredRelease.Remove(id);LocalLeases.Remove(id);itemRequests.Remove(id);}for(int at=0;at<release.Count;at+=128)Send(new Request{kind=RequestKind.Release,items=release.GetRange(at,Math.Min(128,release.Count-at)).ToArray()});}
         internal void Release(int[] ids){foreach(int id in ids)deferredRelease.Add(id);FlushReleases();}
         internal void ReleaseAll(){waiting.Clear();var ids=new HashSet<int>(LocalLeases.Keys);ids.UnionWith(requested);Release(new List<int>(ids).ToArray());NativeActions.CancelLocal();}
         internal void Process(int owner,Request request,Action<LeaseReply> reply){
@@ -310,7 +377,7 @@ namespace ShopTogether {
             if(request.items.Length>128){reply(new LeaseReply{sequence=request.sequence,items=new int[0],reason="~SMC246~"});return;}
             if(request.kind==RequestKind.Release){Leases.Release(owner,request.items);return;}
             foreach(int id in request.items)if(!World.Items.ContainsKey(id)){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC095~"});return;}
-            if(ProbablyMultiplayerCompat.BlockRequest(this,owner,request)){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC271~"});return;}
+
             if(!DialogueIntent.RequestAllowed(this,request)){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason="~SMC353~"});return;}
             if(request.kind==RequestKind.Claim){long token;bool ok=Leases.Claim(owner,request.items,now,out token);reply(new LeaseReply{sequence=request.sequence,items=request.items,owner=owner,token=token,granted=ok,reason=ok?null:"~SMC096~"});return;}
             string busy=HostPhase.Busy(Ready);if(busy!=null){reply(new LeaseReply{sequence=request.sequence,items=request.items,reason=busy});return;}

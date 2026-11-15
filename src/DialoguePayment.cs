@@ -17,6 +17,8 @@ namespace ShopTogether {
                 type == typeof(StoreClientList) && name.StartsWith("<",StringComparison.Ordinal) ||
                 type == typeof(StoreClientListStory) && (name.StartsWith("<CreateStoryAppraisalBoard>",StringComparison.Ordinal)||name.StartsWith("<CreateStoryAppraisalBoard2>",StringComparison.Ordinal)) ||
                 type == typeof(StoreClientDialogList) && (name.StartsWith("<SecurityDialogInspectionLastLine>",StringComparison.Ordinal)||name.StartsWith("<SecurityDialogInspectionFine>",StringComparison.Ordinal)) ||
+                type == typeof(StoreClientListSecurity) && name.StartsWith("<GraftFineDialogue>",StringComparison.Ordinal) ||
+                type == typeof(StoreClientListSpec) && (name.StartsWith("<CreateBlackmailer>",StringComparison.Ordinal)||name.StartsWith("<CreateChemicalFeedbackClient>",StringComparison.Ordinal)) ||
                 type != null && type.FullName == "NpcWeekly.Eleanor" && name.StartsWith("<CreateScav>", StringComparison.Ordinal) ||
                 type != null && type.FullName == "MercDispatch.Visits" && name.StartsWith("<AddBriefChoices>", StringComparison.Ordinal);
         }
@@ -54,6 +56,10 @@ namespace ShopTogether {
                     var target = action.Target;
                     if (target != null && (AccessTools.Field(target.GetType(), "value25") != null ||
                         AccessTools.Field(target.GetType(), "value50") != null || AccessTools.Field(target.GetType(), "need") != null)) return true;
+                    // The inspector's bribe option is added once after CanPay, without
+                    // an enabled predicate. Keep that native quote funded until selection.
+                    if (action.Method.Name.StartsWith("<SecurityDialogInspectionLastLine>",StringComparison.Ordinal) &&
+                        ContainsPayment(choice.Item2,new HashSet<Dialogue>())) return true;
                 }
             }
             if (line.choices != null && line.choices.Count > 0) return false;
@@ -71,9 +77,9 @@ namespace ShopTogether {
             }
         }
         internal static bool AllowSpending() {
-            bool visitor = ProbablyMultiplayerCompat.TradeLocked;
-            if (!visitor && !Pending) return true;
-            RemoteActions.PendingNote = visitor ? "~SMC271~" : "~SMC364~";
+            
+            if (!Pending) return true;
+            RemoteActions.PendingNote = "~SMC364~";
             if (RemoteActions.CurrentOwner < 0) RemoteActions.Notice(RemoteActions.PendingNote);
             return false;
         }
@@ -81,6 +87,6 @@ namespace ShopTogether {
     [HarmonyPatch(typeof(CurrentConverterHelper), "CanSupply")]
     internal static class ConverterPaymentGate {
         // Supply checks this before deducting cash. A blocked machine does not run.
-        static void Postfix(ref bool __result) { if (__result && !CurrentConverterHelper.isNightCycle && (DialoguePayment.Pending || ProbablyMultiplayerCompat.TradeLocked)) __result = false; }
+        static void Postfix(ref bool __result) { if (__result && !CurrentConverterHelper.isNightCycle && DialoguePayment.Pending) __result = false; }
     }
 }

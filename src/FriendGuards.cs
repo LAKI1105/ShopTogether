@@ -5,6 +5,35 @@ using HarmonyLib;
 using UnityEngine;
 
 namespace ShopTogether {
+    // Native validation resets the held picture as well as the inventory picture. A host data update
+    // must refresh the latter without losing the guest's drag position, rotation or picked-up count.
+    [HarmonyPatch(typeof(GameItemElement), "ValidateSelect")]
+    internal static class ReplicaHeldPicture {
+        internal struct Picture {
+            internal int count;
+            internal Vector2 position, anchorMin, anchorMax, pivot;
+            internal Vector3 scale, angles;
+        }
+        static void Prefix(GameItemElement __instance, ref bool updateBackground, out Picture __state) {
+            __state = default(Picture);
+            if (!ReplicaSession.ClientStore || !WorldReplica.Applying || !__instance.fakeBackground.image.enabled) return;
+            int count = FriendGuards.DragCount(__instance); if (count <= 0) return;
+            var rotator = __instance.fakeRotator.rectTransform;
+            __state = new Picture { count = count, position = __instance.fakeMiddle.rectTransform.anchoredPosition,
+                anchorMin = rotator.anchorMin, anchorMax = rotator.anchorMax, pivot = rotator.pivot,
+                scale = rotator.localScale, angles = rotator.localEulerAngles };
+            updateBackground = false;
+        }
+        static void Postfix(GameItemElement __instance, Picture __state) {
+            if (__state.count <= 0 || __instance.IsDestroyed()) return;
+            __instance.UpdateFakeReal(__state.count);
+            var rotator = __instance.fakeRotator.rectTransform;
+            rotator.anchorMin = __state.anchorMin; rotator.anchorMax = __state.anchorMax;
+            rotator.pivot = __state.pivot; rotator.localScale = __state.scale; rotator.localEulerAngles = __state.angles;
+            __instance.fakeMiddle.rectTransform.anchoredPosition = __state.position;
+        }
+    }
+
     /// <summary>
     /// Friend-side safety nets found in playtests:
     /// the vending machine and water fountain outside the shop open their own panel on a friend's screen too,
@@ -15,6 +44,15 @@ namespace ShopTogether {
     internal static class FriendGuards {
         static readonly FieldInfo dragItem = AccessTools.Field(typeof(ItemMouseDragHandler), "currentItem");
         static readonly FieldInfo dragging = AccessTools.Field(typeof(ItemMouseDragHandler), "isDragging");
+        static readonly FieldInfo dragCount = AccessTools.Field(typeof(ItemMouseDragHandler), "currentRemove");
+        static readonly FieldInfo groupItems = AccessTools.Field(typeof(ItemMultiSelectHandler), "selectedItems");
+
+        internal static int DragCount(GameItemElement item) {
+            if (Dragged() == item) return (int)dragCount.GetValue(ItemMouseDragHandler.current);
+            var group = ItemMultiSelectHandler.current;
+            var selected = group == null ? null : groupItems.GetValue(group) as List<GameItemElement>;
+            return group != null && group.IsGroupDragging && selected != null && selected.Contains(item) ? item.MaxNumRemove() : 0;
+        }
 
         internal static GameItem Dragged(bool whileDragging = true) {
             var handler = ItemMouseDragHandler.current;
@@ -25,24 +63,54 @@ namespace ShopTogether {
         /// <summary>Before an update is applied: if it moves, replaces or removes what this player holds, put it back first.</summary>
         internal static void BeforeApply(WorldReplica world, WorldDelta delta) {
             if (!ReplicaSession.ClientStore || delta == null) return;
-            var held = Dragged(); if (held == null) return;
-            int id = world.Id(held); if (id <= 0) return;
-            bool touched = delta.full;
+            var held = Dragged();
+            var group = ItemMultiSelectHandler.current;
+            bool groupDragging = group != null && group.IsGroupDragging;
+            if (delta.full) {
+                NativeActions.CancelLocal();
+                if (held != null || groupDragging) RemoteActions.Notice("~SMC269~");
+                return;
+            }
+            bool touched = HeldChanged(world, delta, held);
+            if (!touched && groupDragging) {
+                var selected = groupItems.GetValue(group) as List<GameItemElement>;
+                if (selected != null) {
+                    // Look up the held set once; do not scan a large update again for every selected item.
+                    var heldItems = new Dictionary<int, GameItem>();
+                    foreach (var item in selected) { int id = world.Id(item); if (id > 0) heldItems[id] = item; }
+                    if (delta.removed != null) foreach (int id in delta.removed) if (heldItems.ContainsKey(id)) { touched = true; break; }
+                    if (!touched && delta.items != null) foreach (var record in delta.items) {
+                        GameItem item;
+                        if (record != null && heldItems.TryGetValue(record.id, out item) && HeldChanged(world, record, item)) { touched = true; break; }
+                    }
+                }
+            }
+            if (!touched) return;
+            NativeActions.CancelLocal();
+            RemoteActions.Notice("~SMC269~");
+        }
+
+        static bool HeldChanged(WorldReplica world, WorldDelta delta, GameItem held) {
+            if (held == null) return false;
+            int id = world.Id(held); if (id <= 0) return false;
+            bool touched = false;
             if (!touched && delta.removed != null) touched = Array.IndexOf(delta.removed, id) >= 0;
             if (!touched && delta.items != null) {
-                var here = world.Address(held.parentInventory);
                 foreach (var r in delta.items) if (r != null && r.id == id) {
                     // Only a move, a split/merge or a replacement ends the drag. A plain data change (value, freshness,
                     // charge...) does not: the drop sends the newest version anyway. Ending drags on every change made
                     // anything with a running timer impossible to drag on a friend's screen.
-                    touched = r.parent == null || here == null || r.parent.Key != here.Key || r.node == null || r.node.unitCount != held.unitCount || r.node.identifier != held.identifier;
+                    touched = HeldChanged(world, r, held);
                     break;
                 }
             }
-            if (!touched) return;
-            ItemMouseDragHandler.current.Cancel();
-            if (delta.full) NativeActions.CancelLocal();
-            RemoteActions.Notice("~SMC269~");
+            return touched;
+        }
+
+        static bool HeldChanged(WorldReplica world, ItemRecord record, GameItem held) {
+            var here = world.Address(held.parentInventory); var parent = record.parent;
+            return parent == null || here == null || parent.root != here.root || parent.container != here.container || parent.ordinal != here.ordinal ||
+                record.node == null || record.node.unitCount != held.unitCount || record.node.identifier != held.identifier;
         }
 
         /// <summary>Every frame while connected: the world-click pause belongs to the choice windows only.</summary>

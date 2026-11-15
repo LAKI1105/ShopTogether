@@ -58,7 +58,7 @@ namespace ShopTogether {
                 return null;
             }
             if (type == typeof(NegociationUIManager)) {
-                if (ProbablyMultiplayerCompat.VisitActive) return "~SMC271~";
+
                 var customer = store.currentClientInstance == null ? null : store.currentClientInstance.GetClientBlueprint();
                 if (customer == null || NegociationUIManager.IsTradeLocked()) return "~SMC247~";
                 if (name == "OnInterogationButtonClick") return customer.interogationDialogue == null ? "~SMC247~" : null;
@@ -96,7 +96,7 @@ namespace ShopTogether {
             if (item == null) return "~SMC095~";
             if (!AuthorityIntent.FreeTree(s, owner, item)) return "~SMC096~";
             if (type == typeof(AppraisalServiceHelper)) {
-                if (ProbablyMultiplayerCompat.VisitActive) return "~SMC271~";
+
                 var customer = store.currentClientInstance == null ? null : store.currentClientInstance.GetClientBlueprint();
                 if (customer == null || customer.isBusinessComplete || !AuthorityIntent.Live(item) || (item.parentInventory != e.frontInvinvElement && item.parentInventory != e.backInvinvElement) || customer.clientIntent != StoreClient.ClientIntent.APPRAISAL_SERVICE ||
                     !item.IsTag("APPRAISAL_ITEM") || GeneralHelper.IsItemOwned(item) || NegociationUIManager.IsTradeLocked()) return "~SMC247~";

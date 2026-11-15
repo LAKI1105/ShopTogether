@@ -1,7 +1,7 @@
-﻿param(
-    [ValidateSet('outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328','probably_compat','probably_real')]
+param(
+    [ValidateSet('settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
-    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[switch]$WithProbablyMultiplayer,[string]$SourceArchive,[string]$ProductionDll,[switch]$ContinueOnFailure,[switch]$ScanOnly
+    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[string]$ProductionDll,[string]$ProductionPackage,[switch]$ContinueOnFailure,[switch]$ScanOnly
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'TestProfile.ps1')
@@ -10,12 +10,9 @@ if(-not $GamePath){$GamePath='D:\SteamLibrary\steamapps\common\Probably Stolen'}
 $game=[IO.Path]::GetFullPath($GamePath)
 $workshop=Join-Path (Split-Path (Split-Path $game -Parent) -Parent) 'workshop\content\4348910\3837477869'
 if(Get-Process 'Probably Stolen' -ErrorAction SilentlyContinue){throw 'Close the game before running the isolated test.'}
-if($Suite -contains 'probably_real' -and -not $WithProbablyMultiplayer){throw 'The real visitor scenario needs the separately authorized visitor mod.'}
 if($Suite -contains 'all'){$Suite=@('core','gun','death','phone','extra','machines','features','panels','clock','customers','replica','overnight','lottery','recovery','ui1319','guard1319','deals1320','release1321')}
 $workshopDll=Join-Path $workshop 'ShopTogether.dll'
 $workshopHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $workshopDll).Hash
-$visitorOriginalDll=Join-Path (Split-Path $workshop -Parent) '3828909239\ProbablyMultiplayer-2.6.1.dll'
-$visitorOriginalHash=if($WithProbablyMultiplayer){(Get-FileHash -LiteralPath $visitorOriginalDll -Algorithm SHA256).Hash}else{$null}
 # Unity's bundled Mono fails to resolve assembly CodeBase under non-ASCII paths.
 # The disposable runtime belongs in the user's temporary directory, not the project.
 $scratchRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
@@ -74,15 +71,6 @@ $privateDesktop=$null
 $testHostReports=[Collections.Generic.List[string]]::new()
 $failedSuites=[Collections.Generic.List[string]]::new()
 try{
-    if($WithProbablyMultiplayer){
-        $visitSource=Join-Path (Split-Path $workshop -Parent) '3828909239'
-        $visitCopy=Join-Path $scratch 'VisitWorkshop'
-        Copy-Item -LiteralPath $visitSource -Destination $visitCopy -Recurse
-        foreach($name in @('manifest.xml','ProbablyMultiplayer-2.6.1.dll')){
-            if((Get-FileHash -LiteralPath (Join-Path $visitSource $name) -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $visitCopy $name) -Algorithm SHA256).Hash){throw 'The isolated visitor mod copy differs from the installed Workshop files'}
-        }
-        $env:SHOPTOGETHER_VISIT_FOLDER=$visitCopy
-    }
     & (Join-Path $PSScriptRoot 'PrepareIsolatedGame.ps1') -GamePath $game -Target $isolated -AllowApprovedTestTrust
     Add-Type -Path (Join-Path $PSScriptRoot 'PrivateDesktop.cs')
     $privateDesktop=[ShopTogetherTestDesktop]::new()
@@ -90,42 +78,46 @@ try{
     Write-Output 'PRIVATE_DESKTOP_READY'
         $approvalFolder=Join-Path $scratch 'ApprovalWorkshop'
         New-Item -ItemType Directory -Path $approvalFolder | Out-Null
-        if($ProductionDll){Copy-Item -LiteralPath $ProductionDll -Destination (Join-Path $approvalFolder 'ShopTogether.dll')}else{& (Join-Path $project 'Build.ps1') -OutputPath (Join-Path $approvalFolder 'ShopTogether.dll') -GamePath $game}
-        Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $approvalFolder
-        if($SourceArchive){Copy-Item -LiteralPath $SourceArchive -Destination (Join-Path $approvalFolder 'ShopTogether-source.zip')}
+        if($ProductionPackage){
+            $expected=@('ShopTogether.dll','manifest.xml','preview.jpg')
+            $files=@(Get-ChildItem -LiteralPath $ProductionPackage -Force)
+            if($files.Count -ne 3 -or @($files | Where-Object {$_.PSIsContainer -or $_.Name -notin $expected}).Count -gt 0){throw 'Runtime package must contain only DLL, manifest and preview'}
+            foreach($name in $expected){Copy-Item -LiteralPath (Join-Path $ProductionPackage $name) -Destination $approvalFolder}
+        }else{
+            if($ProductionDll){Copy-Item -LiteralPath $ProductionDll -Destination (Join-Path $approvalFolder 'ShopTogether.dll')}else{& (Join-Path $project 'Build.ps1') -OutputPath (Join-Path $approvalFolder 'ShopTogether.dll') -GamePath $game}
+            Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $approvalFolder
+        }
         $profile=Join-Path $scratch 'profile-approval';New-IsolatedTestProfile $profile
         # The production candidate is scanned while disabled, so its real PlayerPrefs key cannot be read or written by the test.
         $profileSave=Join-Path $profile 'SaveFile.es3'
         if(Test-Path -LiteralPath $profileSave){
             $settings=Get-Content -LiteralPath $profileSave -Raw | ConvertFrom-Json -AsHashtable
             if($settings.ContainsKey('modOrder') -and $settings.modOrder.ContainsKey('value')){
-                $settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})
+                if($Suite -contains 'release1339' -or $Suite -contains 'reported1339' -or $Suite -contains 'settlement1339'){$settings.modOrder.value=@()}else{$settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})}
                 [IO.File]::WriteAllText($profileSave,($settings | ConvertTo-Json -Depth 100),[Text.UTF8Encoding]::new($false))
             }
         }
         $env:SHOPTOGETHER_TEST_ROOT=$scratch;$env:SHOPTOGETHER_TEST_PERSISTENT_PATH=$profile
-        $env:SHOPTOGETHER_TEST_ONLY_APPROVE='scan';$env:SHOPTOGETHER_TEST_WITH_VISITOR=if($WithProbablyMultiplayer){'1'}else{'0'};$env:SHOPTOGETHER_PROBE_FOLDER=$approvalFolder
+        $env:SHOPTOGETHER_TEST_ONLY_APPROVE='scan';$env:SHOPTOGETHER_PROBE_FOLDER=$approvalFolder
         $env:SHOPTOGETHER_TEST_REPORT_KEY=$testPrefPrefix+'.approval'
         $approvalLog=Join-Path $scratch 'approval.log'
         $approvalArgs=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$approvalLog+'"'))
         $approvalProcess=$privateDesktop.Start((Join-Path $isolated 'Probably Stolen.exe'),($approvalArgs -join ' '),$isolated);$started=@($approvalProcess)
         $deadline=[DateTime]::UtcNow.AddSeconds(180)
-        do{Start-Sleep -Milliseconds 1000;$text=Read-TestLog $approvalLog;if($text -match '\[PM-TEST APPROVAL-FAILED\]'){throw 'The game refused or could not approve the visitor mod in the isolated profile'}}while($text -notmatch '\[PM-TEST APPROVED\]' -and -not $approvalProcess.HasExited -and [DateTime]::UtcNow -lt $deadline)
-        if($text -notmatch '\[PM-TEST APPROVED\]'){throw 'Isolated visitor approval did not complete'}
+        do{Start-Sleep -Milliseconds 1000;$text=Read-TestLog $approvalLog;if($text -match '\[SMC-TEST APPROVAL-FAILED\]'){throw 'The game refused or could not approve the candidate in the isolated profile'}}while($text -notmatch '\[SMC-TEST APPROVED\]' -and -not $approvalProcess.HasExited -and [DateTime]::UtcNow -lt $deadline)
+        if($text -notmatch '\[SMC-TEST APPROVED\]'){throw 'Isolated candidate approval did not complete'}
         [void]$approvalProcess.WaitForExit(10000);Stop-TestProcesses $started;$started=@()
         Write-Output 'PRODUCTION_MOD_SCANNED_WITHOUT_LOADING'
-    if($ScanOnly){Write-Output 'PRODUCTION_ARCHIVE_SCAN_ONLY_COMPLETE';return}
-    $probeGame=if($WithProbablyMultiplayer){$isolated}else{$game}
-    & (Join-Path $project 'Build.ps1') -Probe -VisitorProbe:$WithProbablyMultiplayer -OutputPath (Join-Path $probeFolder 'ShopTogether.dll') -GamePath $probeGame
+    if($ScanOnly){Write-Output 'PRODUCTION_PACKAGE_SCAN_ONLY_COMPLETE';return}
+    & (Join-Path $project 'Build.ps1') -Probe -OutputPath (Join-Path $probeFolder 'ShopTogether.dll') -GamePath $game
     Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $probeFolder
-    if($SourceArchive){Copy-Item -LiteralPath $SourceArchive -Destination (Join-Path $probeFolder 'ShopTogether-source.zip')}
     $env:SHOPTOGETHER_PROBE_FOLDER=$probeFolder
     $env:SHOPTOGETHER_TEST_ONLY_APPROVE='1'
     $approvalLog=Join-Path $scratch 'probe-approval.log';$approvalArgs=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$approvalLog+'"'))
     $approvalProcess=$privateDesktop.Start((Join-Path $isolated 'Probably Stolen.exe'),($approvalArgs -join ' '),$isolated);$started=@($approvalProcess)
     $deadline=[DateTime]::UtcNow.AddSeconds(180)
-    do{Start-Sleep -Milliseconds 1000;$text=Read-TestLog $approvalLog;if($text -match '\[PM-TEST APPROVAL-FAILED\]'){throw 'The game refused or could not approve the isolated probe'}}while($text -notmatch '\[PM-TEST APPROVED\]' -and -not $approvalProcess.HasExited -and [DateTime]::UtcNow -lt $deadline)
-    if($text -notmatch '\[PM-TEST APPROVED\]'){throw 'Isolated probe approval did not complete'}
+    do{Start-Sleep -Milliseconds 1000;$text=Read-TestLog $approvalLog;if($text -match '\[SMC-TEST APPROVAL-FAILED\]'){throw 'The game refused or could not approve the isolated probe'}}while($text -notmatch '\[SMC-TEST APPROVED\]' -and -not $approvalProcess.HasExited -and [DateTime]::UtcNow -lt $deadline)
+    if($text -notmatch '\[SMC-TEST APPROVED\]'){throw 'Isolated probe approval did not complete'}
     [void]$approvalProcess.WaitForExit(10000);Stop-TestProcesses $started;$started=@()
     $approvedSave=Join-Path $profile 'SaveFile.es3';if(-not(Test-Path -LiteralPath $approvedSave)){throw 'The isolated approved profile was not saved'}
     $env:SHOPTOGETHER_TEST_ONLY_APPROVE=$null
@@ -144,7 +136,7 @@ try{
             $deadline=[DateTime]::UtcNow.AddSeconds(600);$mouseSequences=@{host=0;client=0}
             do{
                 Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');$clientText=Read-TestLog (Join-Path $scratch 'smc-client.log')
-                if($part -in @('mouse1327','trade1327','layout1326','stress1327')){Send-TestMouseRequests 'client' $clientText $clientProcess $mouseSequences}
+                if($part -in @('reported1339','release1339','mouse1327','trade1327','layout1326','stress1327')){Send-TestMouseRequests 'client' $clientText $clientProcess $mouseSequences}
                 if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Dual runtime assertion failed'}
                 if($hostText -match '\[SMC COMPLETE\]' -and $clientText -match '\[SMC COMPLETE\]'){break}
             }while([DateTime]::UtcNow -lt $deadline -and -not($hostProcess.HasExited -and $clientProcess.HasExited))
@@ -187,7 +179,7 @@ try{
                 Write-Output "Native ${part} ${role}:";$text=Read-TestLog (Join-Path $scratch "smc-$role.log")
                 if($role -eq 'host'){foreach($line in ($text -split '\r?\n')){if($line -match '(?i)friend .*reported:'){$testHostReports.Add($line)}}}
                 if($part -eq 'hint1322' -and $env:SMC_HINT_EVIDENCE_DIR){$picture=[regex]::Match($text,'\[SMC-HINT-IMAGE\] ([A-Za-z0-9+/=]+)');if($picture.Success){[IO.File]::WriteAllBytes((Join-Path $env:SMC_HINT_EVIDENCE_DIR "$role.png"),[Convert]::FromBase64String($picture.Groups[1].Value));Write-Output "HINT_IMAGE_SAVED $role"}}
-                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF|NOTE|AUDIT)|Init failed: 多人|Trust check failed:|\[ModLoader\].*(shop_together|lemocuber_probablymultiplayer)|(?i)friend .*reported:'}
+                $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF|NOTE|AUDIT)|Init failed: 多人|Trust check failed:|\[ModLoader\].*(shop_together)|(?i)friend .*reported:'}
                 $text -split '\r?\n' | Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4 | ForEach-Object ToString
             }
             Stop-TestProcesses $started;$started=@()
@@ -196,7 +188,7 @@ try{
     if($testHostReports.Count -eq 0){Write-Output 'HOST_DIAGNOSTICS: none'}else{Write-Output 'HOST_DIAGNOSTICS:';$testHostReports | Select-Object -Unique}
     if($failedSuites.Count -gt 0){throw ('Failed isolated suites: '+($failedSuites -join '; '))}
 }catch{
-    foreach($name in @('approval.log','probe-approval.log')){$approvalLog=Join-Path $scratch $name;if(Test-Path -LiteralPath $approvalLog){(Read-TestLog $approvalLog) -split '\r?\n' | Where-Object {$_ -match '\[PM-TEST (APPROVED|APPROVAL-FAILED|THREAD-SCAN)\]'} | Select-Object -First 10}}
+    foreach($name in @('approval.log','probe-approval.log')){$approvalLog=Join-Path $scratch $name;if(Test-Path -LiteralPath $approvalLog){(Read-TestLog $approvalLog) -split '\r?\n' | Where-Object {$_ -match '\[SMC-TEST (APPROVED|APPROVAL-FAILED|THREAD-SCAN)\]'} | Select-Object -First 10}}
     Write-Output ('ISOLATED_TEST_ERROR: '+$_.Exception.Message)
     throw
 }finally{
@@ -211,7 +203,6 @@ try{
     if(-not $resolved.StartsWith($scratchRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Refusing cleanup outside the test workspace'}
     if(Test-Path -LiteralPath $resolved){Remove-Item -LiteralPath $resolved -Recurse -Force}
     if((Get-FileHash -Algorithm SHA256 -LiteralPath $workshopDll).Hash -ne $workshopHash){throw 'The subscribed Workshop DLL changed during the isolated test'}
-    if($visitorOriginalHash -and (Get-FileHash -LiteralPath $visitorOriginalDll -Algorithm SHA256).Hash -ne $visitorOriginalHash){throw 'The subscribed visitor mod changed during the isolated test'}
     if($liveProfileHash -and (Get-FileHash -LiteralPath $liveProfile -Algorithm SHA256).Hash -ne $liveProfileHash){throw 'The live profile changed during testing; inspect it without overwriting'}
     if($liveProfileHash){'LIVE_PROFILE_UNCHANGED_BY_TEST'}
     'WORKSHOP_DLL_UNCHANGED_BY_TEST'

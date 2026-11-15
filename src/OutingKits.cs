@@ -284,7 +284,8 @@ namespace ShopTogether {
         internal static void Depart(AfterhourLocation location) {
             var e = EmporiumEntry.Instance;
             GameItem pack = e != null ? e.selectedBackpack : null;
-            if (e != null) e.selectedBackpack = null;
+            // Keep the selection until arrival. A refused departure must not turn the next attempt
+            // into an intentional "no backpack" request. Enter clears it after host confirmation.
             if (location == null) return;
             try { if (MapUIManager.Instance != null) MapUIManager.Instance.CloseUI(); } catch (Exception x) { Debug.LogWarning("[ShopTogether] map: " + x.Message); }
             Send("GoOut", location.Id, pack);

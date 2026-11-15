@@ -1,4 +1,4 @@
-﻿#if LAN_PROBE
+#if LAN_PROBE
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -8,6 +8,9 @@ namespace ShopTogether {
  internal static partial class RuntimeProbe {
   static IEnumerator RunExtended(Connection root,bool host){
    string suite=Argument("--smc-suite");
+   if(suite=="settlement1339")return SettlementPerformance1339(root,host);
+   if(suite=="reported1339")return host?ReportedPathsHost1339(root):ReportedPathsClient1339(root);
+   if(suite=="release1339")return host?ReleaseHost1339(root):ReleaseClient1339(root);
    if(suite=="outing138")return host?CompletionOutingsHost138(root):CompletionOutingsClient138(root);
    if(suite=="completion138")return host?CompletionHost138(root):CompletionClient138(root);
    if(suite=="authority137")return host?AuthorityHost137(root):AuthorityClient137(root);
@@ -25,10 +28,6 @@ namespace ShopTogether {
    if(suite=="issue1328")return host?IssueHost1328(root):IssueClient1328(root);
    if(suite=="numeric1326")return host?NumericHost1326(root):NumericClient1326(root);
    if(suite=="layout1326")return host?LayoutHost1326(root):LayoutClient1326(root);
-#if PM_REAL_PROBE
-   if(suite=="probably_real")return host?ProbablyRealHost(root):ProbablyRealGuest(root);
-#endif
-   if(suite=="probably_compat")return host?ProbablyCompatHost(root):ProbablyCompatGuest(root);
    if(suite=="release1321")return host?Release1321Host(root):Release1321Client(root);
    if(suite=="deals1320")return host?Deals1320Host(root):Deals1320Client(root);
    if(suite=="guard1319")return host?Guard1319Host(root):Guard1319Client(root);

@@ -249,7 +249,11 @@ namespace ShopTogether {
             return true;
         }
 
-        static Exception Finalizer(Exception __exception, Press __state) {
+        static Exception Finalizer(Exception __exception, Press __state, MachineryButton __instance) {
+            // Native OnSelect calls Deselect after its callback. Forwarding skips that
+            // method body, but Select has already set isSelected: without this cleanup
+            // the next mouse release only deselects the button and sends no action.
+            __instance.Deselect();
             if (__state == null) return __exception;
             if (__state.user) { LocalControl.depth--; if (MachineSettings.Input > 0) MachineSettings.Input--; }
             if (__state.item != null) {

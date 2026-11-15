@@ -199,11 +199,11 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(ShopActions).GetMethod("BrowseUpgrades", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("ConfirmPanel", BF)));
             AddAdapter(M(() => typeof(PanelRelay).GetMethod("CancelPanel", BF)));
-            // Human visitor: only these bounded actions may be relayed to the host's active visit.
-            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorSay", BF)), 160);
-            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorOffer", BF)));
-            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorBuy", BF)));
-            AddAdapter(M(() => typeof(VisitorShare).GetMethod("VisitorWithdraw", BF)));
+
+
+
+
+
             // The shop phone: one phone, calls run on the host.
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("Pick", BF)));
             AddAdapter(M(() => typeof(PhoneShare).GetMethod("HangUp", BF)));
@@ -296,11 +296,6 @@ namespace ShopTogether {
                 var offer = current == null ? null : current.GetClientBlueprint().barterOffer;
                 if ((offer == null ? -1 : offer.currentSetIndex) != call.offerSet) return "~SMC365~";
             }
-            // Without a working Probably Multiplayer bridge, or during its trade, hold back what can take part in its
-            // trades (the counter, customers, the bell and shutter); machines, outings and the rest keep working.
-            bool tradeSide = e.Method.DeclaringType == typeof(ShopActions) && e.Method.Name == "AcceptDeal" || e.Method.DeclaringType == typeof(AppraisalServiceHelper) || e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades) || e.Method.DeclaringType == typeof(StoreBell) || e.Method.DeclaringType == typeof(StoreShutterButton);
-            if (tradeSide && ProbablyMultiplayerCompat.BlockRemote(session, owner)) return "~SMC271~";
-            if (ProbablyMultiplayerCompat.VisitActive && tradeSide) return "~SMC271~";
             if (e.HostOnly != null) return e.HostOnly;
             if ((e.Method.DeclaringType == typeof(NegociationUIManager) || e.Method.DeclaringType == typeof(BargainUIManager) || e.Method.DeclaringType == typeof(CounterTrades)) && !CounterTrades.Allowed(owner)) return "~SMC217~";
             string busy = HostPhase.Busy(session.Ready); if (busy != null) return busy;
@@ -324,7 +319,7 @@ namespace ShopTogether {
                     case "item": {
                         int id; GameItem item;
                         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) || !session.World.Items.TryGetValue(id, out item) || !AuthorityIntent.Live(item)) return "~SMC095~";
-                        if (ProbablyMultiplayerCompat.Protected(item)) return "~SMC271~";
+
                         if (!want.IsInstanceOfType(item)) return "~SMC171~";
                         if (!DialogueIntent.CanTouch(session, item)) return "~SMC353~";
                         if (!session.Leases.Available(owner, id, now)) return "~SMC096~";
@@ -352,7 +347,7 @@ namespace ShopTogether {
                 }
             }
             if (!e.Method.IsStatic && target is GameItem) {
-                if (ProbablyMultiplayerCompat.Protected((GameItem)target)) return "~SMC271~";
+
                 int id = session.World.Id((GameItem)target);
                 var at = session.World.Address(((GameItem)target).parentInventory); if(at != null && !OutingKits.MayUse(owner,at.root)) return "~SMC217~";
                 if (id == 0 || !session.Leases.Available(owner, id, now)) return "~SMC096~";
