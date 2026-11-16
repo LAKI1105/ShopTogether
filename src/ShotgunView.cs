@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -33,6 +34,12 @@ namespace ShopTogether {
 
         static StoreClient Customer() { var store = PlayerStore.Instance; return store != null && store.currentClientInstance != null ? store.currentClientInstance.GetClientBlueprint() : null; }
         static bool AnyoneAiming(StoreUIManager ui) { return aimers.Count > 0 || ui.isShootingMode; }
+        internal static bool FriendsAiming {
+            get {
+                var session = Connection.Current;
+                return session != null && session.IsHost && session.Ready && aimers.Count > 0 && Customer() == aimedCustomer;
+            }
+        }
 
         /// <summary>Host side: a friend raised the gun. The customer reacts as when the host draws it.</summary>
         internal static void Raise() {
@@ -109,6 +116,7 @@ namespace ShopTogether {
         static bool aiming, shown, animating, primed;
         static long raisedFor;
         static long confirmedFor = -1;
+        static long lastRaiseRequest, cancelledRaiseThrough;
         static int confirmedShots;
         static int seen;
         internal static bool Aiming { get { return aiming; } }
@@ -119,16 +127,18 @@ namespace ShopTogether {
             if (ui == null || animating) return;
             if (aiming) { LowerHere(ui, true); return; }
             if (gun == null) return;
-            RemoteActions.Forward(RemoteActions.Adapter("Raise", 0), null, new object[0]);
+            RemoteActions.Forward(RemoteActions.Adapter("Raise", 0), null, new object[0], sequence => lastRaiseRequest = sequence);
         }
 
-        internal static void ConfirmRaise(long customer) {
-            var call = new PanelCall { m = 57, texts = new[] { customer.ToString(System.Globalization.CultureInfo.InvariantCulture) }, numbers = new[] { Shots } };
+        internal static void ConfirmRaise(long customer, long sequence) {
+            var call = new PanelCall { m = 57, texts = new[] { customer.ToString(System.Globalization.CultureInfo.InvariantCulture), sequence.ToString(System.Globalization.CultureInfo.InvariantCulture) }, numbers = new[] { Shots } };
             Connection.Current.SendTo(RemoteActions.CurrentOwner, PanelRelay.Message, System.Text.Encoding.UTF8.GetBytes(WireJson.ToJson(call)));
         }
 
         // Enter the local view only after the host accepted this customer's request.
-        internal static void RaiseHere(string customer, int shots) {
+        internal static void RaiseHere(string customer, int shots, string request) {
+            long sequence;
+            if (!long.TryParse(request, out sequence) || sequence <= cancelledRaiseThrough || sequence > lastRaiseRequest) return;
             long revision; if (!long.TryParse(customer, out revision) || revision <= 0) return;
             confirmedFor = revision; confirmedShots = shots;
         }
@@ -155,6 +165,9 @@ namespace ShopTogether {
 
         /// <summary>Friend side: lower the gun on this screen (and tell the host, unless the customer is already gone).</summary>
         internal static void LowerHere(StoreUIManager ui, bool tellHost) {
+            // All raises sent before this holster are cancelled locally, including
+            // acknowledgements still queued behind an earlier accepted raise.
+            cancelledRaiseThrough = lastRaiseRequest; confirmedFor = -1;
             if (!aiming) return;
             aiming = false;
             if (tellHost) RemoteActions.Forward(RemoteActions.Adapter("Lower", 0), null, new object[0]);
@@ -277,7 +290,7 @@ namespace ShopTogether {
             Headless = ObserverDeath = false;
             var ui = StoreUIManager.Instance;
             if (shown && ui != null) { try { CounterView(ui, false); ui.isShootingMode = false; ui.isShot = false; } catch (Exception e) { Debug.LogWarning("[ShopTogether] shotgun view: " + e.Message); } }
-            aiming = shown = animating = primed = false; seen = 0; raisedFor = 0; confirmedFor = -1; confirmedShots = 0; ForgetAimers();
+            aiming = shown = animating = primed = false; seen = 0; raisedFor = 0; confirmedFor = -1; confirmedShots = 0; lastRaiseRequest = cancelledRaiseThrough = 0; ForgetAimers();
         }
     }
 
@@ -337,5 +350,40 @@ namespace ShopTogether {
     internal static class ShotgunRaise {
         [HarmonyPriority(Priority.First)]
         static bool Prefix() { return !ReplicaSession.ClientStore; }
+    }
+
+    // Keep the native camera/animation callbacks. Only defer their conversation
+    // bookkeeping while a friend still holds the same customer at gunpoint.
+    [HarmonyPatch]
+    internal static class SharedShotgunConversation {
+        static IEnumerable<MethodBase> TargetMethods() {
+            var types = new List<Type> { typeof(StoreUIManager) };
+            types.AddRange(typeof(StoreUIManager).GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic));
+            foreach (var type in types)
+                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+                    if (method.Name.StartsWith("<EnterShootingMode>b__", StringComparison.Ordinal) || method.Name.StartsWith("<ExitShootingMode>b__", StringComparison.Ordinal)) yield return method;
+        }
+        static void Pause(DialogUIManager dialog) {
+            // The first friend already saved the interrupted dialogue. Pausing
+            // again would overwrite it with the customer's gun reaction.
+            if (!ShotgunView.FriendsAiming) dialog.PauseConversation();
+        }
+        static bool Resume(DialogUIManager dialog) {
+            // Returning true also suppresses the native dismissal fallback.
+            // LowerFor resumes/dismisses when the last friend holsters or leaves.
+            return ShotgunView.FriendsAiming || dialog.ResumeConversation();
+        }
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
+            var pause = AccessTools.Method(typeof(DialogUIManager), "PauseConversation");
+            var resume = AccessTools.Method(typeof(DialogUIManager), "ResumeConversation");
+            foreach (var code in instructions) {
+                if (Equals(code.operand, pause) || Equals(code.operand, resume)) {
+                    bool pausing = Equals(code.operand, pause);
+                    code.opcode = OpCodes.Call;
+                    code.operand = AccessTools.Method(typeof(SharedShotgunConversation), pausing ? "Pause" : "Resume");
+                }
+                yield return code;
+            }
+        }
     }
 }

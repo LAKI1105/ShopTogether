@@ -85,7 +85,7 @@ namespace ShopTogether {
         internal static Entry Adapter(string name, int parameters) { Build(); Entry e; return byKey.TryGetValue("ShopTogether." + name + "/" + parameters, out e) ? e : null; }
 
         /// <summary>Friend side: send an action to the host. Returns false when it could not be expressed.</summary>
-        internal static bool Forward(Entry e, object instance, object[] args) {
+        internal static bool Forward(Entry e, object instance, object[] args, Action<long> sent = null) {
             var session = Session;
             if (session == null || !session.IsClient) return false;
             // A friend's click that cannot be sent says so instead of doing nothing.
@@ -94,6 +94,7 @@ namespace ShopTogether {
             var call = Encode(e, instance, args);
             if (call == null) { Refused++; Notice("~SMC128~"); return true; }
             session.SendRemote(call);
+            if (call.sequence > 0 && sent != null) sent(call.sequence);
             return true;
         }
 
@@ -365,7 +366,7 @@ namespace ShopTogether {
             }
             try {
                 object result = e.Method.Invoke(target, args);
-                if (e.Method.DeclaringType == typeof(ShotgunView) && e.Method.Name == "Raise" && PendingNote == null) ShotgunView.ConfirmRaise(call.customer);
+                if (e.Method.DeclaringType == typeof(ShotgunView) && e.Method.Name == "Raise" && PendingNote == null) ShotgunView.ConfirmRaise(call.customer, call.sequence);
                 if (result is bool && !(bool)result && PendingNote == null) return "~SMC321~";
                 if (e.Method.DeclaringType == typeof(HopperHelper) && e.Method.Name == "RunAndRecord" && result is int && (int)result == 0 && PendingNote == null) return "~SMC321~";
             }

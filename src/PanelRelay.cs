@@ -230,7 +230,7 @@ namespace ShopTogether {
                 case 52: case 53: CompanyIntent.Show(c.m,Text(c,0),a); break;
                 case 54: CustomPanelRelay.Open(Text(c,0)); break;
                 case 55: case 56: CargoIntent.Show(c.m,Text(c,0)); break;
-                case 57: ShotgunView.RaiseHere(Text(c,0),Number(c,0)); break;
+                case 57: ShotgunView.RaiseHere(Text(c,0),Number(c,0),Text(c,1)); break;
                 case 43: {
                     var ui = NegociationUIManager.Instance; if (ui == null) break;
                     ui.OpenConfirmPanel(); CounterTrades.BindConfirmation(ui, Number(c, 2)); var frame = ModReflect.Get<NegotiationTabletFrame>(ui, "frame");

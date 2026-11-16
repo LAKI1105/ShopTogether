@@ -21,18 +21,35 @@ namespace ShopTogether {
     // to refresh a guest's panel: even a blocked write can consume RNG or trigger effects.
     internal sealed class HostReadouts {
         readonly Dictionary<int, MachineReadout> records = new Dictionary<int, MachineReadout>();
-        readonly Dictionary<int, string> signatures = new Dictionary<int, string>();
+        static readonly List<PixelElement> noWidgets = new List<PixelElement>();
+        readonly List<TreeNodeRender> renderNodes = new List<TreeNodeRender>();
         float next;
 
-        static List<PixelElement> Widgets(GameItem item) {
+        List<PixelElement> Widgets(GameItem item) {
+            if (item == null || item.contentWindow == null || item.contentWindow.handler == null) return noWidgets;
             var result = new List<PixelElement>();
-            if (item == null || item.contentWindow == null || item.contentWindow.handler == null) return result;
-            foreach (var node in item.contentWindow.handler.GetComponentsInChildren<TreeNodeRender>(true)) {
-                var e = node.element;
-                if ((e is MachineryText || e is MachineryButton || e is MachineryProgressBar ||
-                    e is MachineryRadioList || e is MachineryRadioButton || e is MachinerySlider || e is MachineryRangeSlider) && !result.Contains(e)) result.Add(e);
-            }
+            // Reuse only the traversal buffer, never the window's widget list:
+            // upgrades, tab changes and reopened windows must be read afresh.
+            try {
+                item.contentWindow.handler.GetComponentsInChildren<TreeNodeRender>(true, renderNodes);
+                foreach (var node in renderNodes) {
+                    var e = node.element;
+                    if ((e is MachineryText || e is MachineryButton || e is MachineryProgressBar ||
+                        e is MachineryRadioList || e is MachineryRadioButton || e is MachinerySlider || e is MachineryRangeSlider) && !result.Contains(e)) result.Add(e);
+                }
+            } finally { renderNodes.Clear(); }
             return result;
+        }
+
+        static bool Same(MachineReadout left, MachineReadout right) {
+            if (left == null || right == null || left.item != right.item || left.widgets.Length != right.widgets.Length) return false;
+            for (int i = 0; i < left.widgets.Length; i++) {
+                var a = left.widgets[i]; var b = right.widgets[i];
+                if (a.kind != b.kind || a.text != b.text || !a.value.Equals(b.value) || !a.high.Equals(b.high) ||
+                    !a.min.Equals(b.min) || !a.max.Equals(b.max) || !a.step.Equals(b.step) ||
+                    a.selected != b.selected || a.disabled != b.disabled || a.hidden != b.hidden) return false;
+            }
+            return true;
         }
 
         static WidgetReadout Read(PixelElement element) {
@@ -64,11 +81,11 @@ namespace ShopTogether {
                 var widgets = Widgets(pair.Value);
                 if (widgets.Count == 0 && !records.ContainsKey(pair.Key)) continue;
                 var r = new MachineReadout { item = pair.Key, widgets = widgets.ConvertAll(Read).ToArray() };
-                string json = WireJson.ToJson(r), previous;
-                if (full || !signatures.TryGetValue(pair.Key, out previous) || previous != json) changed.Add(r);
-                records[pair.Key] = r; signatures[pair.Key] = json;
+                MachineReadout previous;
+                if (full || !records.TryGetValue(pair.Key, out previous) || !Same(previous, r)) changed.Add(r);
+                records[pair.Key] = r;
             }
-            foreach (int id in new List<int>(records.Keys)) if (!world.Items.ContainsKey(id)) { records.Remove(id); signatures.Remove(id); }
+            foreach (int id in new List<int>(records.Keys)) if (!world.Items.ContainsKey(id)) records.Remove(id);
             return changed.ToArray();
         }
 
@@ -97,11 +114,19 @@ namespace ShopTogether {
                     var slider = e as MachinerySlider; var range = e as MachineryRangeSlider;
                     if (text != null) { if (text.GetText() != r.text) text.SetText(r.text); }
                     else if (button != null) { if (button.text != r.text) button.SetText(r.text); button.SetDisabled(r.disabled); }
-                    else if (progress != null) progress.SetValue(r.value);
+                    else if (progress != null) { if (!progress.value.Equals(r.value)) progress.SetValue(r.value); }
                     else if (radio != null) radio.Select(r.selected, false);
                     else if (toggle != null) { toggle.SetOn(r.selected != 0, false); toggle.SetDisabled(r.disabled); }
-                    else if (slider != null) { slider.SetRange(r.min, r.max, r.step); slider.SetValue(r.value, false); slider.SetDisabled(r.disabled); }
-                    else if (range != null) { range.SetRange(r.min, r.max, r.step); range.SetValues(r.value, r.high, false); range.SetDisabled(r.disabled); }
+                    else if (slider != null) {
+                        if (!slider.min.Equals(r.min) || !slider.max.Equals(r.max) || !slider.step.Equals(r.step)) slider.SetRange(r.min, r.max, r.step);
+                        if (!slider.value.Equals(r.value)) slider.SetValue(r.value, false);
+                        slider.SetDisabled(r.disabled);
+                    }
+                    else if (range != null) {
+                        if (!range.min.Equals(r.min) || !range.max.Equals(r.max) || !range.step.Equals(r.step)) range.SetRange(r.min, r.max, r.step);
+                        if (!range.low.Equals(r.value) || !range.high.Equals(r.high)) range.SetValues(r.value, r.high, false);
+                        range.SetDisabled(r.disabled);
+                    }
                 }
             }
         }

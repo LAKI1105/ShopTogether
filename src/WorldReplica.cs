@@ -13,6 +13,7 @@ namespace ShopTogether {
         internal readonly Dictionary<string,GameInventory> Inventories=new Dictionary<string,GameInventory>();
         readonly Dictionary<GameInventory,InventoryAddress> addresses=new Dictionary<GameInventory,InventoryAddress>();
         readonly Dictionary<int,string> signatures=new Dictionary<int,string>();
+        readonly Dictionary<string,long> gridShapes=new Dictionary<string,long>();
         readonly Dictionary<GameItem,int> itemIds=new Dictionary<GameItem,int>();
         int nextId;bool replicaMode;
         internal readonly Dictionary<int,long> Versions=new Dictionary<int,long>();
@@ -69,7 +70,7 @@ namespace ShopTogether {
         static bool Placed(GameItem item,Func<bool> move,GameInventory target=null){var was=SandboxItem;bool permit=SandboxMovePermit;Sandbox++;SandboxItem=item;SandboxMovePermit=true;try{return move();}catch(Exception e){Diagnostics.Report("placing "+(item!=null?item.identifier:"?"),e);return item!=null&&(target!=null?item.parentInventory==target:item.parentInventory==null);}finally{Sandbox--;SandboxItem=was;SandboxMovePermit=permit;}}
         static bool Gone(GameItem item){var element=item as GameItemElement;return item==null||element!=null&&element.IsDestroyed();}
         static void Remove(GameItem item){if(Gone(item))return;var inv=item.parentInventory;if(inv!=null)Placed(item,()=>inv.Expel(item));item.Destroy();}
-        internal void Reset(){stateHashes.Clear();pendingLoads.Clear();loadOrder.Clear();structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
+        internal void Reset(){stateHashes.Clear();pendingLoads.Clear();loadOrder.Clear();structureDirty=true;LastSentVersion=0;StoreAppliedAt=0;StationAppliedAt=0;Items.Clear();Inventories.Clear();addresses.Clear();signatures.Clear();gridShapes.Clear();Versions.Clear();itemIds.Clear();RemoteLeases.Clear();nextId=0;replicaMode=false;Version=0;Presentation=new StorePresentation();lastStore=null;lastStation=null;nextState=0;dirty.Clear();order.Clear();orderCursor=0;fingerprints.Clear();}
         internal int Id(GameItem item){int id;return item!=null&&itemIds.TryGetValue(item,out id)?id:0;}
         // A host may pick up an item in the same frame the game creates it. Register just that item's subtree
         // in its already-known inventory rather than waiting for the periodic full-world index.
@@ -160,7 +161,22 @@ namespace ShopTogether {
             }
             dirty.Clear();
             foreach(int id in new List<int>(signatures.Keys))if(!Items.ContainsKey(id)){removed.Add(id);signatures.Remove(id);Versions.Remove(id);fingerprints.Remove(id);}
-            var grids=new List<GridRecord>();foreach(var p in addresses){var grid=p.Key as GameGridInventory;if(grid!=null)grids.Add(new GridRecord{address=p.Value,width=grid.inventoryShape.width,height=grid.inventoryShape.height});}
+            // Dimensions are state too: send changes, not every unchanged grid
+            // five times a second. Full snapshots retain every grid; their
+            // companion delta contains only changes for existing peers.
+            var grids=new List<GridRecord>();var gridUpdates=new List<GridRecord>();var liveGrids=new HashSet<string>();
+            var updatedItems=new HashSet<int>();foreach(var update in updates)updatedItems.Add(update.id);
+            foreach(var p in addresses){var grid=p.Key as GameGridInventory;if(grid==null)continue;
+                string key=p.Value.Key;liveGrids.Add(key);int width=grid.inventoryShape.width,height=grid.inventoryShape.height;
+                long shape=((long)width<<32)|(uint)height,previous;
+                bool resized=!gridShapes.TryGetValue(key,out previous)||previous!=shape;
+                // An explicitly resent item can be rebuilding its inventories
+                // on a replica even though the host's dimensions did not change.
+                bool resent=p.Value.container>0&&updatedItems.Contains(p.Value.container);
+                if(full||resized||resent){var record=new GridRecord{address=p.Value,width=width,height=height};grids.Add(record);if(resized||resent)gridUpdates.Add(record);}
+                gridShapes[key]=shape;
+            }
+            foreach(string key in new List<string>(gridShapes.Keys))if(!liveGrids.Contains(key))gridShapes.Remove(key);
             // The game's typed save codec operates on memory only. No network-supplied file path is accepted.
             // Store and station data: twice a second is plenty for counters, cash and services.
             string store=lastStore,station=lastStation;
@@ -169,7 +185,7 @@ namespace ShopTogether {
             // A full snapshot advances the shared capture baseline too. Existing peers must
             // receive changes discovered by it, even when only a joining/resyncing peer needs
             // the full item list. Reuse the same presentation/readouts instead of capturing twice.
-            incremental=full?new WorldDelta{version=version,full=false,player=player,items=updates.ToArray(),removed=result.removed,grids=result.grids,leases=result.leases,presentation=result.presentation,readouts=result.readouts,lamps=result.lamps,overflow=result.overflow,cassette=result.cassette,store=store!=lastStore?store:null,station=station!=lastStation?station:null}:result;
+            incremental=full?new WorldDelta{version=version,full=false,player=player,items=updates.ToArray(),removed=result.removed,grids=gridUpdates.ToArray(),leases=result.leases,presentation=result.presentation,readouts=result.readouts,lamps=result.lamps,overflow=result.overflow,cassette=result.cassette,store=store!=lastStore?store:null,station=station!=lastStation?station:null}:result;
             lastStore=store;lastStation=station;
 #if LAN_PROBE
             if(!full)RuntimeProbe.CaptureMilliseconds.Add(captureTimer.Elapsed.TotalMilliseconds);

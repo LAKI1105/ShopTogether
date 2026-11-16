@@ -22,6 +22,7 @@ namespace ShopTogether {
     // Only resolved customer values and text cross the wire. No delegates or dialogue actions are serialized.
     internal sealed class StorePresentation {
         static readonly List<FieldInfo> fields=Fields();
+        static readonly JsonSerializerSettings fieldSettings=new JsonSerializerSettings{TypeNameHandling=TypeNameHandling.None,MetadataPropertyHandling=MetadataPropertyHandling.Ignore,MaxDepth=8};
         StoreClientInstance lastCustomer;Dialogue lastDialog;string lastLine;long customerSerial,dialogSerial;
         long appliedCustomer=-1,appliedDialog=-1;
         string appliedSprite;
@@ -53,14 +54,14 @@ namespace ShopTogether {
             }
             if(view.customer==0){CustomerDeals.Reset();if(StoreUIManager.Instance!=null)StoreUIManager.Instance.HideClient();return;}
             var blueprint=PlayerStore.Instance.currentClientInstance.GetClientBlueprint();
-            foreach(var field in fields){string value;if(view.customerFields!=null&&view.customerFields.TryGetValue(field.Name,out value))ModReflect.Set(blueprint,field.Name,JsonConvert.DeserializeObject(value,field.FieldType,new JsonSerializerSettings{TypeNameHandling=TypeNameHandling.None,MetadataPropertyHandling=MetadataPropertyHandling.Ignore,MaxDepth=8}));}
+            foreach(var field in fields){string value;if(view.customerFields!=null&&view.customerFields.TryGetValue(field.Name,out value))ModReflect.Set(blueprint,field.Name,JsonConvert.DeserializeObject(value,field.FieldType,fieldSettings));}
             Diagnostics.Soft("customer deals",()=>CustomerDeals.Apply(blueprint,view,world,changed));
             if(StoreClientMono.Instance!=null){if(appliedSprite!=view.sprite&&!string.IsNullOrEmpty(view.sprite)){StoreClientMono.Instance.image.sprite=SpriteDict.Instance.ShowClientSprite(view.sprite);appliedSprite=view.sprite;}if(changed){StoreUIManager.Instance.DisplayClient();StoreClientMono.Instance.SetImmediatlyArrive();}}
         }
         internal void ApplyDialogue(StoreView view,WorldReplica world){
             if(view==null)return;GameItem item;PlayerStore.Instance.currentNegociatedItem=world.Items.TryGetValue(view.negotiatedItem,out item)?item:null;
             if(view.dialog==appliedDialog)return;appliedDialog=view.dialog;var ui=DialogUIManager.Instance;if(ui==null)return;
-            ui.HideAllDialogUI();if(!view.hasDialog){ui.currentDialog=null;return;}
+            ui.StopAllTrackedDialogueCoroutines();ui.HideBubbles();ui.HideChoiceBubble();if(!view.hasDialog){ui.currentDialog=null;return;}
             var dialog=new Dialogue().SetText(view.title??"",view.text??"");dialog.choices=new List<ValueTuple<GameItem,Dialogue,Action>>();
             if(view.choices!=null)foreach(var choice in view.choices){var line=new Dialogue().SetText(choice.title??"",choice.text??"");line.forceDisabled=false;dialog.choices.Add(new ValueTuple<GameItem,Dialogue,Action>(null,line,null));}
             ui.currentDialog=dialog;ModReflect.Call(ui,"DisplayLine",new object[]{dialog});if(dialog.choices.Count>0)ui.DisplayChoice();
@@ -78,6 +79,18 @@ namespace ShopTogether {
                 return true;
             }
             if(session!=null&&session.Ready&&LocalControl.Focused&&!WorldReplica.Applying)session.Send(new Request{kind=RequestKind.ShopAction,items=new int[0],operation=(int)(__originalMethod.Name=="SelectChoice"?ShopOperation.ChooseDialogue:ShopOperation.AdvanceDialogue),index=__args.Length==0?0:(int)__args[0],worldVersion=session.World.Presentation.DialogRevision});return false;}
+    }
+    [HarmonyPatch]
+    internal static class ReplicaCounterDialogueFlow {
+        // A replicated line has no native nextDialogue/endAction. Letting the
+        // typewriter finish it locally hides a conversation the host is still
+        // waiting to advance. Only ApplyDialogue replaces or clears that line.
+        static IEnumerable<MethodBase> TargetMethods() {
+            foreach (string name in new[] { "OnCurrentTextDisplayed", "ContinueConversation", "EndConversation", "ResumeIfWaitingForAdvance" })
+                yield return AccessTools.Method(typeof(DialogUIManager), name);
+        }
+        [HarmonyPriority(Priority.First)]
+        static bool Prefix() { return !ReplicaSession.ClientStore; }
     }
     [HarmonyPatch]
     internal static class ReplicaCustomerSimulation {
