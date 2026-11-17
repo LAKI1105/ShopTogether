@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.43";
+        internal const string BuildVersion="1.3.44";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -189,7 +189,7 @@ namespace ShopTogether {
                                 if(!Ready){Ready=true;status="~SMC025~";CustomUIManager.Instance.CloseWindow(WindowId);}}
                             catch(Exception failure){Diagnostics.Report("apply",failure);if(++applyFailures>=5)throw;Debug.LogWarning("[ShopTogether] update not applied, asking the host for the whole shop: "+failure.Message);awaitingFull=true;server.Send(24,new byte[0]);}
                         }}
-                    if(Ready&&ReplicaSession.SceneReady){Diagnostics.Soft("layouts",()=>World.RunLoads(pendingWorld.Count>0?1.0:2.5));Diagnostics.Soft("daily report",()=>SharedScreens.Follow(HostPhase.Last));if(pendingWorld.Count==0&&!awaitingFull)Diagnostics.Soft("shotgun confirmation",ShotgunView.Tick);}
+                    if(Ready&&ReplicaSession.SceneReady){Diagnostics.Soft("customer presentation",World.Presentation.Tick);Diagnostics.Soft("layouts",()=>World.RunLoads(pendingWorld.Count>0?1.0:2.5));Diagnostics.Soft("daily report",()=>SharedScreens.Follow(HostPhase.Last));if(pendingWorld.Count==0&&!awaitingFull)Diagnostics.Soft("shotgun confirmation",ShotgunView.Tick);}
                     if(server!=null&&server.authenticated&&Time.realtimeSinceStartup>=nextRenew){
                         nextRenew=Time.realtimeSinceStartup+5;
                         if(Ready)Send(new Request{kind=RequestKind.Renew});

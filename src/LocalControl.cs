@@ -26,7 +26,15 @@ namespace ShopTogether {
         /// </summary>
         internal static bool LocalOnly(GameInventory inventory,GameItem item){var s=Connection.Current;if(s==null||!ReplicaSession.ClientStore)return false;var w=s.World;return (inventory==null||w.Address(inventory)==null)&&(item==null||w.Id(item)<=0);}
         // Choice icons belong only to this player's temporary response windows, never to a synced inventory.
-        internal static bool LocalChoice(GameInventory inventory,GameItem item){var e=EmporiumEntry.Instance;return e!=null&&inventory!=null&&(inventory==e.responseInventory||inventory==e.responseInventoryClosable)&&LocalOnly(inventory,item);}
+        internal static bool LocalChoice(GameInventory inventory,GameItem item){
+            var e=EmporiumEntry.Instance;var s=Connection.Current;
+            // The host builds the same temporary choice icons inside its input
+            // scope. They have no shared-world ID either; do not route them as a
+            // request to move a real item. Keep this exception confined to the
+            // two response inventories and never admit a tracked shop item.
+            return e!=null&&s!=null&&inventory!=null&&(inventory==e.responseInventory||inventory==e.responseInventoryClosable)&&
+                s.World.Address(inventory)==null&&(item==null||s.World.Id(item)<=0);
+        }
     }
     [HarmonyPatch]
     internal static class InputScope {

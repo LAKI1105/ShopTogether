@@ -104,7 +104,7 @@ namespace ShopTogether {
             h.Patch(AccessTools.Method(typeof(Input),"GetKeyDown",new[]{typeof(KeyCode)}),key);
             h.Patch(AccessTools.Method(typeof(Input),"GetKeyUp",new[]{typeof(KeyCode)}),key);
             string suite=Argument("--smc-suite");
-            bool nativeMouse=((suite=="perf1340"||suite=="reported1339"||suite=="release1339"||suite=="mouse1327"||suite=="trade1327"||suite=="layout1326"||suite=="stress1327")&&Argument("--smc-role")=="client")||(suite=="issue1328"&&Argument("--smc-issue-restore")=="1");
+            bool nativeMouse=((suite=="reported1344"||suite=="perf1340"||suite=="reported1339"||suite=="release1339"||suite=="mouse1327"||suite=="trade1327"||suite=="layout1326"||suite=="stress1327")&&Argument("--smc-role")=="client")||(suite=="issue1328"&&Argument("--smc-issue-restore")=="1");
             nativeMouseEdges=nativeMouse;
             if(!nativeMouse){
                 h.Patch(AccessTools.Method(typeof(Input),"GetMouseButton",new[]{typeof(int)}),transpiler:new HarmonyMethod(typeof(RuntimeProbe).GetMethod("MouseBody",BindingFlags.Static|BindingFlags.NonPublic)));

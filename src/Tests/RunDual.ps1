@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
+    [ValidateSet('reported1344','perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
     [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[string]$ProductionDll,[string]$ProductionPackage,[switch]$ContinueOnFailure,[switch]$ScanOnly
 )
@@ -93,7 +93,7 @@ try{
         if(Test-Path -LiteralPath $profileSave){
             $settings=Get-Content -LiteralPath $profileSave -Raw | ConvertFrom-Json -AsHashtable
             if($settings.ContainsKey('modOrder') -and $settings.modOrder.ContainsKey('value')){
-                if($Suite -contains 'perf1340' -or $Suite -contains 'release1339' -or $Suite -contains 'reported1339' -or $Suite -contains 'settlement1339'){$settings.modOrder.value=@()}else{$settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})}
+                if($Suite -contains 'reported1344' -or $Suite -contains 'perf1340' -or $Suite -contains 'release1339' -or $Suite -contains 'reported1339' -or $Suite -contains 'settlement1339'){$settings.modOrder.value=@()}else{$settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})}
                 [IO.File]::WriteAllText($profileSave,($settings | ConvertTo-Json -Depth 100),[Text.UTF8Encoding]::new($false))
             }
         }
@@ -136,7 +136,7 @@ try{
             $deadline=[DateTime]::UtcNow.AddSeconds(600);$mouseSequences=@{host=0;client=0}
             do{
                 Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');$clientText=Read-TestLog (Join-Path $scratch 'smc-client.log')
-                if($part -in @('perf1340','reported1339','release1339','mouse1327','trade1327','layout1326','stress1327')){Send-TestMouseRequests 'client' $clientText $clientProcess $mouseSequences}
+                if($part -in @('reported1344','perf1340','reported1339','release1339','mouse1327','trade1327','layout1326','stress1327')){Send-TestMouseRequests 'client' $clientText $clientProcess $mouseSequences}
                 if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Dual runtime assertion failed'}
                 if($hostText -match '\[SMC COMPLETE\]' -and $clientText -match '\[SMC COMPLETE\]'){break}
             }while([DateTime]::UtcNow -lt $deadline -and -not($hostProcess.HasExited -and $clientProcess.HasExited))

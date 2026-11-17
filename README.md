@@ -4,35 +4,29 @@ A community co-op mod for **Probably Stolen**. Up to eight players, including th
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-版本：**1.3.43**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
+版本：**1.3.44**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
-## 1.3.43 更新內容
+顧客進出店的移動與對話內容跟隨房主同步。外出與回店採全員同行；雙手槽位、背包與地面物品共用，各自的游標和選單仍可獨立操作。化學品、水質、液體比例與基因由房主遊戲運算並同步數值。安裝包只有 DLL、manifest 與封面；原始碼在本儲存庫。
 
-- 減少同步顧客資料時的重複查詢，降低房主與朋友每次更新資料的負擔。
-- 顧客的交易條件、金額與商品清單仍照常同步；沒有為了加速而省略資料或降低同步頻率。
-- 原版顧客使用較快的欄位存取方式；模組自訂的衍生顧客保留原本處理方式。
-- 保留 1.3.42 修正的反覆半秒停頓，以及 1.3.41 的對話、舉槍與機台同步修正；連線握手、封包順序與逾時未改。
+本次修正摘要請見 [1.3.44 更新紀錄](CHANGELOG.md)。
 
-1.3.41 的對話、舉槍與機台同步修正保留。化學品、水質、液體比例與基因仍由房主遊戲運算並同步。深空串門（Probably Multiplayer）相容功能已移除；安裝包只有 DLL、manifest 與封面，原始碼在 GitHub。
-
-Version **1.3.43**, for game **0.46D**. Reduces repeated lookups when capturing and applying customer data. All customer fields and authoritative updates remain intact, with the existing lookup behavior retained for derived customer classes. Handshakes, packet ordering, timeouts and sync frequency are unchanged. Includes the recurring-stall fix from 1.3.42 and the dialogue, aiming and machine sync fixes from 1.3.41. Everyone must update to the same build and restart. Probably Multiplayer integration is removed; runtime packages contain only the DLL, manifest and preview.
+Version **1.3.44**, for game **0.46D**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
 
 ## 本版核對範圍
 
-發布前對修正原始碼做一輪獨立桌面的本機雙程序驗證（`perf1340`）。同一輪交錯比較新舊顧客欄位存取流程、排除暖機後，82 個欄位的擷取＋套用中位耗時從 **14.167 ms 降到 0.239 ms**。逐欄比對傳送及套用值一致，也確認相同主端資料仍能修復客端偏差、商品清單變更可替換舊值，以及衍生顧客的同名欄位行為保持一致。這是該段工作量的比較，不代表整個遊戲加速相同比例。
+修正程式已在獨立 Windows 桌面，以本機雙程序完成 `reported1344` 驗證：房主垃圾袋與背包選擇、全員出門及返回、共用背包操作、顧客進店及兩種離店路徑、連續三句台詞按序顯示、重新同步不重播。同行完成朋友加入、對話等待及推進、交付前拒絕出售與交付後成交、收益同步、容器搬移、格子尺寸變化及完整重新同步。
 
-| 本輪本機取樣（237 個同步物件、12 秒） | 結果 |
+| 本輪本機取樣（239 個同步物件、12 秒） | 結果 |
 |---|---:|
-| 操作回覆中位數 | 25.85 ms |
-| 操作回覆 P95 | 32.26 ms |
+| 操作回覆中位數／P95 | 24.61／29.70 ms |
 | 完成操作數 | 24 |
-| 房主同步擷取中位數／P95 | 9.45／11.66 ms |
+| 房主同步擷取中位數／P95 | 8.52／11.45 ms |
 
-取樣未記到達 50 ms 的更新間隔或達 25 ms 的多人主更新工作耗時。加入、對話等待與推進、交付期間拒絕出售並回覆原因、交付後成交與收益同步、容器搬移、格子尺寸變化及完整重同步均完成，沒有斷線或套用錯誤。正式候選及測試模組通過原版掃描器。發布時只更新版號與說明、編譯正式包，未再次重跑遊戲測試。
+顧客同步與中槍動畫的交界修正另以一次 `death` 專項完成驗證：中槍變色、倒下期間隱藏及動畫後恢復房主狀態正確；房主旁觀者的鏡頭、背包和拖曳未被拉走。兩項完成時皆無客端套用失敗或房主診斷回報。首次驗證工具未等待原版淡出後開圖而中止，修正等待條件後才完成，不將中止算通過。
 
-測試是同機兩程序、原版加本模組的 TCP/TLS 連線；不是跨帳號 Steam 外網、八人長時間或所有第三方模組組合的驗證，也沒有重新測完全部 84 項操作，不保證任何環境都零延遲。下方較早的測試結果屬歷史範圍。
+這些是同機雙程序驗證，不是跨帳號 Steam 外網、八人長時間或所有第三方模組組合的驗證，也沒有重新測完全部 84 項操作。發布階段只更新版號與文件並編譯正式包，不重跑遊戲測試。測試程序及暫存由執行器清理，原有玩家存檔、設定與訂閱 DLL 未被測試替換。
 
-One local two-process verification run compared the old and new capture/apply paths for all 82 customer fields: median combined work fell from 14.167 to 0.239 ms, with matching values and derived-class behavior preserved. Joining, dialogue, sale refusal during delivery, successful sale and synchronized proceeds after delivery, container moves, grid resizing and full resync passed without disconnects or apply errors. A 12-second sample with 237 items completed 24 actions, with median response 25.85 ms and P95 32.26 ms. These are local measurements, not whole-game speedup figures or guarantees for Internet play, eight players or arbitrary mods. Release preparation changes only version/documentation and compiles the package.
+Local two-process checks covered host backpack selection, shared outings and return, customer arrival/departure, ordered dialogue, joining, sale refusals and successful sales, container moves and full resync. A separate fatal-shot check covered the interaction between replicated movement and local shot animations. These results do not establish Internet, eight-player or universal mod compatibility. Release preparation updates the version and documentation and compiles the production package.
 
 ## 使用方式
 
@@ -72,7 +66,7 @@ Use `src/Package.ps1 -PreviewPath <preview.jpg>` to produce `out/Workshop` with 
 ```powershell
 ./src/Tests/Run.ps1 -OutputPath ./ShopTogether.dll
 ./src/Tests/RunDual.ps1 -Suite outing138
-./src/Tests/RunDual.ps1 -Suite perf1340
+./src/Tests/RunDual.ps1 -Suite reported1344
 ```
 
 The runtime harness needs Windows, Steam, the game and the enabled Workshop mod. Close the game before running it. It runs a disposable game copy on a verified private Windows desktop with isolated test profiles, and closes only its own processes. It does not replace the subscribed Workshop files. Do not run two harness instances concurrently. The runner currently targets Workshop item 3837477869.

@@ -7,6 +7,12 @@ using UnityEngine;
 
 namespace ShopTogether {
     [Serializable] internal sealed class ChoiceView {public string title,text;public bool enabled;}
+    [Serializable] internal sealed class DialogueFrame {
+        public long revision;
+        public bool present;
+        public string title,text;
+        public ChoiceView[] choices;
+    }
     [Serializable] internal sealed class StoreView {
         public long customer,dialog;
         public Dictionary<string,string> customerFields;
@@ -18,14 +24,22 @@ namespace ShopTogether {
         public int[] judged,buying,buyingShallow;
         public BarterView barter;
         public GunOrderView gunOrder;
+        public CustomerPose pose;
+        public DialogueFrame[] dialogueFrames;
     }
     // Only resolved customer values and text cross the wire. No delegates or dialogue actions are serialized.
     internal sealed class StorePresentation {
         static readonly List<FieldInfo> fields=Fields();
         static readonly JsonSerializerSettings fieldSettings=new JsonSerializerSettings{TypeNameHandling=TypeNameHandling.None,MetadataPropertyHandling=MetadataPropertyHandling.Ignore,MaxDepth=8};
+        static readonly MethodInfo bubbleTyping=AccessTools.Method(typeof(DialogUIManager),"IsAnyBubbleTyping");
         StoreClientInstance lastCustomer;Dialogue lastDialog;string lastLine;long customerSerial,dialogSerial;
         long appliedCustomer=-1,appliedDialog=-1;
-        string appliedSprite;
+        string appliedSprite,lastCapturedSprite;
+        readonly CustomerVisual visual=new CustomerVisual();
+        readonly List<DialogueFrame> capturedLines=new List<DialogueFrame>();
+        readonly Queue<DialogueFrame> displayLines=new Queue<DialogueFrame>();
+        long receivedDialog=-1;
+        float nextLine;
         static List<FieldInfo> Fields(){var result=new List<FieldInfo>();foreach(var field in typeof(StoreClient).GetFields(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance)){if(field.Name.StartsWith("<",StringComparison.Ordinal))continue;var t=field.FieldType;if(t.IsPrimitive||t.IsEnum||t==typeof(string)||t==typeof(List<string>)||t==typeof(double?))result.Add(field);}return result;}
         // These are fixed game fields already resolved by Fields(), not names supplied
         // by a peer. Avoid ModReflect's caller stack walk for each field on every
@@ -52,8 +66,24 @@ namespace ShopTogether {
             var manager=PlayerStore.Instance.storeClientManager;
             var result=new StoreView{customer=instance==null?0:customerSerial,hasDialog=dialog!=null,negotiatedItem=world.Id(PlayerStore.Instance.currentNegociatedItem),clientsLeft=manager!=null&&manager.clientStack!=null?manager.clientStack.Count:0};
             if(instance!=null){var blueprint=instance.GetClientBlueprint();Diagnostics.Soft("customer deals",()=>CustomerDeals.Capture(blueprint,world,result));result.customerFields=CaptureFields(blueprint);result.sprite=blueprint.spriteName;}
+            if(result.sprite!=null)lastCapturedSprite=result.sprite;else result.sprite=lastCapturedSprite;
             if(dialog!=null){result.title=dialog.title;result.text=dialog.plainText;var choices=new List<ChoiceView>();if(dialog.choices!=null)for(int i=0;i<dialog.choices.Count;i++){var line=dialog.choices[i].Item2;choices.Add(new ChoiceView{title=line.title,text=line.plainText,enabled=dialog.IsChoiceEnabledAt(i)});}result.choices=choices.ToArray();}
-            string lineSignature=JsonConvert.SerializeObject(new object[]{result.title,result.text,result.choices});if(dialog!=lastDialog||lineSignature!=lastLine){lastDialog=dialog;lastLine=lineSignature;dialogSerial++;}result.dialog=dialogSerial;return result;
+            ObserveDialogue(result,dialog);result.dialog=dialogSerial;
+            result.dialogueFrames=capturedLines.ToArray();capturedLines.Clear();result.pose=visual.Capture();return result;
+        }
+        void ObserveDialogue(StoreView view,Dialogue dialog){
+            string signature=JsonConvert.SerializeObject(new object[]{view.title,view.text,view.choices});
+            if(dialog==lastDialog&&signature==lastLine)return;
+            lastDialog=dialog;lastLine=signature;dialogSerial++;
+            capturedLines.Add(new DialogueFrame{revision=dialogSerial,present=view.hasDialog,title=view.title,text=view.text,choices=view.choices});
+        }
+        internal void RecordDialogue(){
+            var ui=DialogUIManager.Instance;var dialog=ui==null?null:ui.currentDialog;
+            var view=new StoreView{hasDialog=dialog!=null};
+            if(dialog!=null){view.title=dialog.title;view.text=dialog.plainText;var choices=new List<ChoiceView>();
+                if(dialog.choices!=null)foreach(var option in dialog.choices){var line=option.Item2;choices.Add(new ChoiceView{title=line.title,text=line.plainText,enabled=dialog.IsChoiceEnabledAt(choices.Count)});}
+                view.choices=choices.ToArray();}
+            ObserveDialogue(view,dialog);
         }
         internal bool CurrentDialogue(long revision){return revision==dialogSerial&&DialogUIManager.Instance!=null&&DialogUIManager.Instance.currentDialog==lastDialog;}
         internal bool CurrentCustomer(long revision){var current=PlayerStore.Instance.currentClientInstance;return current==lastCustomer&&revision==(current==null?0:customerSerial);}
@@ -61,7 +91,7 @@ namespace ShopTogether {
         internal long DialogRevision {get{return appliedDialog;}}
         /// <summary>Friend: customers still waiting today (the queue itself only exists on the host).</summary>
         internal static int ClientsLeft;
-        internal void ApplyCustomer(StoreView view,WorldReplica world){
+        internal void ApplyCustomer(StoreView view,WorldReplica world,bool full=false){
             if(view==null)return;ClientsLeft=Math.Max(0,Math.Min(1000,view.clientsLeft));
             bool changed=view.customer!=appliedCustomer;
             if(changed){
@@ -70,20 +100,44 @@ namespace ShopTogether {
                 if(view.customer!=0)ModReflect.Set(PlayerStore.Instance.currentClientInstance,"storeClient",new StoreClient());
                 appliedCustomer=view.customer;
             }
-            if(view.customer==0){CustomerDeals.Reset();if(StoreUIManager.Instance!=null)StoreUIManager.Instance.HideClient();return;}
+            visual.Apply(view.pose,full);
+            if(StoreClientMono.Instance!=null&&appliedSprite!=view.sprite&&!string.IsNullOrEmpty(view.sprite)){StoreClientMono.Instance.image.sprite=SpriteDict.Instance.ShowClientSprite(view.sprite);appliedSprite=view.sprite;}
+            if(view.customer==0){CustomerDeals.Reset();if(view.pose==null&&StoreUIManager.Instance!=null)StoreUIManager.Instance.HideClient();return;}
             var blueprint=PlayerStore.Instance.currentClientInstance.GetClientBlueprint();
             ApplyFields(blueprint,view.customerFields);
             Diagnostics.Soft("customer deals",()=>CustomerDeals.Apply(blueprint,view,world,changed));
-            if(StoreClientMono.Instance!=null){if(appliedSprite!=view.sprite&&!string.IsNullOrEmpty(view.sprite)){StoreClientMono.Instance.image.sprite=SpriteDict.Instance.ShowClientSprite(view.sprite);appliedSprite=view.sprite;}if(changed){StoreUIManager.Instance.DisplayClient();StoreClientMono.Instance.SetImmediatlyArrive();}}
+            if(StoreClientMono.Instance!=null){if(appliedSprite!=view.sprite&&!string.IsNullOrEmpty(view.sprite)){StoreClientMono.Instance.image.sprite=SpriteDict.Instance.ShowClientSprite(view.sprite);appliedSprite=view.sprite;}if(changed&&view.pose==null){StoreUIManager.Instance.DisplayClient();StoreClientMono.Instance.SetImmediatlyArrive();}}
         }
-        internal void ApplyDialogue(StoreView view,WorldReplica world){
+        internal void ApplyDialogue(StoreView view,WorldReplica world,bool full=false){
             if(view==null)return;GameItem item;PlayerStore.Instance.currentNegociatedItem=world.Items.TryGetValue(view.negotiatedItem,out item)?item:null;
-            if(view.dialog==appliedDialog)return;appliedDialog=view.dialog;var ui=DialogUIManager.Instance;if(ui==null)return;
-            ui.StopAllTrackedDialogueCoroutines();ui.HideBubbles();ui.HideChoiceBubble();if(!view.hasDialog){ui.currentDialog=null;return;}
-            var dialog=new Dialogue().SetText(view.title??"",view.text??"");dialog.choices=new List<ValueTuple<GameItem,Dialogue,Action>>();
-            if(view.choices!=null)foreach(var choice in view.choices){var line=new Dialogue().SetText(choice.title??"",choice.text??"");line.forceDisabled=false;dialog.choices.Add(new ValueTuple<GameItem,Dialogue,Action>(null,line,null));}
+            var current=new DialogueFrame{revision=view.dialog,present=view.hasDialog,title=view.title,text=view.text,choices=view.choices};
+            // A join or recovery snapshot starts at the current line; don't replay
+            // pre-join events, or duplicate the displayed line during a resync.
+            if(full||receivedDialog<0){displayLines.Clear();receivedDialog=view.dialog;if(appliedDialog!=view.dialog)ShowLine(current);return;}
+            if(view.dialogueFrames!=null)foreach(var line in view.dialogueFrames)if(line!=null&&line.revision>receivedDialog&&line.revision<=view.dialog){displayLines.Enqueue(line);receivedDialog=line.revision;}
+            if(view.dialog>receivedDialog){displayLines.Enqueue(current);receivedDialog=view.dialog;}
+            if(displayLines.Count>512)throw new InvalidOperationException("Too many pending customer dialogue lines");
+            Tick();
+        }
+        void ShowLine(DialogueFrame frame){
+            var ui=DialogUIManager.Instance;if(ui==null)return;appliedDialog=frame.revision;nextLine=Time.realtimeSinceStartup+.15f;
+            ui.StopAllTrackedDialogueCoroutines();ui.HideBubbles();ui.HideChoiceBubble();if(!frame.present){ui.currentDialog=null;return;}
+            var dialog=new Dialogue().SetText(frame.title??"",frame.text??"");dialog.choices=new List<ValueTuple<GameItem,Dialogue,Action>>();
+            if(frame.choices!=null)foreach(var choice in frame.choices){var line=new Dialogue().SetText(choice.title??"",choice.text??"");line.forceDisabled=false;dialog.choices.Add(new ValueTuple<GameItem,Dialogue,Action>(null,line,null));}
             ui.currentDialog=dialog;ModReflect.Call(ui,"DisplayLine",new object[]{dialog});if(dialog.choices.Count>0)ui.DisplayChoice();
         }
+        internal void Tick(){
+            visual.Tick();var ui=DialogUIManager.Instance;
+            if(displayLines.Count==0||ui==null||Time.realtimeSinceStartup<nextLine)return;
+            if((bool)bubbleTyping.Invoke(ui,null))return;
+            ShowLine(displayLines.Dequeue());
+        }
+        internal bool AdvanceBuffered(){if(displayLines.Count==0)return false;ShowLine(displayLines.Dequeue());return true;}
+    }
+    [HarmonyPatch]
+    internal static class HostDialogueFrames {
+        static IEnumerable<MethodBase> TargetMethods(){foreach(string name in new[]{"DisplayClientText","DisplayerPlayerText","DisplaySecText","EndConversation","RemoveCurrentDialog"})yield return AccessTools.Method(typeof(DialogUIManager),name);}
+        static void Postfix(){var s=Connection.Current;if(s!=null&&s.IsHost&&s.Ready&&s.HasFriends&&!WorldReplica.Applying)s.World.Presentation.RecordDialogue();}
     }
     [HarmonyPatch]
     internal static class ReplicaDialogueInput {
@@ -96,7 +150,9 @@ namespace ShopTogether {
                 }
                 return true;
             }
-            if(session!=null&&session.Ready&&LocalControl.Focused&&!WorldReplica.Applying)session.Send(new Request{kind=RequestKind.ShopAction,items=new int[0],operation=(int)(__originalMethod.Name=="SelectChoice"?ShopOperation.ChooseDialogue:ShopOperation.AdvanceDialogue),index=__args.Length==0?0:(int)__args[0],worldVersion=session.World.Presentation.DialogRevision});return false;}
+            if(session!=null&&session.Ready&&LocalControl.Focused&&!WorldReplica.Applying){
+                if(__originalMethod.Name=="OnAdvancePressed"&&session.World.Presentation.AdvanceBuffered())return false;
+                session.Send(new Request{kind=RequestKind.ShopAction,items=new int[0],operation=(int)(__originalMethod.Name=="SelectChoice"?ShopOperation.ChooseDialogue:ShopOperation.AdvanceDialogue),index=__args.Length==0?0:(int)__args[0],worldVersion=session.World.Presentation.DialogRevision});}return false;}
     }
     [HarmonyPatch]
     internal static class ReplicaCounterDialogueFlow {

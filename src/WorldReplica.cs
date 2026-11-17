@@ -246,7 +246,7 @@ namespace ShopTogether {
                 if(delta.store!=null){int slot=PlayerStore.Instance.saveSlotId;StoreState.Apply(PlayerStore.Instance,Convert.FromBase64String(delta.store));PlayerStore.Instance.saveSlotId=slot;StoreAppliedAt=delta.version;}
                 if(delta.station!=null){StoreState.ApplyStation(StoreStation.Instance,Convert.FromBase64String(delta.station));StationAppliedAt=delta.version;}
                 OverflowReplica.Prepare(delta.overflow);
-                Presentation.ApplyCustomer(delta.presentation,this);var incoming=new HashSet<int>();foreach(var r in delta.items){if(r.id<=0||r.node==null||!incoming.Add(r.id)||r.parent==null)throw new InvalidOperationException("~SMC100~");}
+                Presentation.ApplyCustomer(delta.presentation,this,delta.full);var incoming=new HashSet<int>();foreach(var r in delta.items){if(r.id<=0||r.node==null||!incoming.Add(r.id)||r.parent==null)throw new InvalidOperationException("~SMC100~");}
                 if(!replicaMode){if(!delta.full)throw new InvalidOperationException("~SMC118~");itemIds.Clear();BindInitial(delta);replicaMode=true;}
                 Index();
                 // Removed items go last: a removed container (an emptied void backpack) may still hold items this
@@ -299,7 +299,7 @@ namespace ShopTogether {
                 // friend's mouse. A machine whose window is open right now is refreshed at once.
                 foreach(var load in loads){if(Gone(load.Key))continue;QueueLoad(load.Key,createdNow.Contains(load.Key),load.Value);}
                 if(delta.leases!=null){RemoteLeases.Clear();foreach(var l in delta.leases)if(l!=null)RemoteLeases[l.item]=l.owner;}
-                OverflowReplica.Finish();Version=delta.version;Index();Presentation.ApplyDialogue(delta.presentation,this);
+                OverflowReplica.Finish();Version=delta.version;Index();Presentation.ApplyDialogue(delta.presentation,this,delta.full);
                 if(delta.store!=null)ReplicaVisuals.RefreshTransactions();
                 Readouts.Receive(delta.readouts, delta.full, delta.removed);
                 SceneObjects.Apply(delta.lamps);

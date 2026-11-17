@@ -114,6 +114,7 @@ namespace ShopTogether {
 
         // ---------------- friend side ----------------
         static bool aiming, shown, animating, primed;
+        internal static bool Animating { get { return animating; } }
         static long raisedFor;
         static long confirmedFor = -1;
         static long lastRaiseRequest, cancelledRaiseThrough;
