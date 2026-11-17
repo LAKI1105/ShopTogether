@@ -4,28 +4,33 @@ A community co-op mod for **Probably Stolen**. Up to eight players, including th
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-版本：**1.3.41**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
+版本：**1.3.42**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
-## 1.3.41 更新內容
+## 1.3.42 更新內容
 
-- 修正朋友那邊的客人對話提早消失，畫面以為講完了，房主卻還在等對話，導致出售被擋；現在由房主同步對話的推進與結束。
-- 修正收槍後收到較晚的舉槍同意訊息，又重新進入瞄準。
-- 修正多人同時舉槍時，房主收槍可能提早恢復對話，以及重複舉槍覆蓋原本暫停的對話。
-- 減少機台讀數、滑桿及庫存格尺寸的重複處理；沒有變動的格子尺寸不再整批重傳，降低同步負擔。
+- 修正一個會反覆卡住約半秒的原因：原本每秒都重新搜尋沒有安裝的外部模組，讓遊戲和操作請求一起等待。
+- 現在只有載入的程式庫有變化時才重新檢查，避免一直做相同的搜尋；後載入的模組仍會被檢查。
+- 保留既有相容功能與主端操作判定；沒有改動連線握手、封包順序、逾時或同步頻率。
 
-化學品、酸鹼、水質、液體比例及植物／動物基因，仍由房主的遊戲運算，再同步實際數值。這次沒有改動連線握手、逾時或降低同步頻率。深空串門（Probably Multiplayer）相容功能已移除；安裝包只含 DLL、manifest 與封面，原始碼在 GitHub。
+1.3.41 的對話、舉槍與機台同步修正保留。化學品、水質、液體比例與基因仍由房主遊戲運算並同步。深空串門（Probably Multiplayer）相容功能已移除；安裝包只有 DLL、manifest 與封面，原始碼在 GitHub。
 
-Version **1.3.41**, for game **0.46D**. Fixes guest dialogue disappearing while the host still awaits completion, delayed aiming approvals reopening the view after holstering, and shared aiming interrupting dialogue bookkeeping. Reduces redundant machine readout comparisons, unchanged slider updates and unchanged grid-size data. Handshakes, timeouts and sync frequency are unchanged. Everyone must use the same build and restart. Chemistry, water and genetics remain host-calculated. Probably Multiplayer integration is removed; runtime packages contain only the DLL, manifest and preview.
+Version **1.3.42**, for game **0.46D**. Fixes recurring stalls caused by searching every second for optional mods that were not installed. Discovery now repeats when the loaded assembly count changes, retaining detection of later-loaded mods and existing authority patches. Handshakes, packet ordering, timeouts and sync frequency are unchanged. The dialogue, aiming and machine sync fixes from 1.3.41 remain included. Everyone must update to the same build and restart. Probably Multiplayer integration is removed; runtime packages contain only the DLL, manifest and preview.
 
 ## 本版核對範圍
 
-本次修正原始碼已完成一輪獨立桌面的本機雙程序背景測試（`perf1340`）：經遊戲掃描器載入、朋友加入、對話等待與推進、交付未完成時拒絕出售並回覆原因、完成後出售成功及同步收益、容器搬移、格子尺寸變化與完整重同步。237 個同步物件下，朋友完成 19 次房主確認操作，未發生斷線或套用錯誤。發布時僅更新版號與說明並編譯正式包，沒有重跑整套遊戲測試。
+發布前先做一輪分段計時定位，再對修正原始碼做一輪獨立桌面的本機雙程序驗證（`perf1340`）。8 個缺席模組型別的舊搜尋工作實測耗時 515～522 ms；定位輪最慢操作約 612 ms，其中客端等待送出就占 525 ms。這個停頓來源已修正，不再將其列為未定位。
 
-同輪比較中，33 組機台讀數每樣本比對 10 輪，舊 JSON 比對中位耗時 7.505 ms，新欄位比對 0.206 ms；這只代表該階段，不是整個遊戲加速比例。49 個庫存格的尺寸資料，完整為 4,236 bytes，無變動增量為 2 bytes；也不是整包網路流量。
+| 同情境本機取樣（237 個同步物件、12 秒） | 修正前 | 修正後 |
+|---|---:|---:|
+| 操作回覆中位數 | 114.28 ms | 35.32 ms |
+| 操作回覆 P95 | 612.11 ms | 41.02 ms |
+| 完成操作數 | 15 | 24 |
 
-**卡頓尚未完全解決。** 本機操作回覆中位 52.54 ms，P95 為 545.49 ms，仍有約半秒的延遲；房主同步擷取中位 14.01 ms。尚未定位這段偶發延遲的完整原因。測試是同機兩程序、原版加本模組的 TCP/TLS 連線，不能代表跨帳號 Steam 外網、八人長時間遊玩或任意模組組合。本輪也沒有重跑所有 84 項操作；下方較早的測試結果屬歷史範圍。
+修正後取樣沒有再出現每秒約半秒的停頓。加入、對話等待與推進、交付期間拒絕出售並回覆原因、交付後成交與收益同步、容器搬移、格子尺寸變化及完整重同步均完成，沒有斷線或套用錯誤。發布時只更新版號與說明、編譯正式包，未再次重跑遊戲測試。
 
-One isolated local two-process run of the pre-release source passed joining, host-controlled dialogue, refusal during pending delivery, sale after delivery, container moves, changed grid dimensions and full resync, with no disconnects or apply errors. Publication changes only the version and documentation, followed by a release build. Performance measurements cover specific processing stages, not a full old/new FPS comparison. Operation response median was 52.54 ms and P95 was 545.49 ms: occasional latency remains unresolved. This does not validate cross-account Steam relay, Internet play, eight players, arbitrary mods or every operation.
+測試是同機兩程序、原版加本模組的 TCP/TLS 連線；不是跨帳號 Steam 外網、八人長時間或所有第三方模組組合的驗證，也沒有重新測完全部 84 項操作。首次搜尋或新模組載入後仍需檢查；修正的是沒有變化時反覆搜尋造成的停頓，不保證任何環境都零延遲。下方較早的測試結果屬歷史範圍。
+
+A diagnostic run identified a 515–522 ms optional-mod search recurring on the main thread. One local two-process verification run after the fix passed joining, dialogue, sale rejection during delivery, successful sale and synchronized proceeds after delivery, container moves, grid resizing and full resync, with no disconnects or apply errors. In 12-second samples with 237 items, median response fell from 114.28 to 35.32 ms and P95 from 612.11 to 41.02 ms. These are local measurements, not guarantees for Internet play, eight players or arbitrary mods. Initial discovery and newly loaded assemblies still require a scan. Release preparation changes only version/documentation and compiles the package.
 
 ## 使用方式
 

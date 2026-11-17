@@ -177,6 +177,7 @@ namespace ShopTogether {
    }finally{item.unitValue=before;PlayerStore.Instance.playerCash=cash;}
   }
   static IEnumerator Performance1339(Connection root,bool host){
+   bool trace=Argument("--smc-suite")=="perf1340";if(trace)LatencyTrace.Begin();
    GameItem item=null;
    if(host){item=MachineFixture("magnifier","R139_PERF_TARGET");GeneralHelper.SetItemOwned(item,true);root.World.Index();root.SyncStateSoon();Signal("R139_PERF_START");}
    else{bool started=false;var wait=Wait(()=>(started=started||Received("R139_PERF_START"))&&(item=Find(root,"R139_PERF_TARGET"))!=null,"performance target and start signal synchronized",60);while(wait.MoveNext())yield return wait.Current;}
@@ -191,6 +192,7 @@ namespace ShopTogether {
    Require(root.Ready&&(host||latency.Count>0),"performance sample kept connection and confirmed host actions");
    Debug.Log("[SMC PERF] release1339 role="+(host?"host":"client")+" items="+root.World.Items.Count+" frames="+frames.Count+" frameMedianMs="+Percentile(frames,.5).ToString("F2")+" frameP95Ms="+Percentile(frames,.95).ToString("F2")+" captureSamples="+CaptureMilliseconds.Count+" captureMedianMs="+Percentile(CaptureMilliseconds,.5).ToString("F2")+" captureP95Ms="+Percentile(CaptureMilliseconds,.95).ToString("F2")+" confirmed="+latency.Count+" responseMedianMs="+Percentile(latency,.5).ToString("F2")+" responseP95Ms="+Percentile(latency,.95).ToString("F2"));
    if(host){var wait=Wait(()=>Received("R139_PERF_DONE"),"client completed performance sample",60);while(wait.MoveNext())yield return wait.Current;}else Signal("R139_PERF_DONE");
+   if(trace)LatencyTrace.End();
   }
  }
 }
