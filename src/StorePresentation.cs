@@ -27,13 +27,31 @@ namespace ShopTogether {
         long appliedCustomer=-1,appliedDialog=-1;
         string appliedSprite;
         static List<FieldInfo> Fields(){var result=new List<FieldInfo>();foreach(var field in typeof(StoreClient).GetFields(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance)){if(field.Name.StartsWith("<",StringComparison.Ordinal))continue;var t=field.FieldType;if(t.IsPrimitive||t.IsEnum||t==typeof(string)||t==typeof(List<string>)||t==typeof(double?))result.Add(field);}return result;}
+        // These are fixed game fields already resolved by Fields(), not names supplied
+        // by a peer. Avoid ModReflect's caller stack walk for each field on every
+        // capture/apply. A derived customer retains the original name-based lookup
+        // so a mod's shadowed field is not silently replaced by the base field.
+        internal static Dictionary<string,string> CaptureFields(StoreClient customer){
+            bool native=customer.GetType()==typeof(StoreClient);
+            var result=new Dictionary<string,string>(fields.Count);
+            foreach(var field in fields)result[field.Name]=JsonConvert.SerializeObject(native?field.GetValue(customer):ModReflect.Get(customer,field.Name));
+            return result;
+        }
+        internal static void ApplyFields(StoreClient customer,Dictionary<string,string> values){
+            if(values==null)return;
+            bool native=customer.GetType()==typeof(StoreClient);
+            foreach(var field in fields){string json;if(!values.TryGetValue(field.Name,out json))continue;
+                var value=JsonConvert.DeserializeObject(json,field.FieldType,fieldSettings);
+                if(native)field.SetValue(customer,value);else ModReflect.Set(customer,field.Name,value);
+            }
+        }
         internal static GameInventory CustomerInventory(){var customer=PlayerStore.Instance.currentClientInstance;return customer==null?null:ModReflect.Get<GameGridInventory>(customer,"gridInv");}
         internal StoreView Capture(WorldReplica world){
             var instance=PlayerStore.Instance.currentClientInstance;if(instance!=lastCustomer){lastCustomer=instance;customerSerial++;}
             var ui=DialogUIManager.Instance;var dialog=ui==null?null:ui.currentDialog;
             var manager=PlayerStore.Instance.storeClientManager;
             var result=new StoreView{customer=instance==null?0:customerSerial,hasDialog=dialog!=null,negotiatedItem=world.Id(PlayerStore.Instance.currentNegociatedItem),clientsLeft=manager!=null&&manager.clientStack!=null?manager.clientStack.Count:0};
-            if(instance!=null){var blueprint=instance.GetClientBlueprint();Diagnostics.Soft("customer deals",()=>CustomerDeals.Capture(blueprint,world,result));result.customerFields=new Dictionary<string,string>();foreach(var field in fields)result.customerFields[field.Name]=JsonConvert.SerializeObject(ModReflect.Get(blueprint,field.Name));result.sprite=blueprint.spriteName;}
+            if(instance!=null){var blueprint=instance.GetClientBlueprint();Diagnostics.Soft("customer deals",()=>CustomerDeals.Capture(blueprint,world,result));result.customerFields=CaptureFields(blueprint);result.sprite=blueprint.spriteName;}
             if(dialog!=null){result.title=dialog.title;result.text=dialog.plainText;var choices=new List<ChoiceView>();if(dialog.choices!=null)for(int i=0;i<dialog.choices.Count;i++){var line=dialog.choices[i].Item2;choices.Add(new ChoiceView{title=line.title,text=line.plainText,enabled=dialog.IsChoiceEnabledAt(i)});}result.choices=choices.ToArray();}
             string lineSignature=JsonConvert.SerializeObject(new object[]{result.title,result.text,result.choices});if(dialog!=lastDialog||lineSignature!=lastLine){lastDialog=dialog;lastLine=lineSignature;dialogSerial++;}result.dialog=dialogSerial;return result;
         }
@@ -54,7 +72,7 @@ namespace ShopTogether {
             }
             if(view.customer==0){CustomerDeals.Reset();if(StoreUIManager.Instance!=null)StoreUIManager.Instance.HideClient();return;}
             var blueprint=PlayerStore.Instance.currentClientInstance.GetClientBlueprint();
-            foreach(var field in fields){string value;if(view.customerFields!=null&&view.customerFields.TryGetValue(field.Name,out value))ModReflect.Set(blueprint,field.Name,JsonConvert.DeserializeObject(value,field.FieldType,fieldSettings));}
+            ApplyFields(blueprint,view.customerFields);
             Diagnostics.Soft("customer deals",()=>CustomerDeals.Apply(blueprint,view,world,changed));
             if(StoreClientMono.Instance!=null){if(appliedSprite!=view.sprite&&!string.IsNullOrEmpty(view.sprite)){StoreClientMono.Instance.image.sprite=SpriteDict.Instance.ShowClientSprite(view.sprite);appliedSprite=view.sprite;}if(changed){StoreUIManager.Instance.DisplayClient();StoreClientMono.Instance.SetImmediatlyArrive();}}
         }

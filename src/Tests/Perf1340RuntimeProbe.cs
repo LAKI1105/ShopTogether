@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
+using Newtonsoft.Json;
 using UnityEngine;
 namespace ShopTogether {
  internal static partial class RuntimeProbe {
@@ -37,7 +38,7 @@ namespace ShopTogether {
    var check=new WorldReplica();var leases=new LeaseBook(check.Related);var full=check.Capture(true,0,leases,Time.realtimeSinceStartup);var delta=check.Capture(false,0,leases,Time.realtimeSinceStartup);
    Require(full.grids.Length>0&&delta.grids.Length==0,"unchanged grid dimensions omitted from incremental capture");
    Debug.Log("[SMC PERF] grid metadata fullBytes="+System.Text.Encoding.UTF8.GetByteCount(WireJson.ToJson(full.grids))+" idleIncrementalBytes="+System.Text.Encoding.UTF8.GetByteCount(WireJson.ToJson(delta.grids))+" grids="+full.grids.Length);
-   ReadoutBenchmark1340(root);Signal("P140_BENCH");wait=Wait(()=>Received("P140_BENCH_DONE"),"guest completed open-panel benchmark",60);while(wait.MoveNext())yield return wait.Current;
+   CustomerFieldsBenchmark(root);ReadoutBenchmark1340(root);Signal("P140_BENCH");wait=Wait(()=>Received("P140_BENCH_DONE"),"guest completed open-panel benchmark",60);while(wait.MoveNext())yield return wait.Current;
    var perf=Performance1339(root,true);while(perf.MoveNext())yield return perf.Current;
    Require(root.IsHost&&root.Ready&&root.HasFriends&&delivered==1,"host connection and exactly-once delivery survived full scenario");
   }
@@ -65,6 +66,38 @@ namespace ShopTogether {
    PanelBenchmark1340(root,machine);machine.contentWindow.Hide();Signal("P140_BENCH_DONE");
    var perf=Performance1339(root,false);while(perf.MoveNext())yield return perf.Current;
    Require(root.IsClient&&root.Ready&&root.ProbeApplyFailures==0,"guest stayed connected with no world-apply failures");
+  }
+  sealed class DerivedPerfCustomer : StoreClient { public new string displayName; }
+  static void CustomerFieldsBenchmark(Connection root){
+   var source=CurrentCustomer();var target=new StoreClient();
+   var fields=(List<System.Reflection.FieldInfo>)AccessTools.Field(typeof(StorePresentation),"fields").GetValue(null);
+   var settings=new JsonSerializerSettings{TypeNameHandling=TypeNameHandling.None,MetadataPropertyHandling=MetadataPropertyHandling.Ignore,MaxDepth=8};
+   Func<Dictionary<string,string>> legacyCapture=()=>{var result=new Dictionary<string,string>();foreach(var field in fields)result[field.Name]=JsonConvert.SerializeObject(ModReflect.Get(source,field.Name));return result;};
+   Action<Dictionary<string,string>> legacyApply=values=>{foreach(var field in fields){string json;if(values.TryGetValue(field.Name,out json))ModReflect.Set(target,field.Name,JsonConvert.DeserializeObject(json,field.FieldType,settings));}};
+   var expected=legacyCapture();var actual=StorePresentation.CaptureFields(source);
+   Require(expected.Count==actual.Count,"customer capture retains every legacy field");
+   foreach(var pair in expected)Require(actual[pair.Key]==pair.Value,"customer field wire value unchanged: "+pair.Key);
+   StorePresentation.ApplyFields(target,actual);
+   foreach(var field in fields)Require(JsonConvert.SerializeObject(ModReflect.Get(target,field.Name))==expected[field.Name],"customer field applied exactly: "+field.Name);
+   // Reapplying identical host input must still repair local drift. No cache may
+   // retain mutable customer lists or skip the host's authoritative assignment.
+   target.clientCash=int.MinValue;StorePresentation.ApplyFields(target,actual);
+   Require(target.clientCash==source.clientCash,"unchanged host snapshot restores locally changed customer cash");
+   actual["clientBuyingIdList"]="[\"perf_first\"]";StorePresentation.ApplyFields(target,actual);
+   actual["clientBuyingIdList"]="[\"perf_second\",\"perf_third\"]";StorePresentation.ApplyFields(target,actual);
+   Require(target.clientBuyingIdList.Count==2&&target.clientBuyingIdList[0]=="perf_second","changed customer lists replace prior values");
+   var derived=new DerivedPerfCustomer{displayName="derived"};((StoreClient)derived).displayName="base";
+   var derivedValues=StorePresentation.CaptureFields(derived);
+   Require(derivedValues["displayName"]==JsonConvert.SerializeObject("derived"),"derived customer preserves name-based field lookup");
+   StorePresentation.ApplyFields(derived,new Dictionary<string,string>{{"displayName","\"updated\""}});
+   Require(derived.displayName=="updated"&&((StoreClient)derived).displayName=="base","derived customer write preserves shadowed field behavior");
+   var oldTimes=new List<double>();var newTimes=new List<double>();var timer=new System.Diagnostics.Stopwatch();
+   for(int round=0;round<10;round++)for(int side=0;side<2;side++){
+    bool old=(round+side)%2==0;timer.Restart();
+    for(int repeat=0;repeat<4;repeat++){if(old)legacyApply(legacyCapture());else StorePresentation.ApplyFields(target,StorePresentation.CaptureFields(source));}
+    timer.Stop();if(round>0)(old?oldTimes:newTimes).Add(timer.Elapsed.TotalMilliseconds/4);
+   }
+   Debug.Log("[SMC PERF] customer-fields fields="+fields.Count+" captureAndApplyOldMedianMs="+Percentile(oldTimes,.5).ToString("F3")+" captureAndApplyNewMedianMs="+Percentile(newTimes,.5).ToString("F3"));
   }
   static void ReadoutBenchmark1340(Connection root){
    var reader=new HostReadouts();var samples=reader.Capture(root.World,true);var copies=WireJson.FromJson<MachineReadout[]>(WireJson.ToJson(samples));
