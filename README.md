@@ -38,6 +38,26 @@ Local two-process checks covered host backpack selection, shared outings and ret
 
 外出與回店是全員同行，垃圾場的拾荒次數、地上物品、口袋與背包由大家共用。選中的實體背包及原有內容依原版規則帶出。正常回店時，只帶回背包和口袋裡的物品；留在地上的物品不會帶回。確認期間內容改變或有人拿取物品時，請重新操作。
 
+## 連不上時，先看這裡
+
+1. **兩邊都更新、重開遊戲。** 確認遊戲和多人模組是同一版；畫面若說缺少模組或版本不同，先照提示處理。
+2. **不在同一個區網，就開一般房間。** 雙方登入 Steam，房主開房後進入店鋪，朋友用 Steam 好友加入，或貼上這次房間的完整連線碼。房主重開房後，舊連線碼不要再用。
+3. **防火牆要允許 Steam 和遊戲連線。** 到「Windows 安全性 → 防火牆與網路保護 → 允許應用程式通過防火牆」，確認 Steam 和 Probably Stolen 已獲允許。若用其他防毒或防火牆，也檢查有沒有擋住它們；不用把整個防火牆關掉。
+4. **一般 Steam 連線通常不用自己開路由器連接埠。** 手動 IP 的外網直連才需要另外設定。不熟悉設定就先用 Steam 好友加入；公司、學校等受限制的網路，請管理員確認能不能使用 Steam 連線。
+5. **還是連不上，請附錯誤文字。** 告訴我們兩邊版本、怎麼加入，以及卡在哪一步。不要公開完整連線碼，裡面含房間密碼。連不上不一定就是防火牆，也可能需要依錯誤訊息繼續查。
+
+需要詳細設定時，請看 [Windows 防火牆說明](https://support.microsoft.com/en-au/windows/security/firewall/risks-of-allowing-apps-through-windows-firewall) 與 [Steam 官方連線說明](https://help.steampowered.com/en/faqs/view/2EA8-4D75-DA21-31EB)。
+
+### Can't connect? Start here
+
+1. Update and restart both games. Match game/mod versions and follow any missing-mod or version warning.
+2. For players on different networks, use a normal room, not a LAN room. Both players sign into Steam; the host opens a room and enters the shop. Join through Steam friends or the current room code. Get a new code after the host recreates the room.
+3. Allow Steam and Probably Stolen through Windows Firewall. Open Windows Security → Firewall & network protection → Allow an app through firewall. Check any other antivirus/firewall too; keep the firewall on.
+4. Steam connections usually need no manual router port forwarding. Internet connections by manual IP need separate setup. On school or work networks, ask the administrator whether Steam connections are allowed.
+5. Still stuck? Share both versions, how you joined, where it stopped and the exact error. Keep room codes private: they contain the room password. A failed connection does not by itself identify the cause.
+
+Detailed help: [Windows Firewall](https://support.microsoft.com/en-au/windows/security/firewall/risks-of-allowing-apps-through-windows-firewall) / [Steam connection requirements](https://help.steampowered.com/en/faqs/view/2EA8-4D75-DA21-31EB).
+
 ## How it works
 
 The host runs gameplay simulation and owns the save. Guests render replicated game state and send validated action requests. This is neither desktop streaming nor remote keyboard/mouse injection. Item leases arbitrate competing actions; separate local UI state keeps one player's menus and aiming view from replacing another player's screen.
