@@ -10,7 +10,7 @@ namespace ShopTogether {
         internal static bool Running;
         static float next;
         internal static void Tick(Connection s) {
-            if (s == null || !s.IsClient || !ReplicaSession.ClientStore || Time.realtimeSinceStartup < next) return;
+            if (s == null || !s.IsClient || !s.Ready || !ReplicaSession.ClientStore || !ReplicaSession.SceneReady || EmporiumEntry.Instance == null || Time.realtimeSinceStartup < next) return;
             next = Time.realtimeSinceStartup + .1f;
             Running = true;
             try { s.World.Readouts.ApplyOpen(s.World); HopperReadout.Tick(); ScannerIntent.RefreshOpen(s.World); }

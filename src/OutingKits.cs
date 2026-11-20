@@ -256,11 +256,21 @@ namespace ShopTogether {
     /// <summary>Host side: the dumping-ground ground is sent to friends right after a search, not at the next sweep.</summary>
     [HarmonyPatch(typeof(ScavHelper), "ScavengeDumpingGrounds")]
     internal static class SearchSyncsGround {
-        static void Prefix(out int __state) { __state = PlayerStore.Instance != null ? PlayerStore.Instance.scavengingAttempts : int.MinValue; }
-        static void Postfix(int __state) {
-            var session = Connection.Current; var store = PlayerStore.Instance; var entry = EmporiumEntry.Instance;
-            if (session != null && session.IsHost && store != null && entry != null && __state != int.MinValue && store.scavengingAttempts != __state) session.SyncGroundSoon(entry.afterhourInventory);
+        internal struct SearchState { internal int attempts; internal bool scoped, executing; }
+        static void Prefix(out SearchState __state) {
+            var session = Connection.Current;
+            __state = new SearchState { attempts = PlayerStore.Instance != null ? PlayerStore.Instance.scavengingAttempts : int.MinValue,
+                scoped = session != null && session.IsHost && session.Ready, executing = NativeActions.Executing };
+            // Native scavenging creates loot inside the host's button/input scope.
+            // Finish that authoritative operation before routing item moves again:
+            // the new loot has no world ID until it has reached the ground.
+            if (__state.scoped) NativeActions.Executing = true;
         }
+        static void Postfix(SearchState __state) {
+            var session = Connection.Current; var store = PlayerStore.Instance; var entry = EmporiumEntry.Instance;
+            if (session != null && session.IsHost && store != null && entry != null && __state.attempts != int.MinValue && store.scavengingAttempts != __state.attempts) session.SyncGroundSoon(entry.afterhourInventory);
+        }
+        static Exception Finalizer(Exception __exception, SearchState __state) { if (__state.scoped) NativeActions.Executing = __state.executing; return __exception; }
     }
 
     // ---------------- friend side: only the host goes out and comes back ----------------

@@ -1,5 +1,19 @@
 # 更新紀錄 / Changelog
 
+## 1.3.45 — 2026-11-20
+
+- 修正房主在垃圾場拾荒時，搜尋次數用了，物品卻沒有出現在地上的問題。
+- 修正朋友從遊戲選單回主畫面後，模組仍繼續同步店內資料，可能引發錯誤或斷線的問題。
+- 機台畫面等待連線及場景準備完成後才更新。
+- 修正物品狀態改變、交易尚未結束等操作拒絕，被誤顯示成「其他玩家使用中」；現在保留實際拒絕原因。
+
+### English
+
+- Fixed host scavenging consuming a search without placing the generated items on the ground.
+- Stop guest synchronization before returning through the game's main-menu button, avoiding updates to a shop scene that is being unloaded.
+- Wait for the connection and shop scene to be ready before refreshing machine panels.
+- Stop mislabeling rejected item actions, such as changed item state or pending dialogue, as another player using the item. Show the actual refusal reason.
+
 ## 1.3.44 — 2026-11-17
 
 - 修正房主晚上出門時，背包選不到、連垃圾袋選項都不見的問題。

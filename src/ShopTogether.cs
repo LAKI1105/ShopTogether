@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.44";
+        internal const string BuildVersion="1.3.45";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -349,7 +349,10 @@ namespace ShopTogether {
                 if(reply.granted)LocalLeases[id]=reply.token;else LocalLeases.Remove(id);
             }
             if(!reply.granted){
-                int owner=current.Count>0?BusyOwner(current.ToArray()):-1;if(current.Count>0)ItemBusyHint.Show(owner);
+                // Only a lease refusal is a busy-item response. A stale move,
+                // pending dialogue or invalid placement has its own reason.
+                int owner=reply.reason=="~SMC096~"&&current.Count>0?BusyOwner(current.ToArray()):-1;
+                if(current.Count>0&&reply.reason=="~SMC096~")ItemBusyHint.Show(owner);
                 status=reply.reason;if(!string.IsNullOrEmpty(reply.reason)&&owner<0)RemoteActions.Notice(reply.reason);
                 // A refusal for an earlier drop must not revoke a later pickup of the same item.
                 if(IsClient&&current.Count>0)NativeActions.CancelItems(current.ToArray());
@@ -429,8 +432,15 @@ namespace ShopTogether {
         }
         // Same steps as the game's own pause menu "Main Menu" button, without its save/analytics. A friend's copy of the
         // shop is never saved: the save barriers stay active until the menu scene is up.
+        internal void LeaveClientToMenu(){
+            // Keep ClientStore set until the menu has loaded, so the replica is
+            // never saved. Stop networking before native scene objects disappear.
+            ReplicaSession.SceneReady=false;
+            Stop();ReturnToMenu();
+        }
         void ReturnToMenu(){
             if(returningToMenu||MainMenuUIController.Instance!=null)return;returningToMenu=true;
+            ReplicaSession.SceneReady=false;
             bool was=WorldReplica.Applying;WorldReplica.Applying=true;
             try{if(NewGameData.Instance!=null)NewGameData.Instance.isLoadFromMainMenu=true;if(PlayerStore.Instance!=null)PlayerStore.Instance.Reset();}catch(Exception e){Debug.LogWarning("[ShopTogether] leave shop: "+e.Message);}finally{WorldReplica.Applying=was;}
             EmporiumEntry.ResetData();PlayerStore.ResetData();StoreStation.ResetData();
@@ -486,6 +496,14 @@ namespace ShopTogether {
         internal bool ShowCursors{get{return Ready&&(IsHost||IsClient)&&EmporiumEntry.Instance!=null;}}
         void OnGUI(){Cursors.Draw(this);if(ShowCursors)Activity.Draw(IsHost?0:PlayerId);if(IsHost&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC089~")))ShowHostReady();if(IsClient&&GUI.Button(new Rect(Screen.width-170,10,160,32),Loc.Text("~SMC238~")))ShowStatus();
             if(IsClient&&Ready&&HostPhase.Away){GUI.Box(new Rect(Screen.width/2-220,Screen.height/2-40,440,80),Loc.Text(""));GUI.Label(new Rect(Screen.width/2-200,Screen.height/2-25,400,50),Loc.Text(HostPhase.Text));}
+        }
+    }
+    [HarmonyPatch(typeof(EscapeUIManager), "OnMainMenu")]
+    internal static class FriendLeaveThroughNativeMenu {
+        static bool Prefix() {
+            var session=Connection.Current;
+            if(session==null||!session.IsClient)return true;
+            session.LeaveClientToMenu();return false;
         }
     }
 }

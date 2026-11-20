@@ -4,29 +4,23 @@ A community co-op mod for **Probably Stolen**. Up to eight players, including th
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-版本：**1.3.44**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
+版本：**1.3.45**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
 顧客進出店的移動與對話內容跟隨房主同步。外出與回店採全員同行；雙手槽位、背包與地面物品共用，各自的游標和選單仍可獨立操作。化學品、水質、液體比例與基因由房主遊戲運算並同步數值。安裝包只有 DLL、manifest 與封面；原始碼在本儲存庫。
 
-本次修正摘要請見 [1.3.44 更新紀錄](CHANGELOG.md)。
+本次修正摘要請見 [1.3.45 更新紀錄](CHANGELOG.md)。
 
-Version **1.3.44**, for game **0.46D**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
+Version **1.3.45**, for game **0.46D**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
 
 ## 本版核對範圍
 
-修正程式已在獨立 Windows 桌面，以本機雙程序完成 `reported1344` 驗證：房主垃圾袋與背包選擇、全員出門及返回、共用背包操作、顧客進店及兩種離店路徑、連續三句台詞按序顯示、重新同步不重播。同行完成朋友加入、對話等待及推進、交付前拒絕出售與交付後成交、收益同步、容器搬移、格子尺寸變化及完整重新同步。
+1.3.45 的拾荒與離開場景修正，已在獨立 Windows 桌面完成 `outing1344` 本機雙程序驗證：房主及朋友拾荒、過時客端資料仍由房主拒絕並回覆受傷原因、繃帶治療、地面物品放入共用背包、完整重新同步、原版選單離開及重新加入、強制中斷直連後釋放物品控制權、重新加入恢復物品，以及朋友發起全員回店。物品編號、種類及數量核對一致。
 
-| 本輪本機取樣（239 個同步物件、12 秒） | 結果 |
-|---|---:|
-| 操作回覆中位數／P95 | 24.61／29.70 ms |
-| 完成操作數 | 24 |
-| 房主同步擷取中位數／P95 | 8.52／11.45 ms |
+房主拖不上檯面且顯示「其他玩家使用中」的玩家回報，已確認並修正拒絕提示誤報，尚未定位造成持續無法搬移的原因。新增的 `hostdrag1345` 測試在輸入工具初始化時中止，尚未執行拖放；測試工具已調整但未重跑，不列為通過。
 
-顧客同步與中槍動畫的交界修正另以一次 `death` 專項完成驗證：中槍變色、倒下期間隱藏及動畫後恢復房主狀態正確；房主旁觀者的鏡頭、背包和拖曳未被拉走。兩項完成時皆無客端套用失敗或房主診斷回報。首次驗證工具未等待原版淡出後開圖而中止，修正等待條件後才完成，不將中止算通過。
+這是本機雙程序直連驗證，未涵蓋不同 Steam 帳號的外網、八人長時間或所有第三方模組組合，也沒有重新測完全部 84 項。玩家回報的 ModLoader 被銷毀及多模組環境的全部空物件錯誤，尚未確認同一根因，不能視為全部修復。
 
-這些是同機雙程序驗證，不是跨帳號 Steam 外網、八人長時間或所有第三方模組組合的驗證，也沒有重新測完全部 84 項操作。發布階段只更新版號與文件並編譯正式包，不重跑遊戲測試。測試程序及暫存由執行器清理，原有玩家存檔、設定與訂閱 DLL 未被測試替換。
-
-Local two-process checks covered host backpack selection, shared outings and return, customer arrival/departure, ordered dialogue, joining, sale refusals and successful sales, container moves and full resync. A separate fatal-shot check covered the interaction between replicated movement and local shot animations. These results do not establish Internet, eight-player or universal mod compatibility. Release preparation updates the version and documentation and compiles the production package.
+Local two-process outing checks covered host and guest scavenging, host refusal with stale guest health, bandage use, shared-backpack transfers, full resync, menu exit/rejoin, forced direct-connection loss, lease cleanup, rejoining with preserved items and returning home. These results do not establish cross-account Steam Internet connectivity, eight-player stability or universal mod compatibility. The reported ModLoader destruction and all null-reference errors in multi-mod sessions have not been traced to a single confirmed cause.
 
 ## 使用方式
 
