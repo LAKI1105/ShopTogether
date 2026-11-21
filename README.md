@@ -4,23 +4,23 @@ A community co-op mod for **Probably Stolen**. Up to eight players, including th
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-版本：**1.3.45**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
+版本：**1.3.46**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
 顧客進出店的移動與對話內容跟隨房主同步。外出與回店採全員同行；雙手槽位、背包與地面物品共用，各自的游標和選單仍可獨立操作。化學品、水質、液體比例與基因由房主遊戲運算並同步數值。安裝包只有 DLL、manifest 與封面；原始碼在本儲存庫。
 
-本次修正摘要請見 [1.3.45 更新紀錄](CHANGELOG.md)。
+本次修正摘要請見 [1.3.46 更新紀錄](CHANGELOG.md)。
 
-Version **1.3.45**, for game **0.46D**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
+Version **1.3.46**, for game **0.46D**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
 
 ## 本版核對範圍
 
-1.3.45 的拾荒與離開場景修正，已在獨立 Windows 桌面完成 `outing1344` 本機雙程序驗證：房主及朋友拾荒、過時客端資料仍由房主拒絕並回覆受傷原因、繃帶治療、地面物品放入共用背包、完整重新同步、原版選單離開及重新加入、強制中斷直連後釋放物品控制權、重新加入恢復物品，以及朋友發起全員回店。物品編號、種類及數量核對一致。
+控制權變更已在獨立 Windows 桌面完成 `leases1345` 本機雙程序驗證：過期續期不能復活占用、房主更新失效操作權後可搬上後檯及搬回、過期操作回覆正確原因、有效占用仍受保護，以及部分取得失敗後清除占用。群組放開、背包與內容物的關聯占用、完整重新同步、強制中斷直連、重新加入後的物品身分與控制權也均完成核對。過期邊界使用受控時間；原版輸入處理器由模擬輸入驅動。
 
-房主拖不上檯面且顯示「其他玩家使用中」的玩家回報，已確認並修正拒絕提示誤報，尚未定位造成持續無法搬移的原因。新增的 `hostdrag1345` 測試在輸入工具初始化時中止，尚未執行拖放；測試工具已調整但未重跑，不列為通過。
+`hostdrag1345` 另已完成房主使用獨立桌面滑鼠訊息，在庫存與前、後檯間來回拖放，以及朋友放開後房主接手、朋友收到位置同步的驗證。既有 `outing1344` 驗證涵蓋拾荒、受傷拒絕原因、治療、共用背包、回主選單、斷線重加入及全員回店。
 
-這是本機雙程序直連驗證，未涵蓋不同 Steam 帳號的外網、八人長時間或所有第三方模組組合，也沒有重新測完全部 84 項。玩家回報的 ModLoader 被銷毀及多模組環境的全部空物件錯誤，尚未確認同一根因，不能視為全部修復。
+**尚未確認：** 玩家原存檔及其他模組組合中的所有持續拖不動情況，尚未重現；不能把本次控制權缺陷修正寫成全部解決。外部 Steam 網路、八人長時間遊玩與全部 84 項並未在本輪重新測試。ModLoader 被銷毀及多模組環境中的全部空物件錯誤，也尚未確認同一根因。
 
-Local two-process outing checks covered host and guest scavenging, host refusal with stale guest health, bandage use, shared-backpack transfers, full resync, menu exit/rejoin, forced direct-connection loss, lease cleanup, rejoining with preserved items and returning home. These results do not establish cross-account Steam Internet connectivity, eight-player stability or universal mod compatibility. The reported ModLoader destruction and all null-reference errors in multi-mod sessions have not been traced to a single confirmed cause.
+Local two-process checks covered expired control, host reacquisition and movement, accurate refusal messages, valid-holder protection, partial-acquisition cleanup, group release, backpacks, resync, forced direct-connection loss and rejoining. These checks do not establish that all reported persistent drag failures are resolved, nor validate external Steam networking, eight-player endurance or every third-party mod combination. Release notes are in the [changelog](CHANGELOG.md).
 
 ## 使用方式
 

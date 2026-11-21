@@ -1,5 +1,23 @@
 # 更新紀錄 / Changelog
 
+## 1.3.46 — 2026-11-22
+
+- 修正已過期的物品占用，仍可能被遲到的續期重新延長，讓房主繼續被擋住。
+- 房主記住的操作權失效時，現在會重新取得，不再拿舊的操作權搬物品。
+- 沒有其他玩家占用、只是操作權失效時，改成提示「操作權已失效，請放開物品再重新操作」。
+- 修正房主一次取得多件物品的操作權時，部分失敗卻留下占用，可能持續擋住朋友的問題。
+
+已完成相關本機雙人驗證，包含過期處理、群組放開、背包、重新同步、強制直連斷線及重新加入。玩家回報的所有持續拖不動情況尚未在原環境重現，本次不宣稱全部解決。
+
+### English
+
+- Fixed expired item holds being extended by a late renewal, potentially continuing to block the host.
+- The host now reacquires item control when its cached permission is no longer valid.
+- An expired permission without another player holding the item now asks you to release it and try again, instead of saying another player is using it.
+- Fixed failed multi-item control acquisition leaving earlier holds behind and potentially blocking guests.
+
+Local two-process checks covered expiry, group release, backpacks, resync, forced direct-connection loss and rejoining. Not all reported persistent drag failures have been reproduced in players' environments; this release does not claim to resolve them all.
+
 ## 1.3.45 — 2026-11-20
 
 - 修正房主在垃圾場拾荒時，搜尋次數用了，物品卻沒有出現在地上的問題。

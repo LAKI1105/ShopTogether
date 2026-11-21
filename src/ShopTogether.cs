@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.45";
+        internal const string BuildVersion="1.3.46";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -359,7 +359,17 @@ namespace ShopTogether {
             }
             FlushWaiting();
         }
-        internal void Claim(int[] ids){var fresh=new List<int>();foreach(int id in ids){deferredRelease.Remove(id);if(!LocalLeases.ContainsKey(id)&&requested.Add(id))fresh.Add(id);}for(int at=0;at<fresh.Count;at+=128)Send(new Request{kind=RequestKind.Claim,items=fresh.GetRange(at,Math.Min(128,fresh.Count-at)).ToArray()});}   // the host takes at most 128 per request
+        internal void Claim(int[] ids){
+            var fresh=new List<int>();double now=Time.realtimeSinceStartup;
+            foreach(int id in ids){
+                deferredRelease.Remove(id);
+                // The local token is only a cache. Expiry may have removed it
+                // from the host's authority book since the last pickup.
+                long token;if(IsHost&&LocalLeases.TryGetValue(id,out token)&&!Leases.Owns(0,id,token,now))LocalLeases.Remove(id);
+                if(!LocalLeases.ContainsKey(id)&&requested.Add(id))fresh.Add(id);
+            }
+            for(int at=0;at<fresh.Count;at+=128)Send(new Request{kind=RequestKind.Claim,items=fresh.GetRange(at,Math.Min(128,fresh.Count-at)).ToArray()});
+        }   // the host takes at most 128 per request
         void SendWorld(WorldDelta delta,Func<Peer,bool> to){
             World.LastSentVersion=delta.version;byte[] raw=Encode(delta);var packed=LargeTransfer.Pack(20,raw);if(packed.Type==26)Debug.Log("[ShopTogether] large update: "+(raw.Length/1024)+" KB in "+packed.Parts.Length+" compressed pieces (full="+delta.full+")");
             foreach(var p in peers.ToArray())if(to(p)){try{LargeTransfer.Deliver(p.Send,packed);p.initialSent=true;if(delta.full)p.wantsFull=false;}catch(Exception dropped){Leases.Disconnect(p.id);p.Dispose();peers.Remove(p);PlayerNames.Changed=true;Debug.Log("[ShopTogether] peer dropped while sending ("+PlayerNames.Of(p.id)+"): "+dropped.GetType().Name+" "+dropped.Message);}}

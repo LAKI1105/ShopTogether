@@ -1,6 +1,7 @@
 #if LAN_PROBE
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 namespace ShopTogether {
@@ -36,9 +37,14 @@ namespace ShopTogether {
   }
   static IEnumerator HostDragClient1345(Connection root){
    bool ready=false;var wait=Wait(()=>(ready=ready||Received("HOST45_CLAIM"))&&Find(root,"HOST45_DRAG")!=null,"host drag sequence completed",90);while(wait.MoveNext())yield return wait.Current;
-   int id=root.World.Id(Find(root,"HOST45_DRAG"));root.Claim(new[]{id});
+   var item=Find(root,"HOST45_DRAG");int id=root.World.Id(item);
+   StoreUIManager.Instance.CloseAllUI();ShowDragInventory1327(item.parentInventory);BeginDrag(item);
+   Require(ItemMouseDragHandler.current.IsDraggingItem,"guest native input handler starts item drag");
    wait=Wait(()=>root.LocalLeases.ContainsKey(id),"guest receives item control",30);while(wait.MoveNext())yield return wait.Current;Signal("HOST45_HELD");
-   wait=Wait(()=>Received("HOST45_RELEASE"),"host observed actual contention",60);while(wait.MoveNext())yield return wait.Current;root.Release(new[]{id});Signal("HOST45_RELEASED");
+   wait=Wait(()=>Received("HOST45_RELEASE"),"host observed actual contention",60);while(wait.MoveNext())yield return wait.Current;
+   pressed.Remove(KeyCode.Mouse0);ItemMouseDragHandler.current.UpdateRelease(new HashSet<KeyCode>{KeyCode.Mouse0});
+   Require(!ItemMouseDragHandler.current.IsDraggingItem&&!NativeActions.Retains(id),"guest native release clears drag and holder");
+   wait=Wait(()=>!root.LocalLeases.ContainsKey(id),"guest release clears local control",30);while(wait.MoveNext())yield return wait.Current;Signal("HOST45_RELEASED");
    wait=Wait(()=>Received("HOST45_COUNTER"),"host counter drop completed",60);while(wait.MoveNext())yield return wait.Current;
    wait=Wait(()=>Find(root,"HOST45_DRAG").parentInventory==EmporiumEntry.Instance.backInvinvElement,"guest sees host item on counter",60);while(wait.MoveNext())yield return wait.Current;Signal("HOST45_SEEN");
   }

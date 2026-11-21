@@ -25,7 +25,10 @@ namespace ShopTogether {
             int[] previous;if(holders.TryGetValue(holder,out previous)){holders.Remove(holder);var release=new List<int>();foreach(int id in previous){if(Array.IndexOf(ids,id)>=0)continue;bool retained=false;foreach(var other in holders.Values)if(Array.IndexOf(other,id)>=0){retained=true;break;}if(!retained)release.Add(id);}if(release.Count>0)Session.Release(release.ToArray());}
             int busy=Session.BusyOwner(ids);if(busy>=0)ItemBusyHint.Show(busy);
             holders[holder]=ids;Session.Claim(ids);
-            if(Session.IsHost)foreach(int id in ids)if(!Session.LocalLeases.ContainsKey(id)){holders.Remove(holder);return false;}
+            // A host claim may span multiple batches, or reuse an existing
+            // hold. If any item is refused, release the successful portion too;
+            // merely forgetting the holder leaves its leases renewing forever.
+            if(Session.IsHost)foreach(int id in ids)if(!Session.LocalLeases.ContainsKey(id)){Unhold(holder);return false;}
             return true;
         }
         internal static void Unhold(object holder){int[] ids;if(!holders.TryGetValue(holder,out ids))return;holders.Remove(holder);var released=new List<int>();foreach(int id in ids){bool retained=false;foreach(var other in holders.Values)if(Array.IndexOf(other,id)>=0){retained=true;break;}if(!retained)released.Add(id);}if(Session!=null&&released.Count>0)Session.Release(released.ToArray());}
@@ -99,7 +102,7 @@ namespace ShopTogether {
                     if(request.items.Length!=1||request.moves==null||request.moves.Length!=1)return Reject("~SMC171~");
                     var move=request.moves[0];GameItem item;long version;
                     if(move==null||!session.World.Items.TryGetValue(request.items[0],out item)||move.item!=request.items[0])return Reject("~SMC095~");
-                    if(!session.Leases.Owns(owner,move.item,move.lease,now))return Reject("~SMC096~");
+                    if(!RequireLease(session,owner,move.item,move.lease,now))return false;
                     if(!session.World.Versions.TryGetValue(move.item,out version))return Reject("~SMC312~");
                     if(move.count<1||move.count>item.unitCount)return Reject("~SMC313~");
                     GraphNodeStorage destination;
@@ -125,7 +128,7 @@ namespace ShopTogether {
                     if(request.items.Length<1||request.items.Length>2)return false;
                     GameItem item=session.World.Items[request.items[0]];
                     PanelRelay.SourceItem=item;PanelRelay.SourceIsActivation=(ItemOperation)request.operation==ItemOperation.Activate;
-                    if(!session.Leases.Owns(owner,session.World.Id(item),request.lease,now))return Reject("~SMC096~");
+                    if(!RequireLease(session,owner,session.World.Id(item),request.lease,now))return false;
                     switch((ItemOperation)request.operation){
                         case ItemOperation.Activate:if(!item.MayActivateSlotItem()||!item.CanActivateSlotItem())return Reject("~SMC317~");item.ActivateSlotItem();return true;
                         case ItemOperation.Toggle:if(!item.MayToggleSlotItem()||!item.CanToggleSlotItem())return Reject("~SMC318~");item.ToggleSlotItem();return true;
@@ -158,13 +161,18 @@ namespace ShopTogether {
 #endif
             return false;
         }
+        static bool RequireLease(Connection session,int owner,int id,long token,double now){
+            if(session.Leases.Owns(owner,id,token,now))return true;
+            // A missing/expired token is not evidence of another player.
+            return Reject(session.Leases.Available(owner,id,now)?"~SMC371~":"~SMC096~");
+        }
         static bool Move(Connection session,int owner,Request request,double now){
             if(request.moves==null||request.moves.Length<1||request.moves.Length>128||request.items.Length!=request.moves.Length)return Reject("~SMC171~");
             var slots=new List<SlotMarker>();var items=new List<GameItem>();var homes=new List<GameInventory>();var shapes=new List<GridShape>();
             foreach(var move in request.moves){GameItem item;long version;
                 if(move==null||!session.World.Items.TryGetValue(move.item,out item))return Reject("~SMC095~");
                 if(items.Contains(item)||Array.IndexOf(request.items,move.item)<0||move.rotation<0||move.rotation>3||Math.Abs((long)move.x)>2048||Math.Abs((long)move.y)>2048)return Reject("~SMC171~");
-                if(!session.Leases.Owns(owner,move.item,move.lease,now))return Reject("~SMC096~");
+                if(!RequireLease(session,owner,move.item,move.lease,now))return false;
                 if(!session.World.Versions.TryGetValue(move.item,out version)||version!=move.version)return Reject("~SMC312~");
                 if(move.count<1||move.count>item.unitCount||request.moves.Length>1&&move.count!=item.unitCount)return Reject("~SMC313~");
                 if(!item.MayRemove()||move.count>item.MaxNumRemove())return Reject("~SMC315~");

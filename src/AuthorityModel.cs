@@ -33,7 +33,7 @@ namespace ShopTogether {
         internal bool Available(int owner,int id,double now) { Expire(now);foreach(var p in leases)if(p.Value.owner!=owner&&(p.Key==id||related(p.Key,id)))return false;return true; }
         /// <summary>The other player holding this item (or its container/contents), or -1 when it is free for the requester.</summary>
         internal int OwnerOf(int requester,int id,double now) { Expire(now);foreach(var p in leases)if(p.Value.owner!=requester&&(p.Key==id||related(p.Key,id)))return p.Value.owner;return -1; }
-        internal void Renew(int owner,double now) { foreach(var p in leases)if(p.Value.owner==owner)p.Value.until=now+20; }
+        internal void Renew(int owner,double now) { Expire(now);foreach(var p in leases)if(p.Value.owner==owner)p.Value.until=now+20; }
         internal void Release(int owner,int[] ids) { if(ids==null)return;foreach(int id in ids){Lease l;if(leases.TryGetValue(id,out l)&&l.owner==owner)leases.Remove(id);} }
         internal void Disconnect(int owner) { foreach(var p in new List<KeyValuePair<int,Lease>>(leases))if(p.Value.owner==owner)leases.Remove(p.Key); }
         internal LeaseState[] Snapshot(double now) { Expire(now);var result=new List<LeaseState>();foreach(var p in leases)result.Add(new LeaseState{item=p.Key,owner=p.Value.owner,token=p.Value.token});return result.ToArray(); }
