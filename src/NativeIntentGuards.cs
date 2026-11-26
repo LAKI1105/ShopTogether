@@ -84,10 +84,10 @@ namespace ShopTogether {
             }
             if (type == typeof(BargainUIManager)) {
                 if (NegociationUIManager.IsTradeLocked()) return "~SMC247~";
-                var can = AccessTools.Method(type, "Can" + name);
+                var can = ((MethodInfo)ModReflect.Target(type, "Can" + name));
                 if (can == null || !(bool)can.Invoke(instance, null)) return "~SMC349~";
                 if (args.Length != 0) {
-                    var values = AccessTools.Field(type, "PRICE_PERCENTS").GetValue(null) as int[];
+                    var values = ModReflect.GetStatic(type,"PRICE_PERCENTS") as int[];
                     if (!(args[0] is int) || values == null || !values.Contains((int)args[0])) return "~SMC349~";
                 }
                 foreach (var goods in e.GetBackInvItems()) if (!AuthorityIntent.FreeTree(s, owner, goods)) return "~SMC096~";

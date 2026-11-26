@@ -14,11 +14,22 @@ namespace ShopTogether {
         static float nextSend;
 
         static bool watching;
+        internal static bool Quitting { get; private set; }
+        internal static void BeginQuit() { Quitting = true; }
+        internal static bool NormalLoaderShutdown(string message) {
+            return Quitting && message != null &&
+                message.StartsWith("[ModLoader] The mod loader object was destroyed", StringComparison.Ordinal);
+        }
         /// <summary>Friend: errors the game itself logs (outside the mod's own code) are also sent to the host's log.</summary>
         internal static void Watch() {
             if (watching) return; watching = true;
+            Application.quitting += BeginQuit;
             Application.logMessageReceived += (message, stack, type) => {
                 if (type != LogType.Exception && type != LogType.Error) return;
+                // Native ModLoader.OnDestroy logs the same error on normal application exit.
+                // Connection.OnDestroy may run later, leaving IsHost/IsClient true here.
+                // Keep genuine in-session destruction reports and every unrelated error.
+                if (NormalLoaderShutdown(message)) return;
                 var session = Connection.Current; if (session == null || (!session.IsClient && !session.IsHost)) return;
                 string first = (stack ?? "").Split('\n')[0].Trim();
                 string key = "log|" + message;

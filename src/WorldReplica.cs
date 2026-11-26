@@ -286,8 +286,27 @@ namespace ShopTogether {
                 foreach(var r in delta.items){GameItem item=Items[r.id];Walk(item,r.parent.root,r.id,new int[]{0},visited);}
                 var containers=new Dictionary<string,GameInventory>();foreach(var pair in addresses)if(pair.Value.container>0)containers.Add(pair.Value.container+":"+pair.Value.ordinal,pair.Key);
                 if(delta.grids!=null)foreach(var g in delta.grids){if(g.width<1||g.height<1||g.width>512||g.height>512)throw new InvalidOperationException("~SMC112~");var grid=ReplicaInventory(g.address,containers) as GameGridInventory;if(grid!=null&&(grid.inventoryShape.width!=g.width||grid.inventoryShape.height!=g.height))grid.SetShape(g.width,g.height);}
+                var destinations=new Dictionary<GameItem,GameInventory>();
                 foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv=ReplicaInventory(r.parent,containers);if(inv==null){
-                    Diagnostics.Report("layout",new InvalidOperationException("missing inventory root="+r.parent.root+" container="+r.parent.container+" ordinal="+r.parent.ordinal+" for "+item.identifier));throw new InvalidOperationException("~SMC069~");}if(item.parentInventory!=inv){if(item.parentInventory!=null)Placed(item,()=>item.parentInventory.Expel(item));if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~");}item.Validate();}
+                    Diagnostics.Report("layout",new InvalidOperationException("missing inventory root="+r.parent.root+" container="+r.parent.container+" ordinal="+r.parent.ordinal+" for "+item.identifier));throw new InvalidOperationException("~SMC069~");}destinations.Add(item,inv);}
+                // A slot's UncheckedAccept replaces its currentItem without
+                // detaching the previous occupant. Empty all departing slots
+                // before inserting anything, so swaps and replacements do not
+                // leave the old occupant with an impossible parent backlink.
+                var detach=new HashSet<GameItem>(leaving);
+                foreach(var pair in destinations)if(pair.Key.parentInventory!=pair.Value)detach.Add(pair.Key);
+                foreach(var item in detach){
+                    if(Gone(item)||item.parentInventory==null)continue;var from=item.parentInventory;
+                    Placed(item,()=>from.Expel(item));
+                    if(item.parentInventory!=null)throw new InvalidOperationException("~SMC142~ detach "+item.identifier+" from "+from.GetType().Name);
+                }
+                foreach(var r in delta.items){GameItem item=Items[r.id];GameInventory inv=destinations[item];
+                    if(item.parentInventory!=inv){
+                        var slot=inv as GameSlotInventory;
+                        if(slot!=null&&slot.childItem!=null)throw new InvalidOperationException("~SMC142~ occupied "+r.parent.Key+" by "+slot.childItem.identifier+" for "+item.identifier);
+                        if(!Placed(item,()=>inv.UncheckedAccept(item),inv))throw new InvalidOperationException("~SMC142~ attach "+item.identifier+" to "+r.parent.Key+" "+inv.GetType().Name);
+                    }item.Validate();
+                }
                 foreach(var item in leaving){if(Gone(item))continue;try{Remove(item);}catch(Exception e){Debug.LogWarning("[ShopTogether] remove: "+e.Message);}}
                 // Tags the game reads (custom names, conditions...) live in each item's derived state, which the game
                 // recomputes from its own and its children's state. Recompute it for every applied item and its containers.

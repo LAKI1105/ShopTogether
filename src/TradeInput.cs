@@ -29,7 +29,7 @@ namespace ShopTogether {
             if (!ReplicaSession.ClientStore || string.IsNullOrEmpty(id)) return;
             var frame = AccessTools.Field(typeof(WildNetworkUI), "frame").GetValue(null);
             if (frame == null) return;
-            var button = AccessTools.Field(frame.GetType(), "useButton").GetValue(frame) as Button;
+            var button = ModReflect.Get(frame,"useButton") as Button;
             if (button != null) { button.gameObject.SetActive(true); button.interactable = true; }
         }
     }

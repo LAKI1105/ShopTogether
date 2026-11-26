@@ -19,7 +19,6 @@ namespace ShopTogether {
         static readonly byte[] scratch = new byte[MaxPacket];
         static Func<ulong, bool> admit;               // host: decides whether a new friend may connect
         static ulong expectedHost;                     // friend: the only Steam account accepted
-        internal static string LastError = "";
 
         // While the game shuts down, asking SteamManager would recreate it and try to start Steam a second time.
         internal static bool ShuttingDown;
@@ -62,7 +61,7 @@ namespace ShopTogether {
 
         static void OnFail(P2PSessionConnectFail_t failure) {
             SteamChannel channel;
-            if (open.TryGetValue(failure.m_steamIDRemote.m_SteamID, out channel)) { channel.Failed = true; LastError = "~SMC189~" + failure.m_eP2PSessionError + "）"; }
+            if (open.TryGetValue(failure.m_steamIDRemote.m_SteamID, out channel)) channel.Fail("Steam P2P error " + failure.m_eP2PSessionError);
         }
 
         /// <summary>Called every frame: moves arrived Steam packets into their connection.</summary>
@@ -72,6 +71,12 @@ namespace ShopTogether {
             for (int i = 0; i < 64 && SteamNetworking.IsP2PPacketAvailable(out size, Channel); i++) {
                 uint read; CSteamID from;
                 if (size > MaxPacket) { SteamNetworking.ReadP2PPacket(scratch, (uint)scratch.Length, out read, out from, Channel); Fail(from.m_SteamID); continue; }
+                // The friend has one accepted sender. Keep reliable packets in
+                // Steam until the existing bounded queue has room for them.
+                // Otherwise a valid large snapshot or paused world application
+                // can fill 64 MB here and Arrive marks the connection failed.
+                SteamChannel hostChannel;
+                if (expectedHost != 0 && open.TryGetValue(expectedHost, out hostChannel) && !hostChannel.CanReceive((int)size)) break;
                 if (!SteamNetworking.ReadP2PPacket(scratch, (uint)scratch.Length, out read, out from, Channel)) break;
                 SteamChannel channel;
                 if (!open.TryGetValue(from.m_SteamID, out channel)) continue;   // never accepted: dropped
@@ -79,7 +84,7 @@ namespace ShopTogether {
                 channel.Arrive(data);
             }
         }
-        static void Fail(ulong id) { SteamChannel channel; if (open.TryGetValue(id, out channel)) channel.Failed = true; }
+        static void Fail(ulong id) { SteamChannel channel; if (open.TryGetValue(id, out channel)) channel.Fail("Steam oversized packet"); }
 
         internal static void Close(SteamChannel channel) {
             SteamChannel current;
@@ -103,12 +108,16 @@ namespace ShopTogether {
             float lastArrival = UnityEngine.Time.realtimeSinceStartup;
             internal SteamChannel(ulong remote) { Remote = remote; stream = new MessageStream((data, length) => SendRaw(remote, data, length)); }
             internal bool Failed { get { return stream.Failed; } set { stream.Failed = value; } }
+            string closeReason = "Steam stream closed or failed";
+            internal string CloseReason { get { return closeReason; } }
+            internal void Fail(string reason) { closeReason = reason; stream.Failed = true; }
             public bool Ready { get { return !stream.Closed; } }
-            public bool Writing { get { stream.Flush(); if (stream.Failed) throw new InvalidOperationException("~SMC152~"); return stream.Pending; } }
+            public bool Writing { get { stream.Flush(); if (stream.Failed) throw new InvalidOperationException("~SMC152~ ["+closeReason+"]"); return stream.Pending; } }
             internal void Arrive(byte[] data) { lastArrival = UnityEngine.Time.realtimeSinceStartup; stream.Arrive(data); }
+            internal bool CanReceive(int length) { return stream.CanArrive(length); }
             public int Receive(byte[] destination) {
                 int n = stream.Receive(destination);
-                if (n < 0 && !stream.Pending && UnityEngine.Time.realtimeSinceStartup - lastArrival > Silence) return 0;   // Steam gives no close signal: silence means gone
+                if (n < 0 && !stream.Pending && UnityEngine.Time.realtimeSinceStartup - lastArrival > Silence) { closeReason = "Steam no incoming data for 60 seconds"; return 0; }   // Steam gives no close signal: silence means gone
                 return n;
             }
             public void Send(byte[] packet) { stream.Send(packet); }

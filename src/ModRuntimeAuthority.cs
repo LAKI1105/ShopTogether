@@ -43,9 +43,9 @@ namespace ShopTogether {
         }
         static IEnumerable<MethodBase> TargetMethods() {
             foreach (string name in new[]{"CorpPresence.Runtime.LoadedItemRepair", "CorpPresence.Crates", "CorpPresence.Runtime.RuntimeUpdates"}) {
-                var type=AccessTools.TypeByName(name);
+                var type=ModReflect.FindType(name);
                 if(type==null)continue;
-                var method=AccessTools.Method(type,name.EndsWith("RuntimeUpdates")?"Run":"Tick");
+                var method=((MethodInfo)ModReflect.Target(type,name.EndsWith("RuntimeUpdates")?"Run":"Tick"));
                 if(method!=null)yield return method;
             }
         }

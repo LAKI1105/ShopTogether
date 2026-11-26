@@ -8,6 +8,11 @@ namespace ShopTogether {
  internal static partial class RuntimeProbe {
   static IEnumerator RunExtended(Connection root,bool host){
    string suite=Argument("--smc-suite");
+   if(suite=="release1347")return Release1347(root,host);
+   if(suite=="naturalwater1346")return NaturalWater1346(root,host);
+   if(suite=="closewater1346")return CloseWater1346(root,host);
+   if(suite=="lifecycle1346")return Lifecycle1346(root,host);
+   if(suite=="slots1346")return host?Slots1346Host(root):Slots1346Client(root);
    if(suite=="leases1345")return host?LeaseHost1345(root):LeaseClient1345(root);
    if(suite=="hostdrag1345")return host?HostDrag1345(root):HostDragClient1345(root);
    if(suite=="outing1344")return host?OutingHost1344(root):OutingClient1344(root);

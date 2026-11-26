@@ -13,14 +13,14 @@ namespace ShopTogether {
         static int serial;static readonly Dictionary<int,Pending> pending=new Dictionary<int,Pending>();
         sealed class Pending {internal int owner,page;internal GameItem source,bay;internal Action<string[]> save;internal HashSet<string> allowed;}
         internal static void Bind(){
-            if(patches!=null)return;warehouse=AccessTools.TypeByName("CorpPresence.CargoWarehouse");if(warehouse==null)return;
-            window=AccessTools.TypeByName("CorpPresence.UI.CargoSortWindow");rename=AccessTools.TypeByName("CorpPresence.UI.CargoTabRename");
-            patches=new Harmony("shop_together.cargo-intent");patches.Patch(AccessTools.Method(window,"Open"),prefix:new HarmonyMethod(typeof(CargoIntent),"Capture"));
-            patches.Patch(AccessTools.Method(rename,"Open"),prefix:new HarmonyMethod(typeof(CargoIntent),"CaptureRename"));
+            if(patches!=null)return;warehouse=ModReflect.FindType("CorpPresence.CargoWarehouse");if(warehouse==null)return;
+            window=ModReflect.FindType("CorpPresence.UI.CargoSortWindow");rename=ModReflect.FindType("CorpPresence.UI.CargoTabRename");
+            patches=new Harmony("shop_together.cargo-intent");patches.Patch(((MethodInfo)ModReflect.Target(window,"Open")),prefix:new HarmonyMethod(typeof(CargoIntent),"Capture"));
+            patches.Patch(((MethodInfo)ModReflect.Target(rename,"Open")),prefix:new HarmonyMethod(typeof(CargoIntent),"CaptureRename"));
         }
         static MachineryTabs Tabs(GameItem bay){
-            if(warehouse==null||bay==null)return null;var table=AccessTools.Field(warehouse,"Inventories").GetValue(null);var args=new object[]{bay,null};
-            return (bool)AccessTools.Method(table.GetType(),"TryGetValue").Invoke(table,args)?args[1] as MachineryTabs:null;
+            if(warehouse==null||bay==null)return null;var table=(System.Runtime.CompilerServices.ConditionalWeakTable<GameItem,MachineryTabs>)ModReflect.GetStatic(warehouse,"Inventories");
+            MachineryTabs tabs;return table.TryGetValue(bay,out tabs)?tabs:null;
         }
         internal static int Page(GameItem source,GameItem bay){if(source==null||source.identifier!=Controller)return 0;var tabs=Tabs(bay);return tabs==null?-1:tabs.selected;}
         internal static bool IsController(GameItem source){return warehouse!=null&&source!=null&&source.identifier==Controller;}
@@ -41,10 +41,10 @@ namespace ShopTogether {
         static bool CaptureRename(GameItem bay,int page){if(!PanelRelay.Capturing)return true;Publish(56,new CargoPanelData{page=page,bay=Connection.Current.World.Id(bay)});return false;}
         internal static void Show(int method,string json){
             var data=WireJson.FromJson<CargoPanelData>(json);GameItem bay;var s=Connection.Current;if(data==null||s==null||!s.World.Items.TryGetValue(data.bay,out bay))return;
-            if(method==56){AccessTools.Method(rename,"Open").Invoke(null,new object[]{bay,data.page});return;}
+            if(method==56){((MethodInfo)ModReflect.Target(rename,"Open")).Invoke(null,new object[]{bay,data.page});return;}
             Action<string[]> save=tags=>RemoteActions.Forward(RemoteActions.Adapter("CargoSave",2),null,new object[]{data.token,WireJson.ToJson(tags)});
-            Action renameAction=()=>AccessTools.Method(rename,"Open").Invoke(null,new object[]{bay,data.page});
-            AccessTools.Method(window,"Open").Invoke(null,new object[]{data.page,data.filters,save,renameAction});
+            Action renameAction=()=>((MethodInfo)ModReflect.Target(rename,"Open")).Invoke(null,new object[]{bay,data.page});
+            ((MethodInfo)ModReflect.Target(window,"Open")).Invoke(null,new object[]{data.page,data.filters,save,renameAction});
         }
         internal static void CargoSave(int token,string json){
             Pending p;var s=Connection.Current;int owner=RemoteActions.CurrentOwner;

@@ -18,6 +18,10 @@ namespace ShopTogether {
 
         internal MessageStream(Func<byte[], int, bool> send) { this.send = send; }
 
+        // Peek before removing a reliable packet from Steam. A full local queue
+        // means the consumer must catch up, not that the peer has disconnected.
+        internal bool CanArrive(int length) { return !Failed && !Closed && length >= 0 && length <= MaxQueued - queued; }
+
         internal void Arrive(byte[] data) {
             if (Closed || data == null || data.Length == 0) return;
             queued += data.Length;

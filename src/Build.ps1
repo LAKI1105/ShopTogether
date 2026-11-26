@@ -5,7 +5,7 @@ $managed = Join-Path $GamePath 'Probably Stolen_Data\Managed'
 if(-not(Test-Path -LiteralPath (Join-Path $managed 'Assembly-CSharp.dll'))){throw 'Set PROBABLY_STOLEN_PATH or pass -GamePath pointing to your installed game.'}
 Add-Type -Path (Join-Path $PSHOME 'Microsoft.CodeAnalysis.dll')
 Add-Type -Path (Join-Path $PSHOME 'Microsoft.CodeAnalysis.CSharp.dll')
-$names = @('mscorlib','System','System.Core','System.Xml','netstandard','Assembly-CSharp','Assembly-CSharp-firstpass','0Harmony','Mono.Security','Newtonsoft.Json','UnityEngine.AudioModule','UnityEngine.CoreModule','UnityEngine.IMGUIModule','UnityEngine.InputLegacyModule','UnityEngine.UI','UnityEngine.TextRenderingModule','Unity.TextMeshPro','com.rlabrecque.steamworks.net','UnityEngine.UIModule','UnityEngine.JSONSerializeModule','UnityEngine.ImageConversionModule','UnityEngine.UnityWebRequestModule')
+$names = @('mscorlib','System','System.Core','System.Xml','netstandard','Assembly-CSharp','Assembly-CSharp-firstpass','0Harmony','Mono.Security','Newtonsoft.Json','UnityEngine','DOTween','DOTweenPro','UnityEngine.AudioModule','UnityEngine.CoreModule','UnityEngine.IMGUIModule','UnityEngine.InputLegacyModule','UnityEngine.UI','UnityEngine.TextRenderingModule','Unity.TextMeshPro','com.rlabrecque.steamworks.net','UnityEngine.UIModule','UnityEngine.JSONSerializeModule','UnityEngine.ImageConversionModule','UnityEngine.UnityWebRequestModule')
 $refs = [Microsoft.CodeAnalysis.MetadataReference[]]@($names | ForEach-Object { [Microsoft.CodeAnalysis.MetadataReference]::CreateFromFile((Join-Path $managed "${_}.dll")) })
 $parse=[Microsoft.CodeAnalysis.CSharp.CSharpParseOptions]::Default
 $sourceFiles=@(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.cs')

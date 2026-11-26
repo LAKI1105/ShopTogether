@@ -30,6 +30,8 @@
     <Reference Include="netstandard"><HintPath>$(ManagedPath)/netstandard.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(ManagedPath)/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp-firstpass"><HintPath>$(ManagedPath)/Assembly-CSharp-firstpass.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="DOTween"><HintPath>$(ManagedPath)/DOTween.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="DOTweenPro"><HintPath>$(ManagedPath)/DOTweenPro.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(ManagedPath)/0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Mono.Security"><HintPath>$(ManagedPath)/Mono.Security.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(ManagedPath)/Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>

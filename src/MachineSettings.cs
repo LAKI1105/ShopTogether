@@ -111,7 +111,7 @@ namespace ShopTogether {
             }
             // Validate the complete proposal before the first write. Native validation observes the
             // completed pair rather than a half-applied clipboard or range control.
-            foreach(var change in changes){var next=change.Value;item.ModifyTag(change.Key,t=>{t.Set(next);t.SetEnabled(next.valueEnabled);},true);}item.Validate();
+            foreach(var change in changes){var next=change.Value;item.ModifyTag(change.Key,t=>{t.Set(next);t.SetEnabled(next.valueEnabled);},true);}item.ValidateShapeState();
         }
         static void Validate(GameItem item, string tag, string packed,out TagState result) {
             result=null;

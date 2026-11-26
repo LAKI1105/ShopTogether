@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('leases1345','hostdrag1345','outing1344','reported1344','perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
+    [ValidateSet('release1347','naturalwater1346','closewater1346','lifecycle1346','slots1346','leases1345','hostdrag1345','outing1344','reported1344','perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
     [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[string]$ProductionDll,[string]$ProductionPackage,[switch]$ContinueOnFailure,[switch]$ScanOnly
 )
@@ -111,6 +111,11 @@ try{
     if($ScanOnly){Write-Output 'PRODUCTION_PACKAGE_SCAN_ONLY_COMPLETE';return}
     & (Join-Path $project 'Build.ps1') -Probe -OutputPath (Join-Path $probeFolder 'ShopTogether.dll') -GamePath $game
     Copy-Item -LiteralPath (Join-Path $project 'manifest.xml') -Destination $probeFolder
+    # Only the disposable diagnostic harness retains legacy reflection; production must not.
+    $probeManifestPath=Join-Path $probeFolder 'manifest.xml'
+    [xml]$probeManifest=Get-Content -LiteralPath $probeManifestPath -Raw
+    $cap=$probeManifest.CreateElement('Capability');$cap.InnerText='reflection-external';[void]$probeManifest.Manifest.Capabilities.AppendChild($cap)
+    $probeManifest.Save($probeManifestPath)
     $env:SHOPTOGETHER_PROBE_FOLDER=$probeFolder
     $env:SHOPTOGETHER_TEST_ONLY_APPROVE='1'
     $approvalLog=Join-Path $scratch 'probe-approval.log';$approvalArgs=@('-screen-width','1280','-screen-height','720','-screen-fullscreen','0','-logFile',('"'+$approvalLog+'"'))
@@ -138,11 +143,18 @@ try{
                 Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');$clientText=Read-TestLog (Join-Path $scratch 'smc-client.log')
                 if($part -eq 'hostdrag1345'){Send-TestMouseRequests 'host' $hostText $hostProcess $mouseSequences}
                 if($part -in @('reported1344','perf1340','reported1339','release1339','mouse1327','trade1327','layout1326','stress1327')){Send-TestMouseRequests 'client' $clientText $clientProcess $mouseSequences}
-                if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Dual runtime assertion failed'}
+                if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:|ModReflectAccessException|\[ModReflect\].*out of reach'){throw 'Dual runtime assertion failed'}
                 if($hostText -match '\[SMC COMPLETE\]' -and $clientText -match '\[SMC COMPLETE\]'){break}
             }while([DateTime]::UtcNow -lt $deadline -and -not($hostProcess.HasExited -and $clientProcess.HasExited))
             if($hostText -notmatch '\[SMC COMPLETE\]' -or $clientText -notmatch '\[SMC COMPLETE\]'){throw 'Dual runtime timed out'}
             foreach($process in $started){[void]$process.WaitForExit(10000)}
+            if($part -eq 'lifecycle1346'){
+                foreach($role in @('host','client')){
+                    $exitLog=Read-TestLog (Join-Path $scratch ("smc-$role.log"))
+                    if($exitLog -notmatch '\[SMC LIFETIME PASS\]' -or $exitLog -match '\[SMC FAIL\]'){throw ('Native lifecycle shutdown check did not complete: '+$role)}
+                    $exitLog -split '\r?\n' | Where-Object {$_ -match '\[SMC LIFETIME'}
+                }
+            }
             if($part -eq 'issue1328'){
                 foreach($role in @('host','client')){
                     $prior=Read-TestLog (Join-Path $scratch "smc-$role.log");Write-Output "Issue report initial ${role}:"
@@ -157,7 +169,7 @@ try{
                 do{
                     Start-Sleep -Milliseconds 1000;$hostText=Read-TestLog (Join-Path $scratch 'smc-host.log');$clientText=Read-TestLog (Join-Path $scratch 'smc-client.log')
                     Send-TestMouseRequests 'host' $hostText $hostProcess $mouseSequences;Send-TestMouseRequests 'client' $clientText $clientProcess $mouseSequences
-                    if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:'){throw 'Issue report restart assertion failed'}
+                    if(($hostText+$clientText) -match '\[SMC FAIL\]|Init failed: 多人|Trust check failed:|ModReflectAccessException|\[ModReflect\].*out of reach'){throw 'Issue report restart assertion failed'}
                     if($hostText -match '\[SMC COMPLETE\]' -and $clientText -match '\[SMC COMPLETE\]'){break}
                 }while([DateTime]::UtcNow -lt $deadline -and -not($hostProcess.HasExited -and $clientProcess.HasExited))
                 if($hostText -notmatch '\[SMC COMPLETE\]' -or $clientText -notmatch '\[SMC COMPLETE\]'){throw 'Issue report restart timed out'}

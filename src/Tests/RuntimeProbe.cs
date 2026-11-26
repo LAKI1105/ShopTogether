@@ -30,7 +30,7 @@ namespace ShopTogether {
             SuppressPersistence();
             var runner=Argument("--smc-issue-restore")=="1"?IssueRestore1328(root):Argument("--smc-group")!=null?GroupCheck(root):Argument("--smc-role")=="host"?HostCheck(root):Argument("--smc-role")=="client"?ClientCheck(root):Check(root);bool more,completed=false;
             while(true){try{more=runner.MoveNext();}catch(Exception error){CaptureFailure();Debug.LogError("[SMC FAIL] "+error);break;}if(!more){completed=true;break;}yield return runner.Current;}
-            CloseControl();root.Stop();if(!completed||Argument("--smc-suite")!="issue1328"||Argument("--smc-issue-restore")=="1")IssueReport.ProbeDeleteSaved();float until=Time.realtimeSinceStartup+2;while(Time.realtimeSinceStartup<until)yield return null;yield return null;Application.Quit();
+            CloseControl();if(!completed||Argument("--smc-suite")!="lifecycle1346")root.Stop();if(!completed||Argument("--smc-suite")!="issue1328"||Argument("--smc-issue-restore")=="1")IssueReport.ProbeDeleteSaved();float until=Time.realtimeSinceStartup+2;while(Time.realtimeSinceStartup<until)yield return null;yield return null;Application.Quit();
         }
         static IEnumerator Check(Connection root){
             float timeout=Time.realtimeSinceStartup+90;

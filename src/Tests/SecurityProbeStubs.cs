@@ -2,6 +2,7 @@
 namespace UnityEngine {
     internal enum LogType { Error, Exception }
     internal static class Application {
+        internal static event System.Action quitting;
         internal static event System.Action<string,string,LogType> logMessageReceived;
     }
     internal static class Time { internal static float realtimeSinceStartup { get { return 0; } } }

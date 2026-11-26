@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -137,9 +137,21 @@ namespace ShopTogether {
     [HarmonyPatch]
     internal static class HeatingReadoutVisibility {
         static IEnumerable<MethodBase> TargetMethods() {
-            foreach (var type in typeof(MachineHeatingPlate).GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
-                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                    if (method.Name.Contains("b__")) yield return method;
+            // Explicit native callbacks; every target passes the game's ModReflect scope check.
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_0", "<HeatingPlate>b__0");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_0", "<HeatingPlate>b__1");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_0", "<HeatingPlate>b__3");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_0", "<HeatingPlate>b__4");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_0", "<HeatingPlate>b__5");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_0", "<HeatingPlate>b__6");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_1", "<HeatingPlate>b__7");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_2", "<HeatingPlate>b__8");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_3", "<HeatingPlate>b__9");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass5_4", "<HeatingPlate>b__10");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c", "<HeatingPlate>b__5_2");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c", "<SetupWaterSlot>b__9_0");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c", "<CreateMachineInventoryWindow>b__10_0");
+            yield return ModReflect.Target("MachineHeatingPlate+<>c__DisplayClass7_0", "<HandleHeating>b__0");
         }
         static bool Visible(bool visible) { var s = Connection.Current; return visible || s != null && s.IsHost && s.Ready; }
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> code) {

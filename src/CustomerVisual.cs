@@ -13,7 +13,6 @@ namespace ShopTogether {
     internal sealed class CustomerVisual {
         static readonly FieldInfo path=AccessTools.Field(typeof(StoreClientMono),"dOTweenPath");
         static readonly FieldInfo right=AccessTools.Field(typeof(StoreClientMono),"pathRight");
-        static readonly MethodInfo pause=AccessTools.Method(path.FieldType,"DOPause");
         static readonly int solidId=Shader.PropertyToID("_SolidBlend");
         readonly MaterialPropertyBlock block=new MaterialPropertyBlock();
         StoreClientMono bound;
@@ -41,8 +40,8 @@ namespace ShopTogether {
             if(mono.gameObject.activeSelf!=show)mono.gameObject.SetActive(show);
             // OnEnable may start the native idle animator. Freeze it after showing.
             mono.FreezeIdle();
-            var main=path.GetValue(mono);if(main!=null)pause.Invoke(main,null);
-            var other=right.GetValue(mono);if(other!=null)pause.Invoke(other,null);
+            var main=path.GetValue(mono) as DG.Tweening.DOTweenPath;if(main!=null)main.DOPause();
+            var other=right.GetValue(mono) as DG.Tweening.DOTweenPath;if(other!=null)other.DOPause();
             from=mono.transform.localPosition;fromColor=mono.image.color;
             mono.image.GetPropertyBlock(block);fromSolid=block.GetFloat(solidId);
             target=pose;at=Time.realtimeSinceStartup;

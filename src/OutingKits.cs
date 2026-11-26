@@ -177,7 +177,8 @@ namespace ShopTogether {
             var location = AfterhourLocation.Get(s.location); var map = MapUIManager.Instance; var e = EmporiumEntry.Instance;
             if (TransitUI.IsOpen) TransitUI.Close();
             map.CloseUI(false);
-            if (e.responseWindow != null && e.responseWindow.IsVisible()) e.HideResponseWindow();   // a backpack choice still open here
+            if ((e.responseWindow != null && e.responseWindow.IsVisible()) ||
+                (e.responseWindowClosable != null && e.responseWindowClosable.IsVisible())) e.HideResponseWindow();
             if (GenericConfirmationUIManager.Instance != null) GenericConfirmationUIManager.Instance.ClosePanel();
             e.selectedBackpack = null;
             if (PaperUIManager.Instance != null) PaperUIManager.Instance.CloseAllPaperUI();

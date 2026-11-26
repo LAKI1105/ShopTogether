@@ -37,7 +37,7 @@ namespace ShopTogether {
         internal sealed class Recording { internal HostPanel panel;internal CustomPanelOp op;internal List<int> callbacks=new List<int>(); }
         static List<MethodInfo> BuildMethods() {
             var list=new List<MethodInfo>();
-            foreach(var t in new[]{typeof(CustomUIBuilder),typeof(CustomUIElement)})foreach(var m in t.GetMethods(BindingFlags.Public|BindingFlags.Instance|BindingFlags.DeclaredOnly))
+            foreach(var m in typeof(CustomUIBuilder).GetMethods(BindingFlags.Public|BindingFlags.Instance|BindingFlags.DeclaredOnly).Concat(typeof(CustomUIElement).GetMethods(BindingFlags.Public|BindingFlags.Instance|BindingFlags.DeclaredOnly)))
                 if(!m.IsSpecialName && (m.ReturnType==typeof(CustomUIBuilder)||m.ReturnType==typeof(CustomUIElement)) && m.Name!="OnClose" && m.GetParameters().All(p=>Supported(p.ParameterType)))list.Add(m);
             list.Sort((a,b)=>StringComparer.Ordinal.Compare(Signature(a),Signature(b)));return list;
         }

@@ -358,11 +358,11 @@ namespace ShopTogether {
     [HarmonyPatch]
     internal static class SharedShotgunConversation {
         static IEnumerable<MethodBase> TargetMethods() {
-            var types = new List<Type> { typeof(StoreUIManager) };
-            types.AddRange(typeof(StoreUIManager).GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic));
-            foreach (var type in types)
-                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                    if (method.Name.StartsWith("<EnterShootingMode>b__", StringComparison.Ordinal) || method.Name.StartsWith("<ExitShootingMode>b__", StringComparison.Ordinal)) yield return method;
+            // Explicit native callbacks; every target passes the game's ModReflect scope check.
+            yield return ModReflect.Target("StoreUIManager", "<ExitShootingMode>b__140_0");
+            yield return ModReflect.Target("StoreUIManager+<>c", "<ExitShootingMode>b__140_1");
+            yield return ModReflect.Target("StoreUIManager+<>c__DisplayClass139_0", "<EnterShootingMode>b__0");
+            yield return ModReflect.Target("StoreUIManager+<>c__DisplayClass139_0", "<EnterShootingMode>b__1");
         }
         static void Pause(DialogUIManager dialog) {
             // The first friend already saved the interrupted dialogue. Pausing
@@ -381,7 +381,7 @@ namespace ShopTogether {
                 if (Equals(code.operand, pause) || Equals(code.operand, resume)) {
                     bool pausing = Equals(code.operand, pause);
                     code.opcode = OpCodes.Call;
-                    code.operand = AccessTools.Method(typeof(SharedShotgunConversation), pausing ? "Pause" : "Resume");
+                    code.operand = (pausing ? AccessTools.Method(typeof(SharedShotgunConversation), "Pause") : AccessTools.Method(typeof(SharedShotgunConversation), "Resume"));
                 }
                 yield return code;
             }

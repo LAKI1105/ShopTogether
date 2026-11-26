@@ -54,8 +54,8 @@ namespace ShopTogether {
                 var action = choice.Item3;
                 if (action != null && KnownStory(action.Method)) {
                     var target = action.Target;
-                    if (target != null && (AccessTools.Field(target.GetType(), "value25") != null ||
-                        AccessTools.Field(target.GetType(), "value50") != null || AccessTools.Field(target.GetType(), "need") != null)) return true;
+                    if (target != null && (ModReflect.Has(target, "value25") ||
+                        ModReflect.Has(target, "value50") || ModReflect.Has(target, "need"))) return true;
                     // The inspector's bribe option is added once after CanPay, without
                     // an enabled predicate. Keep that native quote funded until selection.
                     if (action.Method.Name.StartsWith("<SecurityDialogInspectionLastLine>",StringComparison.Ordinal) &&

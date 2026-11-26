@@ -21,7 +21,7 @@ namespace ShopTogether {
         public void OnDisable(){ModRuntimeAuthority.Shutdown();if(instance!=null)UnityEngine.Object.Destroy(instance);}
     }
     public sealed partial class Connection : MonoBehaviour {
-        internal const string BuildVersion="1.3.46";
+        internal const string BuildVersion="1.3.48";
         internal const string WireVersion=BuildVersion+"-"+BuildIdentity.Code;
         const string LauncherId="shop_together.launcher",WindowId="shop_together.connection";
         // Up to 8 players: the host and 7 friends.
@@ -53,7 +53,7 @@ namespace ShopTogether {
         readonly Queue<WorldDelta> pendingWorld=new Queue<WorldDelta>();
         sealed class Peer : IDisposable {
             internal Socket socket;internal IChannel channel;internal int id;
-            internal bool authenticated,matched,versionSent,sceneReady,initialSent,closing,modsOk,wantsFull;internal string name="";internal int activity;
+            internal bool authenticated,matched,versionSent,sceneReady,initialSent,closing,modsOk,wantsFull,readClosed;internal string name="";internal int activity;
             internal long lastSequence,lastRemote;internal float deadline,partialSince,closeAt;
             internal readonly Queue<byte[]> outgoing=new Queue<byte[]>();internal readonly List<byte> input=new List<byte>();
             internal readonly byte[] buffer=new byte[32768];internal readonly ProtocolGuard guard=new ProtocolGuard();
@@ -70,7 +70,8 @@ namespace ShopTogether {
             StartCoroutine(RuntimeProbe.Run(this));
 #endif
         }
-        void OnApplicationQuit(){SteamRelay.ShuttingDown=true;}
+        void OnApplicationQuit(){Diagnostics.BeginQuit();SteamRelay.ShuttingDown=true;}
+        void LateUpdate(){PaperPanelOrder.Flush();}
         void OnDestroy(){SteamRelay.ShuttingDown=true;Stop();if(Current==this)Current=null;}
         internal void Stop(){MachineSettings.Reset();PanelRelay.Reset();ShopActions.Reset();OutingKits.ResetHost();
             hostReadyVisible=false;lanOnly=false;hostNotice="";
@@ -266,7 +267,7 @@ namespace ShopTogether {
         void Pump(Peer peer,bool host){
             if(!peer.authenticated&&Time.realtimeSinceStartup>peer.deadline)throw new Exception("~SMC140~");if(peer.channel==null||!peer.channel.Ready)return;
             if(!host&&!peer.versionSent){peer.versionSent=true;peer.Send(16,Encoding.UTF8.GetBytes(WireVersion));}
-            peer.Write();if(peer.closing){if(peer.outgoing.Count==0&&!peer.channel.Writing){
+            if(!peer.readClosed)peer.Write();if(peer.closing){if(peer.outgoing.Count==0&&!peer.channel.Writing){
                 // Steam closes a session at once and may drop what was just sent (e.g. the list of mods to install): wait a moment first.
                 if(peer.channel is SteamRelay.SteamChannel){if(peer.closeAt==0){peer.closeAt=Time.realtimeSinceStartup+3;return;}if(Time.realtimeSinceStartup<peer.closeAt)return;}
                 throw new Exception("~SMC186~");}return;}
@@ -274,7 +275,7 @@ namespace ShopTogether {
             if(!host&&pendingWorld.Count>=24){peer.partialSince=Time.realtimeSinceStartup;return;}
             // Read only while what was read is being handled: a busy frame leaves the rest in the link instead of overflowing.
             // (Both limits stay above the largest single message each side accepts, so a message is never left half-read.)
-            for(int i=0;i<4&&peer.input.Count<(host?96*1024:2*1024*1024);i++){int count=peer.channel.Receive(peer.buffer);if(count<0)break;if(count==0)throw new Exception("~SMC156~");for(int j=0;j<count;j++)peer.input.Add(peer.buffer[j]);if(peer.input.Count>(host?131072:4*1024*1024+4))throw new Exception("~SMC154~");}
+            for(int i=0;i<4&&!peer.readClosed&&peer.input.Count<(host?96*1024:2*1024*1024);i++){int count=peer.channel.Receive(peer.buffer);if(count<0)break;if(count==0){if(host)throw ClosedPeer(peer);peer.readClosed=true;break;}for(int j=0;j<count;j++)peer.input.Add(peer.buffer[j]);if(peer.input.Count>(host?131072:4*1024*1024+4))throw new Exception("~SMC154~");}
             var timer=System.Diagnostics.Stopwatch.StartNew();int consumed=0;
             for(int i=0;i<32&&peer.input.Count-consumed>=5;i++){int length=(peer.input[consumed]<<24)|(peer.input[consumed+1]<<16)|(peer.input[consumed+2]<<8)|peer.input[consumed+3];byte type=peer.input[consumed+4];
                 if(length<1||!ProtocolGuard.Valid(host,peer.authenticated,peer.matched,type,length-1))throw new Exception("~SMC029~");if(peer.input.Count-consumed<length+4)break;
@@ -282,9 +283,15 @@ namespace ShopTogether {
                 byte[] data=new byte[length-1];peer.input.CopyTo(consumed+5,data,0,data.Length);consumed+=length+4;Receive(peer,host,type,data);peer.partialSince=0;if(peer.closing||timer.ElapsedMilliseconds>=2)break;}
             // Compact once per batch, rather than copying the unread tail for every packet.
             if(consumed>0)peer.input.RemoveRange(0,consumed);
+            // A TLS read can contain the refusal and then report EOF in this same
+            // frame. Decode complete messages before reporting the close, including
+            // messages left for the next frame by the parsing budget. Never apply a
+            // truncated frame, or execute more host-side actions after a lost peer.
+            if(peer.readClosed&&(peer.input.Count==0||consumed==0))throw ClosedPeer(peer);
             // A big update over a slow upload takes a while: only a message that stops arriving altogether ends the link.
             if(peer.input.Count>0){if(peer.partialSince==0||peer.input.Count!=peer.partialSize){peer.partialSince=Time.realtimeSinceStartup;peer.partialSize=peer.input.Count;}else if(Time.realtimeSinceStartup-peer.partialSince>60)throw new Exception("~SMC153~");}else peer.partialSize=0;
         }
+        static Exception ClosedPeer(Peer peer){var steam=peer.channel as SteamRelay.SteamChannel;return new Exception("~SMC156~ ["+(steam!=null?steam.CloseReason:"direct TLS EOF")+"]");}
         void Receive(Peer peer,bool host,byte type,byte[] data){
             if(!peer.authenticated){
                 if(type==17)throw new Exception("~SMC064~");

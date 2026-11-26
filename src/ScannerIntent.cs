@@ -47,7 +47,7 @@ namespace ShopTogether {
     internal static class ScannerButtonIntent {
         static IEnumerable<MethodBase> TargetMethods() {
             foreach (var type in new[] { typeof(WaterScannerUIManager), typeof(ChemScannerUIManager), typeof(WaterStripUIManager) })
-                foreach (string name in new[] { "OnMatch", "OnConfront" }) yield return AccessTools.Method(type,name);
+                foreach (string name in new[] { "OnMatch", "OnConfront" }) yield return ((MethodInfo)ModReflect.Target(type,name));
         }
         [HarmonyPriority(Priority.First)]
         static bool Prefix(object __instance, MethodBase __originalMethod) {
@@ -69,7 +69,7 @@ namespace ShopTogether {
         static void Postfix(object __instance) {
             if (!ReplicaSession.IsReplica || ScannerIntent.Item(__instance) == null) return;
             foreach (string field in new[] { "confrontButton", "matchButton" }) {
-                var button = AccessTools.Field(__instance.GetType(),field).GetValue(__instance) as Button;
+                var button = ModReflect.Get(__instance,field) as Button;
                 if (button != null) { button.gameObject.SetActive(true); button.interactable = true; }
             }
             var water = __instance as WaterScannerUIManager; if (water != null) ScannerIntent.Observe(water);

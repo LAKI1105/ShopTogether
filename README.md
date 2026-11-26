@@ -4,23 +4,37 @@ A community co-op mod for **Probably Stolen**. Up to eight players, including th
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-版本：**1.3.46**，適用遊戲 **0.46D**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
+版本：**1.3.48**，適用遊戲 **1.0.0 系列**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
 顧客進出店的移動與對話內容跟隨房主同步。外出與回店採全員同行；雙手槽位、背包與地面物品共用，各自的游標和選單仍可獨立操作。化學品、水質、液體比例與基因由房主遊戲運算並同步數值。安裝包只有 DLL、manifest 與封面；原始碼在本儲存庫。
 
-本次修正摘要請見 [1.3.46 更新紀錄](CHANGELOG.md)。
+本次修正摘要請見 [1.3.48 更新紀錄](CHANGELOG.md)。
 
-Version **1.3.46**, for game **0.46D**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
+Version **1.3.48**, for the **1.0.0 game series**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
 
-## 本版核對範圍
+## 12 月 10 日相容性 / December 10 compatibility
 
-控制權變更已在獨立 Windows 桌面完成 `leases1345` 本機雙程序驗證：過期續期不能復活占用、房主更新失效操作權後可搬上後檯及搬回、過期操作回覆正確原因、有效占用仍受保護，以及部分取得失敗後清除占用。群組放開、背包與內容物的關聯占用、完整重新同步、強制中斷直連、重新加入後的物品身分與控制權也均完成核對。過期邊界使用受控時間；原版輸入處理器由模擬輸入驅動。
+1.3.48 的正式 DLL 改用官方 `ModReflect` 及公開 API，不宣告或使用 `reflection-external`。跨模組存取依官方規則列出四項可選相容模組：`CorpPresence`、`bartender_action`、`player.shop_storage_pages`、`modkit.multipage_store_fix`。未安裝時遊戲可能顯示缺少前置的警告，多人本體仍能載入。對方模組本身也必須符合新規則；本模組不會略過或修改它們的安全檢查。
 
-`hostdrag1345` 另已完成房主使用獨立桌面滑鼠訊息，在庫存與前、後檯間來回拖放，以及朋友放開後房主接手、朋友收到位置同步的驗證。既有 `outing1344` 驗證涵蓋拾荒、受傷拒絕原因、治療、共用背包、回主選單、斷線重加入及全員回店。
+The production DLL uses official `ModReflect` and public APIs instead of deprecated external reflection. The four integrations above are declared for authorized cross-mod access. They remain optional: missing integrations may produce dependency warnings, but do not prevent this mod from loading. Integrated mods must independently comply with the game's security rules.
 
-**尚未確認：** 玩家原存檔及其他模組組合中的所有持續拖不動情況，尚未重現；不能把本次控制權缺陷修正寫成全部解決。外部 Steam 網路、八人長時間遊玩與全部 84 項並未在本輪重新測試。ModLoader 被銷毀及多模組環境中的全部空物件錯誤，也尚未確認同一根因。
+## 1.3.48 本次核對範圍
 
-Local two-process checks covered expired control, host reacquisition and movement, accurate refusal messages, valid-holder protection, partial-acquisition cleanup, group release, backpacks, resync, forced direct-connection loss and rejoining. These checks do not establish that all reported persistent drag failures are resolved, nor validate external Steam networking, eight-player endurance or every third-party mod combination. Release notes are in the [changelog](CHANGELOG.md).
+在不切換畫面的獨立 Windows 桌面完成七組相關雙程序套件：`core`、`gun`、`clock`、`custom135`、`cargo135`、`equipment136`、`overflow136`，房主與朋友兩端皆完成。涵蓋獨立選單、重疊拖放與先到先得、房主運算與偏差修正、射擊旁觀者、溫度和配方、同時倒水與淨水反應，以及酒吧、企業訂單、貨倉、主倉分頁、溢出頁面與錄音機相容路徑。測試中修正了分頁改名的多載定位、貨倉弱參照表讀取，以及機台設定寫入後未刷新實際狀態的問題。
+
+正式 DLL 通過遊戲掃描器，未使用廢止的外部反射權限；GNU `strings -a ShopTogether.dll | grep -c RuntimeProbe` 為 `0`。診斷程式只放在臨時測試副本，正式安裝包不包含診斷程式。使用者正式存檔、問題回報偏好與已訂閱模組檔案未被測試修改。
+
+These seven targeted suites completed on both local game processes. This is not a run of all historical suites, every third-party mod version, or a two-account Internet session. Optional integrations were exercised with the installed versions; other mods must independently comply with the official API rules.
+
+## 先前版本核對範圍
+
+1.3.47 已在獨立 Windows 桌面完成一輪 `release1347` 本機雙程序驗證。接收輪詢在佇列滿時保留下一包資料，空間足夠後依序繼續；真正的連線失敗仍會被處理，房主端的容量限制也保留。Steam 收取介面使用受控封包來確認輪詢邏輯，並非兩個 Steam 帳號的外網實測。
+
+兩個遊戲程序經本機 TLS 連線，完成加入、房主移動物品、拒絕失效操作權、群組放開、背包內容物占用、完整重新同步、強制直連斷線及重新加入；斷線與重加入後沒有殘留物品占用。先前的 `slots1346`、`lifecycle1346`、`closewater1346` 與 `naturalwater1346` 核對範圍列於下方測試說明。
+
+**尚未確認：** 玩家「水純度 0」的原始觸發原因、所有外網斷線原因，以及原存檔或其他模組組合中的所有持續拖不動情況。已確認正常關閉遊戲會產生原版載入器銷毀訊息；不能因此將遊戲中發生的載入器銷毀也視為正常。本輪沒有重跑全部 84 項、八人長時間遊玩或所有第三方模組組合。
+
+The local release check covered receive polling under capacity pressure and real two-process TLS join, item control, resync, forced disconnection and rejoining. The Steam polling check used controlled packets; it does not validate external Steam delivery. The player's original water-error trigger and all environment-specific disconnect/drag reports are not claimed resolved.
 
 ## 使用方式
 
@@ -81,9 +95,22 @@ Use `src/Package.ps1 -PreviewPath <preview.jpg>` to produce `out/Workshop` with 
 ./src/Tests/Run.ps1 -OutputPath ./ShopTogether.dll
 ./src/Tests/RunDual.ps1 -Suite outing138
 ./src/Tests/RunDual.ps1 -Suite reported1344
+./src/Tests/RunDual.ps1 -Suite slots1346
+./src/Tests/RunDual.ps1 -Suite lifecycle1346
+./src/Tests/RunDual.ps1 -Suite closewater1346
+./src/Tests/RunDual.ps1 -Suite naturalwater1346
+./src/Tests/RunDual.ps1 -Suite release1347
 ```
 
 The runtime harness needs Windows, Steam, the game and the enabled Workshop mod. Close the game before running it. It runs a disposable game copy on a verified private Windows desktop with isolated test profiles, and closes only its own processes. It does not replace the subscribed Workshop files. Do not run two harness instances concurrently. The runner currently targets Workshop item 3837477869.
+
+`slots1346` covers occupied hand-slot swaps in incremental and full snapshots, removed-slot occupants, backpack replacement while preserving a moved child, and explicit resync afterward. Both local processes completed this focused check without new diagnostic reports. This covers the corrected replica placement order in the working source; it does not establish that every player-reported `SMC142` has the same cause or resolve the separate UI, water-purity, loader-destruction and disconnect reports.
+
+`lifecycle1346` completed on both local processes: the native `_RecorderPanel` and `NegotiationTablet` retained their front/back ordering without sibling errors during parent-canvas toggles; departure closed an open backpack-choice window and released input before the watchdog ran. The same native ModLoader survived play and the guest's return to the menu. On actual application exit, the game emitted its loader-destruction error while the host connection flags were still active, confirming the shutdown-reporting race. The working source excludes that specific message from gameplay reports only after application shutdown begins; it does not suppress in-session loader destruction or change the game's safety mechanisms. Water-purity and unexplained remote-disconnect reports remain unlocated. These changes are included in 1.3.47.
+
+`closewater1346` completed on both local processes. Controlled channels exercised complete refusals followed immediately by EOF, refusals behind a frame-budget backlog, truncated and invalid frames, empty closes, and the host's existing refusal to execute actions after detecting EOF. Steam callback reasons now remain attached to their own channel. This repairs lost refusal details, not the underlying cause of every disconnect. A deliberate call to the native water classifier on a replicated empty bottle verified failure context (caller, item and liquid amounts) without changing its result or contents; a subsequent host fill replicated normally. That deliberate invocation does not identify the player's original water-error trigger, and the check does not validate external Steam connectivity.
+
+`naturalwater1346` completed on both local processes. A controlled 80 MB stream reproduced the old receive-queue overflow and verified that waiting for capacity preserves order and completes without marking the stream failed. The friend now checks queue capacity before removing the next reliable Steam packet; the 64 MB receive limit and host-side guards remain unchanged. This fixes a confirmed local disconnect path, but does not identify the cause of the player's earlier disconnect or validate external Steam delivery. The two game processes also completed native empty-container scanning, host pouring, guest test-strip use, full-container scanning, and full resynchronization with the scanner open. Liquid quantities remained authoritative, and none of these actions called the failing `GetWaterIndex` classifier or produced its zero-purity error. The player's original water-error trigger remains unlocated; no water values or classification rules were changed. These changes are included in 1.3.47.
 
 Each process must report `[SMC COMPLETE]`. The outing138 continuation covers native travel and return at the dumping ground, commissary and Dr. Jackson, changed-ground and occupied-item refusals, and commissary purchases/redemptions. Both processes completed this suite. The larger completion138 suite passed its earlier machine-confirmation, controlled-lamp, wholesale and dialogue cases but did not complete as a whole; outing138 continued the outing cases. The authority134 scenario covers the 21 overnight machine panels, a rejected grey context action, placement refusal, a machine button with no effect, and rejected recipe settings. A successful build alone is not a runtime pass. Local dual-process tests do not verify two distinct Steam accounts, Internet routers, every third-party mod or eight-player performance. Real Steam achievement writes are suppressed in the test harness.
 

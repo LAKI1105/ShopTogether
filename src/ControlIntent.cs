@@ -58,11 +58,31 @@ namespace ShopTogether {
     [HarmonyPatch]
     internal static class SliderInputIntent {
         static IEnumerable<MethodBase> TargetMethods() {
-            foreach (var type in new[] { typeof(MachinerySlider), typeof(MachineryRangeSlider) }) {
-                var types = new List<Type> { type }; types.AddRange(type.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic));
-                foreach (var owner in types) foreach (var method in owner.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                    if (method.Name.Contains("b__")) yield return method;
-            }
+            // Explicit native callbacks; every target passes the game's ModReflect scope check.
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_0");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_1");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_2");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_3");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_4");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_5");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_6");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_7");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_8");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_9");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_10");
+            yield return ModReflect.Target("MachinerySlider", "<.ctor>b__56_11");
+            yield return ModReflect.Target("MachineryRangeSlider", "<.ctor>b__63_0");
+            yield return ModReflect.Target("MachineryRangeSlider", "<.ctor>b__63_1");
+            yield return ModReflect.Target("MachineryRangeSlider", "<.ctor>b__63_2");
+            yield return ModReflect.Target("MachineryRangeSlider", "<.ctor>b__63_3");
+            yield return ModReflect.Target("MachineryRangeSlider", "<.ctor>b__63_4");
+            yield return ModReflect.Target("MachineryRangeSlider+<>c__DisplayClass64_0", "<InitThumb>b__0");
+            yield return ModReflect.Target("MachineryRangeSlider+<>c__DisplayClass64_0", "<InitThumb>b__1");
+            yield return ModReflect.Target("MachineryRangeSlider+<>c__DisplayClass64_0", "<InitThumb>b__2");
+            yield return ModReflect.Target("MachineryRangeSlider+<>c__DisplayClass64_0", "<InitThumb>b__3");
+            yield return ModReflect.Target("MachineryRangeSlider+<>c__DisplayClass64_0", "<InitThumb>b__4");
+            yield return ModReflect.Target("MachineryRangeSlider+<>c__DisplayClass64_0", "<InitThumb>b__5");
+            yield return ModReflect.Target("MachineryRangeSlider+<>c__DisplayClass64_0", "<InitThumb>b__6");
         }
         static bool Disabled(bool disabled) { return !AuthorityIntent.Friend && disabled; }
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> code) {

@@ -33,7 +33,7 @@ namespace ShopTogether {
    wait=Wait(()=>CustomVisible("bartender_action.bar")!=null,"bar business panel arrived",60);while(wait.MoveNext())yield return wait.Current;
    var menu=CustomVisible("bartender_action.bar");var buy=menu.ContentRoot.GetComponentsInChildren<Button>(true).First(b=>b.GetComponentInChildren<TMPro.TMP_Text>(true).text.Contains("300"));
    NativeClick(0,()=>buy.onClick.Invoke());Require(ModHelper.GetModDataInt("bartender_action","bar.level",0)==0,"business callback waits for host");
-   wait=Wait(()=>ModHelper.GetModDataInt("bartender_action","bar.level",0)==1&&CustomVisible("bartender_action.bar")!=null,"host business state and rebuilt panel arrived",90);while(wait.MoveNext())yield return wait.Current;
+   wait=Wait(()=>ModHelper.GetModDataInt("bartender_action","bar.level",0)==1&&CustomVisible("bartender_action.bar")!=null&&CustomVisible("bartender_action.bar").ContentRoot.GetComponentsInChildren<Toggle>(true).Length>0,"host business state and rebuilt operating panel arrived",90);while(wait.MoveNext())yield return wait.Current;
    menu=CustomVisible("bartender_action.bar");NativeClick(0,()=>menu.Get("nav_shop").button.onClick.Invoke());
    wait=Wait(()=>{var w=CustomVisible("bartender_action.bar");return w!=null&&w.ContentRoot.GetComponentsInChildren<Transform>(true).Any(t=>t.name.Contains("cart_summary"));},"host procurement catalog rendered with native layout",60);while(wait.MoveNext())yield return wait.Current;
    var shop=CustomVisible("bartender_action.bar");var plus=shop.ContentRoot.GetComponentsInChildren<Button>(true).First(b=>b.gameObject.name.Contains("plus_"));string before=shop.Get("cart_summary").GetText();

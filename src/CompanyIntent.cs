@@ -22,9 +22,9 @@ namespace ShopTogether {
         static bool awaiting;
         static float nextFlush;
         const string PatchId="shop_together.company-intent";
-        static Type T(string name) { return AccessTools.TypeByName("CorpPresence."+name); }
-        static object Get(object value,string name) { return value==null?null:AccessTools.Property(value.GetType(),name).GetValue(value,null); }
-        static object Call(Type type,string name,params object[] args) { return AccessTools.Method(type,name).Invoke(null,args); }
+        static Type T(string name) { return ModReflect.FindType("CorpPresence."+name); }
+        static object Get(object value,string name) { return value==null?null:ModReflect.Get(value,name); }
+        static object Call(Type type,string name,params object[] args) { return ((MethodInfo)ModReflect.Target(type,name)).Invoke(null,args); }
         static string Id(object company) { return Get(company,"Id") as string; }
         static object Find(string id) { return Call(companies,"Find",id); }
         static object State(object company) { return Call(companies,"StateOf",company); }
@@ -46,28 +46,28 @@ namespace ShopTogether {
             foreach(string name in new[]{"PayOffAid","AgreePlan","PayServiceFee","AcceptBomb","BribeForReconcile","ReconcileWithRebels","CallBombOdin"})Add("Malice.Envoy",name,null);
             Add("Malice.Malice","Subscribe",null);Add("Malice.Malice","ApplyUnlock",null);
             Add("Malice.RebelStory","BribeMeridian",null);Add("Malice.RebelStory","ReorderBomb",null);
-            Patch(AccessTools.Method(T("Malice.MalicePanel"),"Say"),"Toast");
-            patches.Patch(AccessTools.Method(T("Malice.MalicePanel"),"Draw"),transpiler:new HarmonyMethod(typeof(CompanyIntent),"MaliceControls"));
-            Patch(AccessTools.PropertySetter(T("Malice.CorpTerms"),"AutoRenew"),"AutoRenew");
+            Patch(((MethodInfo)ModReflect.Target(T("Malice.MalicePanel"),"Say")),"Toast");
+            patches.Patch(((MethodInfo)ModReflect.Target(T("Malice.MalicePanel"),"Draw")),transpiler:new HarmonyMethod(typeof(CompanyIntent),"MaliceControls"));
+            Patch(ModReflect.Target(T("Malice.CorpTerms"),"set_AutoRenew"),"AutoRenew");
             Add("Malice.Rebels","BookFence",null);Add("Malice.RebelStory","CallPickup",null);Add("Malice.RebelStory","CallOdin",null);
-            Patch(AccessTools.Method(window,"Open"),"OpenCompany");Patch(AccessTools.Method(T("CardView"),"Open"),"OpenCard");
-            Patch(AccessTools.Method(window,"Draw"),"BeginDraw","EndDraw");Patch(AccessTools.Method(window,"Toast"),"Toast");
-            Patch(AccessTools.Method(T("UI.Ui"),"Button"),"BeginButton","EndButton");
-            Patch(AccessTools.Method(T("UI.Ui"),"Qty"),"QuantityIntent");
-            Patch(AccessTools.PropertySetter(T("CompanyState"),"TrafficOn"),"Traffic");
-            Patch(AccessTools.Method(T("PastelCo"),"PayBribe"),"Bribe");
-            Patch(AccessTools.Method(T("Services"),"Pay"),"BeforePayment");
-            Patch(AccessTools.Method(T("Malice.Rebels"),"Charge"),"BeforeRebelPayment");
-            Patch(AccessTools.Method(T("Malice.Malice"),"Charge"),"BeforePayment");
-            foreach(string name in new[]{"PayOffAid","PayServiceFee","BribeForReconcile","ReconcileWithRebels"})PatchCashAction(AccessTools.Method(T("Malice.Envoy"),name));
-            PatchCashAction(AccessTools.Method(T("Malice.RebelStory"),"OrderBomb"));
-            Patch(AccessTools.Method(corpState,"Save"),"HostSave");Patch(AccessTools.Method(maliceState,"Save"),"HostSave");
+            Patch(((MethodInfo)ModReflect.Target(window,"Open")),"OpenCompany");Patch(((MethodInfo)ModReflect.Target(T("CardView"),"Open")),"OpenCard");
+            Patch(((MethodInfo)ModReflect.Target(window,"Draw")),"BeginDraw","EndDraw");Patch(((MethodInfo)ModReflect.Target(window,"Toast")),"Toast");
+            Patch(((MethodInfo)ModReflect.Target(T("UI.Ui"),"Button")),"BeginButton","EndButton");
+            Patch(((MethodInfo)ModReflect.Target(T("UI.Ui"),"Qty")),"QuantityIntent");
+            Patch(ModReflect.Target(T("CompanyState"),"set_TrafficOn"),"Traffic");
+            Patch(((MethodInfo)ModReflect.Target(T("PastelCo"),"PayBribe")),"Bribe");
+            Patch(((MethodInfo)ModReflect.Target(T("Services"),"Pay")),"BeforePayment");
+            Patch(((MethodInfo)ModReflect.Target(T("Malice.Rebels"),"Charge")),"BeforeRebelPayment");
+            Patch(((MethodInfo)ModReflect.Target(T("Malice.Malice"),"Charge")),"BeforePayment");
+            foreach(string name in new[]{"PayOffAid","PayServiceFee","BribeForReconcile","ReconcileWithRebels"})PatchCashAction(((MethodInfo)ModReflect.Target(T("Malice.Envoy"),name)));
+            PatchCashAction(((MethodInfo)ModReflect.Target(T("Malice.RebelStory"),"OrderBomb")));
+            Patch(((MethodInfo)ModReflect.Target(corpState,"Save")),"HostSave");Patch(((MethodInfo)ModReflect.Target(maliceState,"Save")),"HostSave");
             foreach(string name in new[]{"DrawCarmichael","DrawCarmStamina","DrawCarmSpecimen","DrawDavre","DrawDavreCanning","DrawDavreLeviathan","DrawMeridian","DrawMeridianForge","DrawMeridianRefurb","DrawSolana","DrawSolanaVip","DrawSolanaLab","DrawSpacer","DrawSpacerMutual","DrawPastelOrder","DrawCarmOrder","DrawDavreOrder","DrawEquipmentOrder","DrawSpacerOrder"})
-                patches.Patch(AccessTools.Method(window,name),transpiler:new HarmonyMethod(typeof(CompanyIntent),"ClientDisplayGates"));
-            Patch(AccessTools.Method(window,"PastelUnlocked"),postfix:"ClientUnlocked");
+                patches.Patch(((MethodInfo)ModReflect.Target(window,name)),transpiler:new HarmonyMethod(typeof(CompanyIntent),"ClientDisplayGates"));
+            Patch(((MethodInfo)ModReflect.Target(window,"PastelUnlocked")),postfix:"ClientUnlocked");
         }
         static void Add(string type,string name,string expectedCompany) {
-            var method=AccessTools.Method(T(type),name);if(method==null)throw new InvalidOperationException("Missing company action: "+type+"."+name);
+            var method=((MethodInfo)ModReflect.Target(T(type),name));if(method==null)throw new InvalidOperationException("Missing company action: "+type+"."+name);
             if(method.ReturnType!=typeof(string))throw new InvalidOperationException("Unexpected company action result");
             actions.Add(Key(method),method);companyTypes.Add(Key(method),expectedCompany);Patch(method,"Propose");
         }
@@ -99,7 +99,7 @@ namespace ShopTogether {
                     if(applyExits.Contains(target)) {
                         bool unequal=instruction.opcode==OpCodes.Bne_Un||instruction.opcode==OpCodes.Bne_Un_S;
                         var compare=new CodeInstruction(unequal?OpCodes.Ceq:OpCodes.Clt);compare.labels.AddRange(instruction.labels);instruction.labels.Clear();yield return compare;
-                        yield return new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(CompanyIntent),unequal?"ClientHint":"ClientBlocked"));
+                        yield return new CodeInstruction(OpCodes.Call,(unequal ? AccessTools.Method(typeof(CompanyIntent),"ClientHint") : AccessTools.Method(typeof(CompanyIntent),"ClientBlocked")));
                         instruction.opcode=unequal?OpCodes.Brfalse:OpCodes.Brtrue;
                     }
                 }
@@ -148,7 +148,7 @@ namespace ShopTogether {
                 else if(arg is IDictionary) {
                     object company=__args[0];var catalog=Get(company,"Catalog") as Array;var lines=new List<CompanyOrderLine>();
                     foreach(DictionaryEntry pair in (IDictionary)arg) { int index=-1;for(int i=0;i<catalog.Length;i++)if(ReferenceEquals(catalog.GetValue(i),pair.Key)){index=i;break;}
-                        lines.Add(new CompanyOrderLine{id=(string)AccessTools.Field(pair.Key.GetType(),"Id").GetValue(pair.Key),index=index,count=(int)pair.Value}); }
+                        lines.Add(new CompanyOrderLine{id=(string)ModReflect.Get(pair.Key,"Id"),index=index,count=(int)pair.Value}); }
                     values.Add("o:"+WireJson.ToJson(lines.ToArray()));
                 } else if(arg is Delegate)values.Add("p:");
                 else if(arg is int)values.Add("i:"+((int)arg).ToString(CultureInfo.InvariantCulture));
@@ -171,13 +171,13 @@ namespace ShopTogether {
         }
         static bool Traffic(object __instance,bool __0) {
             if(!ReplicaSession.ClientStore)return true;
-            if(drawing>0){var company=AccessTools.Field(window,"_company").GetValue(null);awaiting=true;Send(new CompanyCommand{action="Traffic",args=new[]{Id(company),__0?"1":"0"}});}
+            if(drawing>0){var company=ModReflect.GetStatic(window,"_company");awaiting=true;Send(new CompanyCommand{action="Traffic",args=new[]{Id(company),__0?"1":"0"}});}
             return WorldReplica.Applying;
         }
         static bool AutoRenew(object __instance,bool __0) {
             if(!ReplicaSession.ClientStore || WorldReplica.Applying)return true;
             if(drawing>0){
-                var company=AccessTools.Field(window,"_company").GetValue(null);
+                var company=ModReflect.GetStatic(window,"_company");
                 if(company!=null && ReferenceEquals(Call(T("Malice.Malice"),"TermsOf",company),__instance)) {
                     awaiting=true;Send(new CompanyCommand{action="AutoRenew",args=new[]{Id(company),__0?"1":"0"}});
                 }
@@ -207,7 +207,7 @@ namespace ShopTogether {
                 if(command.args.Length!=1 || command.args[0]!="1"){RemoteActions.PendingNote="~SMC305~";return;}
                 var c=Find("pastel");var state=State(c);
                 if(state==null || (bool)Get(state,"Bribed")){RemoteActions.PendingNote="~SMC342~";return;}
-                int price=(int)AccessTools.Property(T("PastelCo"),"Bribe").GetValue(null,null);
+                int price=(int)ModReflect.GetStatic(T("PastelCo"),"Bribe");
                 int cash=(int)Call(T("Services"),"CashDue",c,price);
                 if(!(bool)Call(T("Services"),"CanAfford",cash)){RemoteActions.PendingNote="~SMC343~";return;}
                 bool paid=(bool)Call(T("PastelCo"),"PayBribe",true);Flush(true);RemoteActions.PendingNote=RemoteActions.PendingNote??(paid?"~SMC341~":"~SMC125~");return;
@@ -218,14 +218,14 @@ namespace ShopTogether {
                 if(c==null || !(bool)Get(c,"Active") || !(bool)Call(T("Malice.Malice"),"Applies",c)){RemoteActions.PendingNote="~SMC345~";return;}
                 var terms=Call(T("Malice.Malice"),"TermsOf",c);
                 if(terms==null){RemoteActions.PendingNote="~SMC326~";return;}
-                AccessTools.Property(terms.GetType(),"AutoRenew").SetValue(terms,command.args[1]=="1",null);
+                ModReflect.Set(terms,"AutoRenew",command.args[1]=="1");
                 Flush(true);RemoteActions.PendingNote="~SMC341~";return;
             }
             if(command.action=="Traffic") {
                 if(command.args.Length!=2 || (command.args[1]!="0" && command.args[1]!="1")){RemoteActions.PendingNote="~SMC305~";return;}
                 var c=Find(command.args[0]);if(c==null || (c.GetType()!=T("PastelCo") && c.GetType()!=T("SpacerCo")) || !(bool)Get(c,"Active")){RemoteActions.PendingNote="~SMC125~";return;}
                 if(command.args[1]=="1"&&(c.GetType()==T("PastelCo")?!(bool)Get(State(c),"DealerJoined"):Tier(c)<2)){RemoteActions.PendingNote="~SMC345~";return;}
-                AccessTools.Property(State(c).GetType(),"TrafficOn").SetValue(State(c),command.args[1]=="1",null);Flush(true);RemoteActions.PendingNote="~SMC341~";return;
+                ModReflect.Set(State(c),"TrafficOn",command.args[1]=="1");Flush(true);RemoteActions.PendingNote="~SMC341~";return;
             }
             MethodInfo method;if(!actions.TryGetValue(command.action??"",out method) || method.GetParameters().Length!=command.args.Length){RemoteActions.PendingNote="~SMC305~";return;}
             var args=new object[command.args.Length];object company=null;var parameters=method.GetParameters();
@@ -240,10 +240,10 @@ namespace ShopTogether {
                     if(lines==null || lines.Length==0 || lines.Length>128 || catalog==null){RemoteActions.PendingNote="~SMC305~";return;}
                     var cart=(IDictionary)Activator.CreateInstance(want);
                     foreach(var line in lines) { if(line==null || line.count<1 || line.count>1000 || line.index<0 || line.index>=catalog.Length){RemoteActions.PendingNote="~SMC305~";return;}
-                        var entry=catalog.GetValue(line.index);if((string)AccessTools.Field(entry.GetType(),"Id").GetValue(entry)!=line.id || cart.Contains(entry)){RemoteActions.PendingNote="~SMC305~";return;}cart.Add(entry,line.count); }
+                        var entry=catalog.GetValue(line.index);if((string)ModReflect.Get(entry,"Id")!=line.id || cart.Contains(entry)){RemoteActions.PendingNote="~SMC305~";return;}cart.Add(entry,line.count); }
                     args[i]=cart;
                 } else if(typeof(Delegate).IsAssignableFrom(want) && value[0]=='p' && company!=null) {
-                    object c=company;args[i]=new Func<object,int>(entry=>(int)AccessTools.Method(companyType,"OrderUnitPrice").Invoke(c,new[]{entry,State(c)}));
+                    object c=company;args[i]=new Func<object,int>(entry=>(int)((MethodInfo)ModReflect.Target(companyType,"OrderUnitPrice")).Invoke(c,new[]{entry,State(c)}));
                 } else {RemoteActions.PendingNote="~SMC305~";return;}
             }
             // Prices are host quotes, never accepted from a remote argument.
@@ -258,7 +258,7 @@ namespace ShopTogether {
             }
             if(method.Name=="OrderCanningMachine" || method.Name=="OrderForgeMachine") {
                 Type kind=T(method.Name=="OrderCanningMachine"?"DavreCo":"MeridianCo");string field=method.Name=="OrderCanningMachine"?"CanningMachines":"ForgeMachines";
-                string goods=null;foreach(var pair in (IEnumerable)AccessTools.Field(kind,field).GetValue(null))if((string)AccessTools.Field(pair.GetType(),"Item1").GetValue(pair)==(string)args[1])goods=(string)AccessTools.Field(pair.GetType(),"Item2").GetValue(pair);
+                string goods=null;foreach(ValueTuple<string,string> pair in (IEnumerable)ModReflect.GetStatic(kind,field))if(pair.Item1==(string)args[1])goods=pair.Item2;
                 if(goods==null){RemoteActions.PendingNote="~SMC305~";return;}args[2]=checked((int)Convert.ToInt64(Call(T("Goods"),"ValueOf",goods)));
             }
             // These services consume a selected native candidate list, not the whole shop.
@@ -271,7 +271,7 @@ namespace ShopTogether {
             string result;using(HostNativeScope.Begin())result=(string)method.Invoke(null,args);Flush(true);RemoteActions.PendingNote=RemoteActions.PendingNote??(string.IsNullOrEmpty(result)?"~SMC341~":result);
         }
         static bool OpenCompany(object __0) { if(!PanelRelay.Capturing)return true;Relay(new PanelCall{m=52,texts=new[]{Id(__0)}});return false; }
-        static int Tier(object company){return (int)AccessTools.Method(companyType,"Tier").Invoke(company,new[]{State(company)});}
+        static int Tier(object company){return (int)((MethodInfo)ModReflect.Target(companyType,"Tier")).Invoke(company,new[]{State(company)});}
         static bool OpenCard(GameItem __0) { if(!PanelRelay.Capturing)return true;Relay(new PanelCall{m=53,items=new[]{Connection.Current.World.Id(__0)}});return false; }
         static void Relay(PanelCall call) { Flush(true);Connection.Current.SendTo(PanelRelay.Owner,PanelRelay.Message,Encoding.UTF8.GetBytes(WireJson.ToJson(call)));PanelRelay.NotifiedDuringAction=true; }
         internal static void Show(int kind,string id,GameItem item) { Bind();if(companyType==null)return;if(kind==52)Call(window,"Open",Find(id));else if(item!=null)Call(T("CardView"),"Open",item); }
