@@ -4,17 +4,17 @@ A community co-op mod for **Probably Stolen**. Up to eight players, including th
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-版本：**1.3.49**，適用遊戲 **1.0.0 系列**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
+版本：**1.3.50**，適用遊戲 **1.0.0 系列**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
 顧客進出店的移動與對話內容跟隨房主同步。外出與回店採全員同行；雙手槽位、背包與地面物品共用，各自的游標和選單仍可獨立操作。化學品、水質、液體比例與基因由房主遊戲運算並同步數值。安裝包只有 DLL、manifest 與封面；原始碼在本儲存庫。
 
-本次修正摘要請見 [1.3.49 更新紀錄](CHANGELOG.md)。
+本次修正摘要請見 [1.3.50 更新紀錄](CHANGELOG.md)。
 
-Version **1.3.49**, for the **1.0.0 game series**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
+Version **1.3.50**, for the **1.0.0 game series**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
 
-## 1.3.49 本次更新
+## 1.3.50 本次更新
 
-修正處理大量可靠資料時的誤斷線判斷，接上朋友的智慧整理右鍵操作，並補上濾芯造成拒收的明確提示。`release1349` 在獨立桌面的兩個遊戲程序完成；智慧整理使用官方 3.17.76，純水成交與金額同步亦通過。外網原始事故及智慧整理舊版 3.17.63 未重現，詳見更新紀錄。
+修正處理大量可靠資料時的誤斷線判斷，接上朋友的智慧整理右鍵操作，並補上濾芯造成拒收的明確提示。整批復原會檢查所有受影響容器，避免搬走其他人拿著的物品。`release1349` 在獨立桌面的兩個遊戲程序完成；智慧整理使用官方 3.17.76，純水成交與金額同步亦通過。外網原始事故及智慧整理舊版 3.17.63 未重現，詳見更新紀錄。
 
 This release corrects receive-progress timeout handling, forwards Smart Inventory Arrange requests to the host, and explains native water-filter refusals. The isolated dual-process check passed with Smart Inventory Arrange 3.17.76. It does not reproduce the players' original external-network incidents or test the reported older 3.17.63 version.
 

@@ -62,8 +62,37 @@ namespace ShopTogether {
      wait=Wait(()=>RemoteActions.LastNote==Loc.Text("~SMC328~"),"occupied inventory refusal reaches friend",60);while(wait.MoveNext())yield return wait.Current;Signal("S49_REFUSED");
      wait=Wait(()=>Received("S49_RELEASED"),"host releases item",60);while(wait.MoveNext())yield return wait.Current;
     }
+    var undoCheck=GroupedUndo1350(root,host);while(undoCheck.MoveNext())yield return undoCheck.Current;
     var water=WaterSales1349(root,host);while(water.MoveNext())yield return water.Current;
    }finally{observe.UnpatchAll("shop-together.smart1349-probe");}
+  }
+  static IEnumerator GroupedUndo1350(Connection root,bool host){
+   var arrange=ModReflect.FindType("SmartInventoryArrange.SmartArrangeMod");var undo=ModReflect.FindType("SmartInventoryArrange.ArrangeUndo");IEnumerator wait;
+   if(host){
+    var group=Activator.CreateInstance(ModReflect.FindType("SmartInventoryArrange.ArrangeUndo+Group"),true);
+    var grids=new List<GameGridInventory>();var contents=new List<GameItem>();
+    for(int k=0;k<2;k++){
+     var bag=PanelFixture("backpack_small","U50_BAG_"+k);
+     foreach(var old in new List<GameItem>(bag.FindAllChildItems()))old.Destroy();
+     for(int j=0;j<4;j++){var item=ModHelper.SpawnItem(j%2==0?"magnifier":"screwdriver");item.name="U50_ITEM_"+k+"_"+j;GeneralHelper.SetItemOwned(item,true);Require(GraphUtils.TryAcceptAll(bag,item)==0,"group undo item placed");contents.Add(item);}
+     var grid=contents[k*4].parentInventory as GameGridInventory;Require(grid!=null,"group undo container has native grid");grids.Add(grid);root.World.Index();
+     int before=arrangeCommits1349;NativeClick(0,()=>ModReflect.CallStatic(arrange,"Run",grid,false,null,0,0,group));
+     wait=Wait(()=>arrangeCommits1349>before&&!ModReflect.GetStatic<bool>(arrange,"Busy"),"grouped container arrangement completed",90);while(wait.MoveNext())yield return wait.Current;
+    }
+    var entries=ModReflect.Get(group,"Inventories") as IList;Require(entries!=null&&entries.Count==2,"one native undo group contains both containers");
+    int id=root.World.Id(contents[4]);long token;Require(root.Leases.Claim(0,new[]{id},Time.realtimeSinceStartup,out token),"host holds item in second undo container");root.SyncStateSoon();Signal("U50_HELD");
+    wait=Wait(()=>Received("U50_REFUSED"),"friend receives grouped undo refusal for other container",90);while(wait.MoveNext())yield return wait.Current;
+    Require(ModReflect.GetStatic(undo,"_latest")==group&&!(bool)ModReflect.GetStatic(undo,"Running"),"refused grouped undo preserves original undo state");root.Leases.Release(0,new[]{id});Signal("U50_RELEASED");
+    wait=Wait(()=>ModReflect.GetStatic(undo,"_latest")==null&&!(bool)ModReflect.GetStatic(undo,"Running"),"friend undo restores whole group after release",90);while(wait.MoveNext())yield return wait.Current;root.SyncStateSoon();Signal("U50_DONE");
+   }else{
+    wait=Wait(()=>Find(root,"U50_ITEM_0_0")!=null&&Find(root,"U50_ITEM_1_3")!=null&&Received("U50_HELD"),"both undo containers replicated",90);while(wait.MoveNext())yield return wait.Current;
+    var grid=Find(root,"U50_ITEM_0_0").parentInventory;RemoteActions.LastNote="";
+    NativeClick(0,()=>RemoteActions.Forward(RemoteActions.Adapter("UndoPage",2),null,new object[]{grid,0}));
+    wait=Wait(()=>RemoteActions.LastNote==Loc.Text("~SMC328~"),"undo of first container refuses held item in second container",60);while(wait.MoveNext())yield return wait.Current;Signal("U50_REFUSED");
+    wait=Wait(()=>Received("U50_RELEASED"),"other-container item released",60);while(wait.MoveNext())yield return wait.Current;
+    NativeClick(0,()=>RemoteActions.Forward(RemoteActions.Adapter("UndoPage",2),null,new object[]{grid,0}));
+    wait=Wait(()=>Received("U50_DONE"),"grouped undo completes on host",90);while(wait.MoveNext())yield return wait.Current;
+   }
   }
   static IEnumerator WaterSales1349(Connection root,bool host){
    IEnumerator wait;
@@ -75,7 +104,10 @@ namespace ShopTogether {
     c.clientBuyingTagList.Clear();c.clientBuyingTagList.Add("WATER");c.useClientBudget=true;c.OverrideBudget(100000);
     var bottle=ClockBottle("W49_PURE",300000);Require(GraphUtils.TryAcceptAll(EmporiumEntry.Instance.backInvinvElement,bottle)==0,"pure water placed on counter");
     Require(WaterHelper.GetWaterPurity(bottle)==10000&&c.IsClientBuyingThisItem(bottle),"base game customer accepts the pure-water fixture");
-    int cash=store.playerCash;root.World.Index();root.SyncStateSoon();Signal("W49_SELL");
+    var pitcher=PanelFixture("water_pitcher","W50_FILTERED");ChemicalHelper.RemoveAllLiquid(pitcher);WaterHelper.AddLiquid(pitcher,"water",300000);
+    var filter=ModHelper.SpawnItem("water_filter");GeneralHelper.SetItemOwned(filter,true);Require(GraphUtils.TryAcceptAll(pitcher,filter)==0,"water container contains native filter");
+    Require(!c.IsClientBuyingThisItem(pitcher)&&c.IsClientBuyingThisItem(pitcher,true)&&CounterTrades.RefusalForItem(c,pitcher)=="~SMC372~","filter refusal matches native customer rules and specific message");
+    pitcher.Destroy();int cash=store.playerCash;root.World.Index();root.SyncStateSoon();Signal("W49_SELL");
     wait=Wait(()=>store.playerCash>cash&&bottle.parentInventory!=EmporiumEntry.Instance.backInvinvElement,"friend's pure-water sale completes on host",90);while(wait.MoveNext())yield return wait.Current;
     Signal("W49_CASH:"+store.playerCash);wait=Wait(()=>Received("W49_SYNCED"),"friend sees water sale and authoritative cash",90);while(wait.MoveNext())yield return wait.Current;
    }else{

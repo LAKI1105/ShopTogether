@@ -1,3 +1,19 @@
+## 1.3.50 — Grouped undo ownership
+
+- Follow-up review found that Smart Inventory Arrange can undo multiple containers as one group. Check every affected container and its items before starting and while awaiting the commit; a held item in another container must block the entire undo.
+- A refused undo keeps its original undo state, so it can proceed after the other player releases the item.
+- Includes all 1.3.49 transport, sorting and refusal-message changes.
+
+### 繁體中文
+
+- 交叉檢查發現智慧整理的復原可能包含多個容器，現在會檢查整筆復原涉及的全部物品，避免另一個容器裡被人拿著的東西被搬走。
+- 拒絕復原時保留原本的復原資料，放開物品後可以再操作。
+- 包含 1.3.49 的連線判斷、智慧整理轉送與拒收提示修正。
+
+### Verification / 核對範圍
+
+The expanded `release1349` suite completed on both isolated game processes with the 1.3.50 build. It covered two actual native Smart Inventory Arrange container transactions grouped for undo: a friend's undo from the first container was refused while the host held an item in the second, then completed after release. Native water-filter refusal and successful guest pure-water sales were checked, along with the earlier controlled Steam progress, failure, queue-capacity and host sorting cases. No host diagnostics occurred. The production scan and GNU RuntimeProbe string exclusion passed. The player's real external-network incident and old Smart Inventory Arrange 3.17.63 remain outside this local verification.
+
 ## 1.3.49 — Steam progress and smart-arrange compatibility
 
 - Reliable data already buffered and being consumed now counts as receive progress. Draining a large snapshot no longer immediately triggers the 60-second silence disconnect. Steam route requests from an existing accepted peer are acknowledged without replacing its protocol stream. Real P2P failures still close the connection safely.

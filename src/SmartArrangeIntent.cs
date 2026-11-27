@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 
@@ -10,7 +11,7 @@ namespace ShopTogether {
         static Type arrange, work;
         static Harmony patches;
         static Context current;
-        sealed class Context { internal Connection session; internal GameGridInventory grid; internal int owner, page; }
+        sealed class Context { internal Connection session; internal GameGridInventory grid; internal int owner, page; internal GameGridInventory[] undoGrids; }
         internal static bool Bound { get { return patches != null; } }
         internal static void Bind() {
             if (patches != null) return;
@@ -23,6 +24,7 @@ namespace ShopTogether {
             patches = new Harmony("shop_together.smart-arrange");
             patches.Patch(ModReflect.Target(arrange,"Run"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Propose"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Restore"));
             patches.Patch(ModReflect.Target(undo,"Start",new[]{typeof(GameGridInventory)}),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Undo"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Restore"));
+            patches.Patch(ModReflect.Target(undo,"StartGroup"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"UndoGroup"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Restore"));
             patches.Patch(ModReflect.Target(work,"StartCoroutine"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Schedule"));
             patches.Patch(ModReflect.Target(work,"get_AutomaticAllowed"),postfix:new HarmonyMethod(typeof(SmartArrangeIntent),"HostAutomatic"));
             patches.Patch(ModReflect.Target(transaction,"ApplyCore"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Commit"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Committed"));
@@ -48,6 +50,33 @@ namespace ShopTogether {
             if(!InventoryActions.Available(s,owner,__0)){Tell(s,owner,"~SMC328~");__result=false;return false;}
             current=new Context{session=s,grid=__0,owner=owner,page=StoragePagesIntent.Page(__0)};return true;
         }
+        static bool UndoGroup(object __0,ref bool __result,out Context __state) {
+            __state=current;var s=Connection.Current;
+            if(s==null||!s.Ready)return !ReplicaSession.ClientStore;
+            if(!s.IsHost){__result=false;return false;}
+            if(__0==null)return true;
+            var grids=new List<GameGridInventory>();
+            var insertion=ModReflect.Get(__0,"Insertion");
+            var entries=ModReflect.Get(insertion??__0,"Inventories") as IEnumerable;
+            if(entries!=null)foreach(var entry in entries){
+                var grid=insertion!=null?entry as GameGridInventory:ModReflect.Get<GameGridInventory>(entry,"Inventory");
+                if(grid!=null&&!grids.Contains(grid))grids.Add(grid);
+            }
+            if(grids.Count==0)return true;
+            var context=new Context{session=s,grid=current==null?grids[0]:current.grid,owner=current==null?Math.Max(0,RemoteActions.CurrentOwner):current.owner,page=current==null?StoragePagesIntent.Page(grids[0]):current.page,undoGrids=grids.ToArray()};
+            if(!Available(context)){Tell(s,context.owner,"~SMC328~");__result=false;return false;}
+            current=context;return true;
+        }
+        static bool Available(Context context){
+            if(context.undoGrids==null)return InventoryActions.Available(context.session,context.owner,context.grid);
+            foreach(var grid in context.undoGrids){
+                if(!InventoryActions.Available(context.session,context.owner,grid))return false;
+                // A grouped undo can restore other pages and containers too.
+                foreach(var item in GraphUtils.FindChildrenType<GameItem>(grid,null,null))
+                    if(!context.session.Leases.Available(context.owner,context.session.World.Id(item),UnityEngine.Time.realtimeSinceStartup))return false;
+            }
+            return true;
+        }
         static void Restore(Context __state){current=__state;}
         internal static bool Run(GameGridInventory grid,bool preserve){
             if(arrange==null||patches==null)return AuthorityIntent.Refuse("~SMC328~");
@@ -66,7 +95,7 @@ namespace ShopTogether {
                 if(Connection.Current!=context.session||!context.session.IsHost||!context.session.Ready){Dispose();return false;}
                 // The original solver validates its snapshot; the shared-store lease
                 // check prevents it from moving anything another player now holds.
-                if(!InventoryActions.Available(context.session,context.owner,context.grid)){Tell(context.session,context.owner,"~SMC328~");Dispose();return false;}
+                if(!Available(context)){Tell(context.session,context.owner,"~SMC328~");Dispose();return false;}
                 var previous=current;int owner=RemoteActions.CurrentOwner, panel=PanelRelay.Owner;bool executing=NativeActions.Executing;
                 current=context;RemoteActions.CurrentOwner=context.owner;PanelRelay.Owner=context.owner;NativeActions.Executing=true;
                 try{
