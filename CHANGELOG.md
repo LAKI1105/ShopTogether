@@ -1,3 +1,19 @@
+## 1.3.51 — Smart Arrange shortcuts, feedback and storage pages
+
+- Forward the guest's native Smart Arrange undo shortcut to the host. It refers to that player's retained undo group, so a later arrangement by somebody else cannot be undone accidentally.
+- Relay asynchronous sorting refusal, failure and cancellation results to the requesting player, with localized messages.
+- Run page occupancy checks in the requested page. Reuse Storage Pages' native item/cell filter during asynchronous sorting and undo; its older Smart Arrange entry point no longer covered the installed sorter.
+
+### 繁體中文
+
+- 朋友的智慧整理復原快捷鍵改由房主執行，只能復原自己的有效整理紀錄；紀錄已失效會回覆原因。
+- 整理途中失敗、取消或物品變動時，原因會送回操作的朋友。
+- 分頁倉庫的佔用檢查、整理和復原都使用原操作頁面，不受房主目前瀏覽頁面影響。
+
+### Verification / 核對範圍
+
+The final `release1351` run completed on both isolated game processes with Smart Inventory Arrange 3.17.76 and ShopStoragePages 1.2.2. It verified 12 valid second-page items sorted while an item on the first page retained its host lease; only those 12 items entered the native solver. The guest's native `StartLatest` entry restored the exact original layout on the host and replicated it, while a later host arrangement could not be undone by the guest. A controlled native snapshot rejection inside the real async sorting coroutine reached the guest as a localized reason. Production scanning passed. These are same-machine, isolated process tests, not physical keyboard input or real external-network reproduction. Live saves and subscribed Workshop files were unchanged by the test.
+
 ## 1.3.50 — Grouped undo ownership
 
 - Follow-up review found that Smart Inventory Arrange can undo multiple containers as one group. Check every affected container and its items before starting and while awaiting the commit; a held item in another container must block the entire undo.

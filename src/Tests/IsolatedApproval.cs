@@ -34,6 +34,11 @@ public static class IsolatedApproval {
                 if(extra==null||!Under(extra.FolderPath,root))throw new InvalidOperationException("Missing isolated Smart Arrange");
                 Approve(extra,new HashSet<string>(StringComparer.Ordinal),true);
             }
+            if(mode!="scan"&&Environment.GetEnvironmentVariable("SHOPTOGETHER_TEST_STORAGE_PAGES")=="1") {
+                LoadedMod extra=null;foreach(var mod in ModLoader.Mods)if(mod.Manifest.ID=="player.shop_storage_pages")extra=mod;
+                if(extra==null||!Under(extra.FolderPath,root))throw new InvalidOperationException("Missing isolated storage pages");
+                Approve(extra,new HashSet<string>(StringComparer.Ordinal),true);
+            }
             Debug.Log("[SMC-TEST APPROVED] game scanner passed; requested capabilities authorized in isolated profile");
         } catch (Exception error) {
             Debug.LogError("[SMC-TEST APPROVAL-FAILED] " + error.ToString().Replace("\r", " ").Replace("\n", " | "));

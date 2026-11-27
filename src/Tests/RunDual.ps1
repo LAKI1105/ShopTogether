@@ -1,7 +1,7 @@
 param(
-    [ValidateSet('release1349','release1347','naturalwater1346','closewater1346','lifecycle1346','slots1346','leases1345','hostdrag1345','outing1344','reported1344','perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
+    [ValidateSet('release1351','release1349','release1347','naturalwater1346','closewater1346','lifecycle1346','slots1346','leases1345','hostdrag1345','outing1344','reported1344','perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
-    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[string]$ProductionDll,[string]$ProductionPackage,[string]$SmartArrangeFolder,[switch]$ContinueOnFailure,[switch]$ScanOnly
+    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[string]$ProductionDll,[string]$ProductionPackage,[string]$SmartArrangeFolder,[string]$StoragePagesFolder,[switch]$ContinueOnFailure,[switch]$ScanOnly
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'TestProfile.ps1')
@@ -78,6 +78,12 @@ try{
         Copy-Item -LiteralPath $SmartArrangeFolder -Destination (Join-Path $isolated 'Mods\SmartInventoryArrange') -Recurse
         $env:SHOPTOGETHER_TEST_SMART_ARRANGE='1'
     }
+    if($StoragePagesFolder){
+        [xml]$pageManifest=Get-Content -LiteralPath (Join-Path $StoragePagesFolder 'manifest.xml') -Raw
+        if($pageManifest.DocumentElement.ID -ne 'player.shop_storage_pages'){throw 'Unexpected storage pages test mod'}
+        Copy-Item -LiteralPath $StoragePagesFolder -Destination (Join-Path $isolated 'Mods\StoragePages') -Recurse
+        $env:SHOPTOGETHER_TEST_STORAGE_PAGES='1'
+    }
     Add-Type -Path (Join-Path $PSScriptRoot 'PrivateDesktop.cs')
     $privateDesktop=[ShopTogetherTestDesktop]::new()
     $env:SteamAppId='4348910';$env:SteamGameId='4348910'
@@ -99,7 +105,7 @@ try{
         if(Test-Path -LiteralPath $profileSave){
             $settings=Get-Content -LiteralPath $profileSave -Raw | ConvertFrom-Json -AsHashtable
             if($settings.ContainsKey('modOrder') -and $settings.modOrder.ContainsKey('value')){
-                if($Suite -contains 'release1349' -or $Suite -contains 'hostdrag1345' -or $Suite -contains 'outing1344' -or $Suite -contains 'reported1344' -or $Suite -contains 'perf1340' -or $Suite -contains 'release1339' -or $Suite -contains 'reported1339' -or $Suite -contains 'settlement1339'){$settings.modOrder.value=@()}else{$settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})}
+                if($Suite -contains 'release1351' -or $Suite -contains 'release1349' -or $Suite -contains 'hostdrag1345' -or $Suite -contains 'outing1344' -or $Suite -contains 'reported1344' -or $Suite -contains 'perf1340' -or $Suite -contains 'release1339' -or $Suite -contains 'reported1339' -or $Suite -contains 'settlement1339'){$settings.modOrder.value=@()}else{$settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})}
                 [IO.File]::WriteAllText($profileSave,($settings | ConvertTo-Json -Depth 100),[Text.UTF8Encoding]::new($false))
             }
         }
@@ -200,6 +206,7 @@ try{
                 if($part -eq 'hint1322' -and $env:SMC_HINT_EVIDENCE_DIR){$picture=[regex]::Match($text,'\[SMC-HINT-IMAGE\] ([A-Za-z0-9+/=]+)');if($picture.Success){[IO.File]::WriteAllBytes((Join-Path $env:SMC_HINT_EVIDENCE_DIR "$role.png"),[Convert]::FromBase64String($picture.Groups[1].Value));Write-Output "HINT_IMAGE_SAVED $role"}}
                 $text -split '\r?\n' | Where-Object {$_ -match '\[SMC (PASS|FAIL|COMPLETE|ROUTER|PERF|NOTE|AUDIT)|Init failed: 多人|Trust check failed:|\[ModLoader\].*(shop_together)|(?i)friend .*reported:'}
                 $text -split '\r?\n' | Select-String -Pattern '\[SMC FAIL\]|Patching exception' -Context 0,4 | ForEach-Object ToString
+                if($part -eq 'release1351' -and $text -match '\[SMC FAIL\]'){$text -split '\r?\n' | Where-Object {$_ -notmatch '^\[SMC-TEST-IMAGE\]'} | Select-String -Pattern 'SIA_SORT_ERROR|SIA_UNDO_REFUSED|Undo rejected|Undo verification|Undo snapshot|Smart arrange undo|undo-remember' -Context 0,12 | ForEach-Object ToString}
             }
             Stop-TestProcesses $started;$started=@()
         }
@@ -213,6 +220,7 @@ try{
 }finally{
     Stop-TestProcesses $started
     $env:SHOPTOGETHER_TEST_SMART_ARRANGE=$null
+    $env:SHOPTOGETHER_TEST_STORAGE_PAGES=$null
     if($null -ne $privateDesktop){$privateDesktop.Dispose()}
     $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($prefRegistry,$true)
     if($null -ne $key){try{foreach($name in $key.GetValueNames()){if($name.StartsWith($testPrefPrefix,[StringComparison]::Ordinal)){$key.DeleteValue($name,$false)}}}finally{$key.Dispose()}}

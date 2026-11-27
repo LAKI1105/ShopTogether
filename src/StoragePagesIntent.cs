@@ -64,6 +64,16 @@ namespace ShopTogether {
             int old=Number(current,"page");ModReflect.Set(current,"page",page);
             try{return action();}finally{ModReflect.Set(current,"page",old);}
         }
+        internal static bool OnSortPage(GameGridInventory inventory,int page,Func<bool> action){
+            return OnPage(inventory,page,()=>{
+                var current=Current;if(current==null||ModReflect.Get(current,"grid")!=inventory)return action();
+                // Reuse the page mod's item/cell filtering for the newer asynchronous sorter.
+                var viewType=ModReflect.FindType("ShopStoragePages.SortView");
+                var view=ModReflect.CallStatic(viewType,"Create",inventory);if(view==null)return action();
+                var previous=ModReflect.GetStatic(viewType,"Active");ModReflect.SetStatic(viewType,"Active",view);
+                try{return action();}finally{ModReflect.SetStatic(viewType,"Active",previous);}
+            });
+        }
         internal static void UndoPage(GameInventory inventory,int page){var grid=inventory as GameGridInventory;if(grid==null){RemoteActions.PendingNote="~SMC328~";return;}OnPage(grid,page,()=>{ShopActions.UndoSort(inventory);return true;});}
         internal static void Shutdown(){if(patches!=null)patches.UnpatchAll("shop_together.storage-pages-intent");patches=null;type=null;scope=0;lastMetadata=null;}
     }

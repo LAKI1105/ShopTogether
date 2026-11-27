@@ -180,6 +180,7 @@ namespace ShopTogether {
             AddAdapter(M(() => typeof(CargoIntent).GetMethod("CargoSave", BF)),16000);
             AddAdapter(M(() => typeof(StoragePagesIntent).GetMethod("StoragePageAction", BF)));
             AddAdapter(M(() => typeof(StoragePagesIntent).GetMethod("UndoPage", BF)));
+            AddAdapter(M(() => typeof(SmartArrangeIntent).GetMethod("UndoSmartArrange", BF)));
 
             // --- found by the full audit ---
             AddAdapter(M(() => typeof(ShopActions).GetMethod("Inspect", BF)));

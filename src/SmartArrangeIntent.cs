@@ -8,10 +8,11 @@ namespace ShopTogether {
     // Smart Arrange owns its asynchronous solver; only the host runs that solver
     // and commits its result. The friend requests the same installed mod action.
     internal static class SmartArrangeIntent {
-        static Type arrange, work;
+        static Type arrange, work, undo;
         static Harmony patches;
         static Context current;
-        sealed class Context { internal Connection session; internal GameGridInventory grid; internal int owner, page; internal GameGridInventory[] undoGrids; }
+        static readonly Dictionary<int,Context> lastUndo = new Dictionary<int,Context>();
+        sealed class Context { internal Connection session; internal GameGridInventory grid; internal int owner, page; internal GameGridInventory[] undoGrids; internal object undoGroup; internal bool notified; }
         internal static bool Bound { get { return patches != null; } }
         internal static void Bind() {
             if (patches != null) return;
@@ -19,12 +20,15 @@ namespace ShopTogether {
             if (arrange == null) return;
             work = ModReflect.FindType("SmartInventoryArrange.GameWork");
             var transaction = ModReflect.FindType("SmartInventoryArrange.InventoryTransaction");
-            var undo = ModReflect.FindType("SmartInventoryArrange.ArrangeUndo");
+            undo = ModReflect.FindType("SmartInventoryArrange.ArrangeUndo");
             if (work == null || transaction == null || undo == null) return;
             patches = new Harmony("shop_together.smart-arrange");
             patches.Patch(ModReflect.Target(arrange,"Run"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Propose"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Restore"));
             patches.Patch(ModReflect.Target(undo,"Start",new[]{typeof(GameGridInventory)}),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Undo"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Restore"));
             patches.Patch(ModReflect.Target(undo,"StartGroup"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"UndoGroup"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Restore"));
+            patches.Patch(ModReflect.Target(undo,"StartLatest"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"UndoShortcut"));
+            patches.Patch(ModReflect.Target(undo,"Remember"),postfix:new HarmonyMethod(typeof(SmartArrangeIntent),"RememberUndo"));
+            patches.Patch(ModReflect.Target(ModReflect.FindType("SmartInventoryArrange.ArrangeFeedback"),"Finish"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"BeforeFinish"),postfix:new HarmonyMethod(typeof(SmartArrangeIntent),"Finished"));
             patches.Patch(ModReflect.Target(work,"StartCoroutine"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Schedule"));
             patches.Patch(ModReflect.Target(work,"get_AutomaticAllowed"),postfix:new HarmonyMethod(typeof(SmartArrangeIntent),"HostAutomatic"));
             patches.Patch(ModReflect.Target(transaction,"ApplyCore"),prefix:new HarmonyMethod(typeof(SmartArrangeIntent),"Commit"),finalizer:new HarmonyMethod(typeof(SmartArrangeIntent),"Committed"));
@@ -50,6 +54,37 @@ namespace ShopTogether {
             if(!InventoryActions.Available(s,owner,__0)){Tell(s,owner,"~SMC328~");__result=false;return false;}
             current=new Context{session=s,grid=__0,owner=owner,page=StoragePagesIntent.Page(__0)};return true;
         }
+        static bool UndoShortcut(ref bool __result){
+            if(!ReplicaSession.ClientStore)return true;
+            __result=RemoteActions.Forward(RemoteActions.Adapter("UndoSmartArrange",0),null,new object[0]);return false;
+        }
+        static void RememberUndo(){
+            if(current==null||current.undoGrids!=null)return;
+            var group=ModReflect.GetStatic(undo,"_latest");
+            if(group!=null&&(bool)ModReflect.Call(group,"Contains",current.grid)){
+                current.undoGroup=group;lastUndo[current.owner]=current;
+            }
+        }
+        internal static void UndoSmartArrange(){
+            var s=Connection.Current;int owner=Math.Max(0,RemoteActions.CurrentOwner);Context saved;
+            if(s==null||!s.IsHost||!s.Ready)return;
+            // The native mod retains a single undo group. Never undo somebody else's newer sort.
+            if(!lastUndo.TryGetValue(owner,out saved)||saved.session!=s||saved.undoGroup!=ModReflect.GetStatic(undo,"_latest")){
+                AuthorityIntent.Refuse("~SMC373~");return;
+            }
+            bool started=StoragePagesIntent.OnPage(saved.grid,saved.page,()=>(bool)ModReflect.CallStatic(undo,"Start",saved.grid));
+            if(started)lastUndo.Remove(owner);else if(RemoteActions.PendingNote==null)AuthorityIntent.Refuse("~SMC328~");
+        }
+        static void BeforeFinish(object __0,out bool __state){__state=__0!=null&&Convert.ToString(ModReflect.Get(__0,"Outcome"))=="Running";}
+        static void Finished(object __0,bool __state){
+            if(!__state||current==null||current.owner<=0||current.notified)return;
+            string outcome=Convert.ToString(ModReflect.Get(__0,"Outcome")),note=null;
+            if(outcome=="InventoryChanged")note="~SMC374~";
+            else if(outcome=="Cancelled")note="~SMC375~";
+            else if(outcome=="Failed")note="~SMC376~";
+            else if(outcome=="NotSortable"||outcome=="NoCandidate"||outcome=="Empty"||outcome=="Unchanged")note="~SMC377~";
+            if(note!=null){current.notified=true;Tell(current.session,current.owner,note);}
+        }
         static bool UndoGroup(object __0,ref bool __result,out Context __state) {
             __state=current;var s=Connection.Current;
             if(s==null||!s.Ready)return !ReplicaSession.ClientStore;
@@ -64,11 +99,12 @@ namespace ShopTogether {
             }
             if(grids.Count==0)return true;
             var context=new Context{session=s,grid=current==null?grids[0]:current.grid,owner=current==null?Math.Max(0,RemoteActions.CurrentOwner):current.owner,page=current==null?StoragePagesIntent.Page(grids[0]):current.page,undoGrids=grids.ToArray()};
+            foreach(var saved in lastUndo.Values)if(saved.session==s&&saved.undoGroup==__0){context.grid=saved.grid;context.page=saved.page;break;}
             if(!Available(context)){Tell(s,context.owner,"~SMC328~");__result=false;return false;}
             current=context;return true;
         }
         static bool Available(Context context){
-            if(context.undoGrids==null)return InventoryActions.Available(context.session,context.owner,context.grid);
+            if(context.undoGrids==null)return StoragePagesIntent.OnPage(context.grid,context.page,()=>InventoryActions.Available(context.session,context.owner,context.grid));
             foreach(var grid in context.undoGrids){
                 if(!InventoryActions.Available(context.session,context.owner,grid))return false;
                 // A grouped undo can restore other pages and containers too.
@@ -99,7 +135,7 @@ namespace ShopTogether {
                 var previous=current;int owner=RemoteActions.CurrentOwner, panel=PanelRelay.Owner;bool executing=NativeActions.Executing;
                 current=context;RemoteActions.CurrentOwner=context.owner;PanelRelay.Owner=context.owner;NativeActions.Executing=true;
                 try{
-                    bool more=StoragePagesIntent.OnPage(context.grid,context.page,()=>inner.MoveNext());
+                    bool more=StoragePagesIntent.OnSortPage(context.grid,context.page,()=>inner.MoveNext());
                     value=more?inner.Current:null;if(value is IEnumerator)value=new Routine((IEnumerator)value,context);
                     if(!more){context.session.SyncStateSoon();Dispose();}return more;
                 }finally{current=previous;RemoteActions.CurrentOwner=owner;PanelRelay.Owner=panel;NativeActions.Executing=executing;}
@@ -116,6 +152,6 @@ namespace ShopTogether {
         }
         static void Committed(HostNativeScope __state){if(__state!=null)__state.Dispose();}
         static void Tell(Connection session,int owner,string note){if(owner==0)RemoteActions.Notice(note);else session.SendTo(owner,37,System.Text.Encoding.UTF8.GetBytes(note));}
-        internal static void Shutdown(){if(patches!=null)patches.UnpatchAll("shop_together.smart-arrange");patches=null;arrange=null;work=null;current=null;}
+        internal static void Shutdown(){if(patches!=null)patches.UnpatchAll("shop_together.smart-arrange");patches=null;arrange=null;work=null;undo=null;current=null;lastUndo.Clear();}
     }
 }
