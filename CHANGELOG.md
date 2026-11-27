@@ -1,3 +1,23 @@
+## 1.3.49 — Steam progress and smart-arrange compatibility
+
+- Reliable data already buffered and being consumed now counts as receive progress. Draining a large snapshot no longer immediately triggers the 60-second silence disconnect. Steam route requests from an existing accepted peer are acknowledged without replacing its protocol stream. Real P2P failures still close the connection safely.
+- Added host-side forwarding for Smart Inventory Arrange's context-menu arrangement, including keep-container mode. Asynchronous work retains the requesting player's context; occupied inventories are refused, and the host's resulting layout is synchronized to friends. Integration uses the official ModReflect API and an optional `smart_inventory_arrange` prerequisite.
+- Water sales now explain the native filter-inside refusal instead of only showing a generic rejection. Purity, customer preferences and game purchase rules remain authoritative.
+- Long third-party error headers no longer push the actual primary exception out of the existing short report. Reports remain local until the player chooses to copy them; no automatic upload was added.
+
+### 繁體中文
+
+- 修正大量同步資料仍在處理時，可能被誤判為 60 秒沒收到資料而斷線。Steam 再次要求與已接受的朋友建立路徑時會正常回應；真正的連線失敗仍會中止，不會忽略可能缺包的狀況。
+- 智慧整理右鍵操作改由房主執行，再同步排列給朋友；有人拿著其中的物品時會回覆拒絕原因。保留容器模式也使用同一路徑，透過官方允許的介面整合。
+- 純水若因瓶內仍有濾芯而被原版客人拒收，現在會提示先拿出濾芯，沒有放寬水質或收購規則。
+- 改善過長的其他模組錯誤摘要，優先保留真正的例外原因。沒有新增自動上傳資料。
+
+### Verification / 核對範圍
+
+`release1349` completed on both local game processes on an isolated Windows desktop. Controlled Steam tests covered delayed backlog consumption, real silence, an existing-peer route request, error 4, bounded receive capacity and ordered delivery. Smart Inventory Arrange 3.17.76 from its official Workshop item executed a friend's request on the host, synchronized all twelve item positions, and refused a second request while the host held an item. A native pure-water sale completed on the host and the exact cash/item outcome reached the friend. No host diagnostics were reported. The production game scan passed without `reflection-external`; GNU `strings -a ShopTogether.dll | grep -c RuntimeProbe` returned `0`.
+
+這是本機雙程序與受控 Steam 介面測試，不是兩個帳號的真實外網重現；沒有宣稱找出玩家原先每次斷線的原因。智慧整理實測版本為 3.17.76，玩家回報的舊版 3.17.63 未實測。本輪沒有重跑全部歷史套件或所有模組組合。
+
 ## 1.3.48 — Official reflection API migration
 
 - Replaced computed reflection targets with the game-approved `ModReflect` API; ordinary game-type reflection remains explicit and scanner-readable. The production DLL no longer needs `reflection-external`.

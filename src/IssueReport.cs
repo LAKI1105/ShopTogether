@@ -41,12 +41,26 @@ namespace ShopTogether {
             if (adding || string.IsNullOrEmpty(text)) return;
             adding = true;   // never re-enter from the log callback
             try {
-                text = Clean(text); if (text.Length > 300) text = text.Substring(0, 300);
+                text = Compact(Clean(text));
                 var list = Lines();
                 list.Remove(text); list.Add(text);    // the same problem again moves to the end, once
                 while (list.Count > MaxLines) list.RemoveAt(0);
                 Save();
             } catch { } finally { adding = false; }
+        }
+
+        internal static string Compact(string text) {
+            if (text.Length <= 300) return text;
+            // Some mods prefix their actual exception with a long diagnostic header.
+            // Keep the source and the exception, rather than only that header.
+            int cause = text.IndexOf("PRIMARY EXCEPTION", StringComparison.OrdinalIgnoreCase);
+            if (cause > 0) {
+                int colon = text.IndexOf(':', cause);
+                if (colon >= 0 && colon + 1 < text.Length) cause = colon + 1;
+                string detail = text.Substring(cause).Trim();
+                return text.Substring(0, Math.Min(70, cause)) + " ... " + detail.Substring(0, Math.Min(225, detail.Length));
+            }
+            return text.Substring(0, 300);
         }
 
         static void Save() {

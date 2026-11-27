@@ -416,10 +416,12 @@ namespace ShopTogether {
             }
         }
 
+        internal static void RememberSmartSort(GameGridInventory inventory){if(inventory!=null)sortedHere.Add(inventory);}
         [HarmonyPatch(typeof(InventorySortHelper), "Sort")]
         internal static class RememberSort { static void Postfix(GameGridInventory __0) { if (ReplicaSession.ClientStore && __0 != null) sortedHere.Add(__0); } }
         [HarmonyPatch(typeof(InventorySortHelper), "CanUndo")]
         internal static class FriendCanUndo {
+            [HarmonyPriority(Priority.First + 200)]
             static bool Prefix(GameGridInventory inventory, ref bool __result) { if (!ReplicaSession.ClientStore) return true; __result = inventory != null && sortedHere.Contains(inventory); return false; }
         }
         [HarmonyPatch(typeof(InventorySortHelper), "Undo")]

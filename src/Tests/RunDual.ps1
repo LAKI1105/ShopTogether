@@ -1,7 +1,7 @@
 param(
-    [ValidateSet('release1347','naturalwater1346','closewater1346','lifecycle1346','slots1346','leases1345','hostdrag1345','outing1344','reported1344','perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
+    [ValidateSet('release1349','release1347','naturalwater1346','closewater1346','lifecycle1346','slots1346','leases1345','hostdrag1345','outing1344','reported1344','perf1340','settlement1339','reported1339','release1339','outing138','completion138','authority137','equipment136','book136','overflow136','cargo135','interact135','custom135','audit135','authority134recipe','authority134','all','core','extra','gun','death','join','phone','machines','overflow','features','panels','clock','customers','replica','overnight','lottery','recovery','throttled','ui1319','guard1319','deals1320','boundary1320','release1321','hint1322','dump1322','return1323','session1323','immediate1324','numeric1326','layout1326','mouse1327','trade1327','stress1327','issue1328')]
     [string[]]$Suite=@('all'),[ValidateRange(1,100000)][int]$UploadKbps=1000,
-    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[string]$ProductionDll,[string]$ProductionPackage,[switch]$ContinueOnFailure,[switch]$ScanOnly
+    [string]$GamePath=$env:PROBABLY_STOLEN_PATH,[string]$ProductionDll,[string]$ProductionPackage,[string]$SmartArrangeFolder,[switch]$ContinueOnFailure,[switch]$ScanOnly
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'TestProfile.ps1')
@@ -72,6 +72,12 @@ $testHostReports=[Collections.Generic.List[string]]::new()
 $failedSuites=[Collections.Generic.List[string]]::new()
 try{
     & (Join-Path $PSScriptRoot 'PrepareIsolatedGame.ps1') -GamePath $game -Target $isolated -AllowApprovedTestTrust
+    if($SmartArrangeFolder){
+        [xml]$extraManifest=Get-Content -LiteralPath (Join-Path $SmartArrangeFolder 'manifest.xml') -Raw
+        if($extraManifest.DocumentElement.ID -ne 'smart_inventory_arrange'){throw 'Unexpected compatibility test mod'}
+        Copy-Item -LiteralPath $SmartArrangeFolder -Destination (Join-Path $isolated 'Mods\SmartInventoryArrange') -Recurse
+        $env:SHOPTOGETHER_TEST_SMART_ARRANGE='1'
+    }
     Add-Type -Path (Join-Path $PSScriptRoot 'PrivateDesktop.cs')
     $privateDesktop=[ShopTogetherTestDesktop]::new()
     $env:SteamAppId='4348910';$env:SteamGameId='4348910'
@@ -93,7 +99,7 @@ try{
         if(Test-Path -LiteralPath $profileSave){
             $settings=Get-Content -LiteralPath $profileSave -Raw | ConvertFrom-Json -AsHashtable
             if($settings.ContainsKey('modOrder') -and $settings.modOrder.ContainsKey('value')){
-                if($Suite -contains 'hostdrag1345' -or $Suite -contains 'outing1344' -or $Suite -contains 'reported1344' -or $Suite -contains 'perf1340' -or $Suite -contains 'release1339' -or $Suite -contains 'reported1339' -or $Suite -contains 'settlement1339'){$settings.modOrder.value=@()}else{$settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})}
+                if($Suite -contains 'release1349' -or $Suite -contains 'hostdrag1345' -or $Suite -contains 'outing1344' -or $Suite -contains 'reported1344' -or $Suite -contains 'perf1340' -or $Suite -contains 'release1339' -or $Suite -contains 'reported1339' -or $Suite -contains 'settlement1339'){$settings.modOrder.value=@()}else{$settings.modOrder.value=@($settings.modOrder.value | Where-Object {$_ -ne 'shop_together'})}
                 [IO.File]::WriteAllText($profileSave,($settings | ConvertTo-Json -Depth 100),[Text.UTF8Encoding]::new($false))
             }
         }
@@ -206,6 +212,7 @@ try{
     throw
 }finally{
     Stop-TestProcesses $started
+    $env:SHOPTOGETHER_TEST_SMART_ARRANGE=$null
     if($null -ne $privateDesktop){$privateDesktop.Dispose()}
     $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($prefRegistry,$true)
     if($null -ne $key){try{foreach($name in $key.GetValueNames()){if($name.StartsWith($testPrefPrefix,[StringComparison]::Ordinal)){$key.DeleteValue($name,$false)}}}finally{$key.Dispose()}}

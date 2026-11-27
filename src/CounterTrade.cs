@@ -165,10 +165,14 @@ namespace ShopTogether {
             if (!DialogueIntent.MayChange(s, item) || !AuthorityIntent.FreeTree(s, owner, item)) return false;
             if (c.clientIntent == StoreClient.ClientIntent.GUNSMITH) { long reward = c.gunOrderData.GetTotalReward(item); if (reward < 0 || (long)store.playerCash + reward > int.MaxValue) return AuthorityIntent.Refuse("~SMC356~"); }
             if (c.clientIntent != StoreClient.ClientIntent.GUNSMITH && !PriceRange(new[] { item }, !GeneralHelper.IsItemOwned(item))) return false;
-            if (c.clientIntent != StoreClient.ClientIntent.GUNSMITH && GeneralHelper.IsItemOwned(item) && !c.IsClientBuyingThisItem(item)) return AuthorityIntent.Refuse("~SMC359~");
+            if (c.clientIntent != StoreClient.ClientIntent.GUNSMITH && GeneralHelper.IsItemOwned(item) && !c.IsClientBuyingThisItem(item)) return AuthorityIntent.Refuse(RefusalForItem(c,item));
             if (c.clientIntent != StoreClient.ClientIntent.GUNSMITH && !GeneralHelper.IsItemOwned(item) && !store.CanBuyItemFromTable())
                 return AuthorityIntent.Refuse(item.GetNegociatedValue() > store.playerCash ? "~SMC296~" : "~SMC297~");
             return true;
+        }
+        internal static string RefusalForItem(StoreClient customer,GameItem item) {
+            // This is the base game's filter refusal, not a purity override.
+            return customer!=null&&item!=null&&WaterHelper.GetFilterItem(item)!=null&&!customer.IsClientBuyingThisItem(item)&&customer.IsClientBuyingThisItem(item,true)?"~SMC372~":"~SMC359~";
         }
         internal static bool PriceRange(IEnumerable<GameItem> items, bool buying) {
             long total = 0;
@@ -195,7 +199,10 @@ namespace ShopTogether {
                     items = new List<GameItem> { selected != null && items.Contains(selected) ? selected : items[0] };
                 }
             } else items = Sellable(c);
-            if (items == null || items.Count == 0) return AuthorityIntent.Refuse(action == 1 ? "~SMC360~" : "~SMC361~");
+            if (items == null || items.Count == 0) {
+                if(action!=1)foreach(var item in EmporiumEntry.Instance.backInvinvElement.childItems)if(GeneralHelper.IsItemOwned(item)&&RefusalForItem(c,item)=="~SMC372~")return AuthorityIntent.Refuse("~SMC372~");
+                return AuthorityIntent.Refuse(action == 1 ? "~SMC360~" : "~SMC361~");
+            }
             return PriceRange(items, action == 1);
         }
         internal static int ConfirmationToken(int owner) { PendingSale p; return pending.TryGetValue(owner, out p) ? p.token : 0; }

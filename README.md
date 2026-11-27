@@ -4,21 +4,27 @@ A community co-op mod for **Probably Stolen**. Up to eight players, including th
 
 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3837477869)
 
-版本：**1.3.48**，適用遊戲 **1.0.0 系列**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
+版本：**1.3.49**，適用遊戲 **1.0.0 系列**。所有玩家須更新至相同版本並重新啟動遊戲。店鋪存檔由房主持有；朋友送出操作請求，房主依當下條件執行，再同步結果與拒絕原因。
 
 顧客進出店的移動與對話內容跟隨房主同步。外出與回店採全員同行；雙手槽位、背包與地面物品共用，各自的游標和選單仍可獨立操作。化學品、水質、液體比例與基因由房主遊戲運算並同步數值。安裝包只有 DLL、manifest 與封面；原始碼在本儲存庫。
 
-本次修正摘要請見 [1.3.48 更新紀錄](CHANGELOG.md)。
+本次修正摘要請見 [1.3.49 更新紀錄](CHANGELOG.md)。
 
-Version **1.3.48**, for the **1.0.0 game series**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
+Version **1.3.49**, for the **1.0.0 game series**. Everyone must use the same build and restart. The host owns gameplay and the save; guests send requests and receive authoritative results or refusal reasons. Customer movement and dialogue follow the host. Travel, hand slots, the backpack and ground items are shared, while cursors and menus remain individual. Runtime packages contain only the DLL, manifest and preview. See the [changelog](CHANGELOG.md) for release notes.
+
+## 1.3.49 本次更新
+
+修正處理大量可靠資料時的誤斷線判斷，接上朋友的智慧整理右鍵操作，並補上濾芯造成拒收的明確提示。`release1349` 在獨立桌面的兩個遊戲程序完成；智慧整理使用官方 3.17.76，純水成交與金額同步亦通過。外網原始事故及智慧整理舊版 3.17.63 未重現，詳見更新紀錄。
+
+This release corrects receive-progress timeout handling, forwards Smart Inventory Arrange requests to the host, and explains native water-filter refusals. The isolated dual-process check passed with Smart Inventory Arrange 3.17.76. It does not reproduce the players' original external-network incidents or test the reported older 3.17.63 version.
 
 ## 12 月 10 日相容性 / December 10 compatibility
 
-1.3.48 的正式 DLL 改用官方 `ModReflect` 及公開 API，不宣告或使用 `reflection-external`。跨模組存取依官方規則列出四項可選相容模組：`CorpPresence`、`bartender_action`、`player.shop_storage_pages`、`modkit.multipage_store_fix`。未安裝時遊戲可能顯示缺少前置的警告，多人本體仍能載入。對方模組本身也必須符合新規則；本模組不會略過或修改它們的安全檢查。
+1.3.48 的正式 DLL 改用官方 `ModReflect` 及公開 API，不宣告或使用 `reflection-external`。跨模組存取依官方規則列出可選相容模組：`CorpPresence`、`bartender_action`、`player.shop_storage_pages`、`modkit.multipage_store_fix`，1.3.49 另加入 `smart_inventory_arrange`。未安裝時遊戲可能顯示缺少前置的警告，多人本體仍能載入。對方模組本身也必須符合新規則；本模組不會略過或修改它們的安全檢查。
 
-The production DLL uses official `ModReflect` and public APIs instead of deprecated external reflection. The four integrations above are declared for authorized cross-mod access. They remain optional: missing integrations may produce dependency warnings, but do not prevent this mod from loading. Integrated mods must independently comply with the game's security rules.
+The production DLL uses official `ModReflect` and public APIs instead of deprecated external reflection. The optional integrations above are declared for authorized cross-mod access. They remain optional: missing integrations may produce dependency warnings, but do not prevent this mod from loading. Integrated mods must independently comply with the game's security rules.
 
-## 1.3.48 本次核對範圍
+## 1.3.48 核對範圍
 
 在不切換畫面的獨立 Windows 桌面完成七組相關雙程序套件：`core`、`gun`、`clock`、`custom135`、`cargo135`、`equipment136`、`overflow136`，房主與朋友兩端皆完成。涵蓋獨立選單、重疊拖放與先到先得、房主運算與偏差修正、射擊旁觀者、溫度和配方、同時倒水與淨水反應，以及酒吧、企業訂單、貨倉、主倉分頁、溢出頁面與錄音機相容路徑。測試中修正了分頁改名的多載定位、貨倉弱參照表讀取，以及機台設定寫入後未刷新實際狀態的問題。
 

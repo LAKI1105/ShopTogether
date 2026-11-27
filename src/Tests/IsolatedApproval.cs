@@ -29,6 +29,11 @@ public static class IsolatedApproval {
             if(mode=="scan"&&own.Manifest.Capabilities.Contains("reflection-external"))throw new InvalidOperationException("Production must not declare deprecated reflection");
             if(mode=="scan"&&ModLoader.IsModEnabled(own.Manifest.ID))throw new InvalidOperationException("Production candidate must remain disabled during the isolated scan");
             Approve(own,new HashSet<string>(new[]{"network","steam","reflection-external"},StringComparer.Ordinal),mode!="scan");
+            if(mode!="scan"&&Environment.GetEnvironmentVariable("SHOPTOGETHER_TEST_SMART_ARRANGE")=="1") {
+                LoadedMod extra=null;foreach(var mod in ModLoader.Mods)if(mod.Manifest.ID=="smart_inventory_arrange")extra=mod;
+                if(extra==null||!Under(extra.FolderPath,root))throw new InvalidOperationException("Missing isolated Smart Arrange");
+                Approve(extra,new HashSet<string>(StringComparer.Ordinal),true);
+            }
             Debug.Log("[SMC-TEST APPROVED] game scanner passed; requested capabilities authorized in isolated profile");
         } catch (Exception error) {
             Debug.LogError("[SMC-TEST APPROVAL-FAILED] " + error.ToString().Replace("\r", " ").Replace("\n", " | "));

@@ -53,7 +53,11 @@ namespace ShopTogether {
             ulong id = request.m_steamIDRemote.m_SteamID;
             if (!ValidPerson(id)) return;
             if (expectedHost != 0) { if (id == expectedHost) SteamNetworking.AcceptP2PSessionWithUser(request.m_steamIDRemote); return; }
-            if (admit == null || open.ContainsKey(id) || !admit(id)) return;
+            // Steam may request a route again for an already authenticated connection.
+            // Accept that known peer without creating a second protocol stream.
+            SteamChannel existing;
+            if (open.TryGetValue(id, out existing)) { if (!existing.Failed && existing.Ready) SteamNetworking.AcceptP2PSessionWithUser(request.m_steamIDRemote); return; }
+            if (admit == null || !admit(id)) return;
             SteamNetworking.AcceptP2PSessionWithUser(request.m_steamIDRemote);
             var channel = new SteamChannel(id);
             open[id] = channel; arrivals.Enqueue(channel);
@@ -117,6 +121,10 @@ namespace ShopTogether {
             internal bool CanReceive(int length) { return stream.CanArrive(length); }
             public int Receive(byte[] destination) {
                 int n = stream.Receive(destination);
+                // Draining reliable data is progress too. A large buffered snapshot may
+                // take over a minute to apply; do not disconnect at the end of that queue
+                // before Poll gets another frame to fetch the remaining Steam packets.
+                if (n > 0) lastArrival = UnityEngine.Time.realtimeSinceStartup;
                 if (n < 0 && !stream.Pending && UnityEngine.Time.realtimeSinceStartup - lastArrival > Silence) { closeReason = "Steam no incoming data for 60 seconds"; return 0; }   // Steam gives no close signal: silence means gone
                 return n;
             }

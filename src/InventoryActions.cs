@@ -9,10 +9,11 @@ namespace ShopTogether {
             var address=session.World.Address(inventory);return address!=null&&OutingKits.MayUse(owner,address.root)&&(address.container==0||session.Leases.Available(owner,address.container,Time.realtimeSinceStartup));
         }
         internal static bool Execute(Connection session,int owner,Request request){
-            GameInventory inventory;if(request.operation<0||request.operation>3||request.inventory==null||!session.World.Inventories.TryGetValue(request.inventory.Key,out inventory))return false;
+            GameInventory inventory;if(request.operation<0||request.operation>5||request.inventory==null||!session.World.Inventories.TryGetValue(request.inventory.Key,out inventory))return false;
             var grid=inventory as GameGridInventory;
             return StoragePagesIntent.OnPage(grid,request.index,()=>{
                 if(!Available(session,owner,grid))return AuthorityIntent.Refuse("~SMC328~");
+                if(request.operation>=4)return SmartArrangeIntent.Run(grid,request.operation==5);
                 return InventorySortHelper.Sort(grid,(request.operation&1)!=0,(request.operation&2)!=0)||AuthorityIntent.Refuse("~SMC328~");
             });
         }

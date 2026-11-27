@@ -22,7 +22,7 @@ namespace ShopTogether {
             int assemblyCount = AppDomain.CurrentDomain.GetAssemblies().Length;
             if (assemblyCount != scannedAssemblyCount) {
                 CompanyIntent.Bind();
-                CargoIntent.Bind(); StoragePagesIntent.Bind(); BarIntent.Bind(); OverflowReplica.Bind();
+                SmartArrangeIntent.Bind(); CargoIntent.Bind(); StoragePagesIntent.Bind(); BarIntent.Bind(); OverflowReplica.Bind();
                 foreach(var method in TargetMethods()) {
                     if(installed.Contains(method))continue;
                     if(patches==null)patches=new Harmony("shop_together.mod-runtime-authority");
@@ -39,7 +39,7 @@ namespace ShopTogether {
             if(patches!=null)patches.UnpatchAll("shop_together.mod-runtime-authority");
             patches=null;installed.Clear();next=0;scannedAssemblyCount=-1;
             CompanyIntent.Shutdown();
-            CargoIntent.Shutdown(); StoragePagesIntent.Shutdown(); BarIntent.Shutdown(); OverflowReplica.Shutdown();
+            SmartArrangeIntent.Shutdown(); CargoIntent.Shutdown(); StoragePagesIntent.Shutdown(); BarIntent.Shutdown(); OverflowReplica.Shutdown();
         }
         static IEnumerable<MethodBase> TargetMethods() {
             foreach (string name in new[]{"CorpPresence.Runtime.LoadedItemRepair", "CorpPresence.Crates", "CorpPresence.Runtime.RuntimeUpdates"}) {
